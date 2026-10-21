@@ -1,0 +1,136 @@
+<!doctype html>
+<html lang="ru">
+  <head><meta charset="utf-8"><title>Inventory picker smoke test</title></head>
+  <body>
+    <pre id="results">RUNNING</pre>
+    <iframe id="app" src="../admin?test=1#inventory" style="position:fixed;left:-10000px;width:1920px;height:1000px;border:0"></iframe>
+    <script>
+      document.querySelector("#app").addEventListener("load", async () => {
+        const frame = document.querySelector("#app");
+        const win = frame.contentWindow;
+        const doc = frame.contentDocument;
+        const checks = [];
+        const check = (name, condition) => checks.push(`${condition ? "PASS" : "FAIL"}:${name}`);
+        const nextLayout = () => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+          setTimeout(resolve, 100); // Headless background frames may pause animation callbacks.
+        });
+        const visible = (element) => win.getComputedStyle(element).display !== "none" && element.getBoundingClientRect().height > 0;
+        const setScope = (value) => {
+          doc.querySelector("#inventoryScope").value = value;
+          doc.querySelector("#inventoryScope").dispatchEvent(new win.Event("change", { bubbles: true }));
+        };
+        const setSearch = (value) => {
+          doc.querySelector("#inventorySelectionSearch").value = value;
+          doc.querySelector("#inventorySelectionSearch").dispatchEvent(new win.Event("input", { bubbles: true }));
+        };
+        try {
+          win.openInventoryForm();
+          const panel = doc.querySelector("#inventorySelection");
+          check("initial-full-scope-hides-picker", doc.querySelector("#inventoryScope").value === "full" && !visible(panel));
+          setScope("selected");
+          await nextLayout();
+
+          const list = doc.querySelector("#inventorySelectionList");
+          const empty = doc.querySelector("#inventorySelectionEmpty");
+          const originalRows = [...list.querySelectorAll(".inventory-selection-row")];
+          check("selected-scope-shows-items", visible(panel) && originalRows.length > 0);
+          if (!originalRows.length) throw new Error("No inventory rows available for picker checks");
+
+          const params = new URLSearchParams(location.search);
+          if (params.has("preview")) {
+            document.querySelector("#results").hidden = true;
+            frame.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;border:0";
+            if (Number(params.get("width")) > 0) frame.style.width = `${Number(params.get("width"))}px`;
+            await nextLayout();
+            document.querySelector("#results").textContent = "PREVIEW READY";
+            return;
+          }
+
+          const firstRow = originalRows[0];
+          const firstName = firstRow.querySelector(".inventory-selection-name").textContent.trim();
+          const firstCheckbox = firstRow.querySelector("[data-inventory-select]");
+          const firstValue = firstCheckbox.value;
+          firstRow.querySelector(".inventory-selection-name").click();
+          check("clicking-name-selects-checkbox", firstCheckbox.checked);
+
+          // Add only DOM fixtures so even a small catalog exercises scrolling and wrapping.
+          for (let index = 0; index < 24; index += 1) {
+            const row = firstRow.cloneNode(true);
+            const checkbox = row.querySelector("[data-inventory-select]");
+            checkbox.checked = false;
+            checkbox.value = `inventory-picker-fixture-${index}`;
+            row.querySelector(".inventory-selection-name").textContent = index === 0
+              ? "Тестовая позиция с длинным названием и уточнением фасовки для проверки переноса текста"
+              : `Тестовая позиция ${index + 1}`;
+            list.append(row);
+          }
+
+          for (const [width, height] of [[1920, 1000], [768, 1024], [390, 844], [320, 740]]) {
+            frame.style.width = `${width}px`;
+            frame.style.height = `${height}px`;
+            await nextLayout();
+            const rows = [...list.querySelectorAll(".inventory-selection-row")];
+            const listRect = list.getBoundingClientRect();
+            const panelRect = panel.getBoundingClientRect();
+            const compactCheckboxes = rows.every((row) => {
+              const checkbox = row.querySelector("[data-inventory-select]");
+              const rect = checkbox.getBoundingClientRect();
+              return Math.abs(rect.width - 18) <= 1 && Math.abs(rect.height - 18) <= 1 && win.getComputedStyle(checkbox).flexShrink === "0";
+            });
+            const alignedNames = rows.every((row) => {
+              const checkboxRect = row.querySelector("[data-inventory-select]").getBoundingClientRect();
+              const nameRect = row.querySelector(".inventory-selection-name").getBoundingClientRect();
+              const rowRect = row.getBoundingClientRect();
+              const gap = nameRect.left - checkboxRect.right;
+              return gap >= 6 && gap <= 16
+                && Math.abs((nameRect.top + nameRect.bottom) / 2 - (checkboxRect.top + checkboxRect.bottom) / 2) <= 2
+                && nameRect.right <= rowRect.right + 1 && row.scrollWidth <= row.clientWidth + 1;
+            });
+            check(`${width}-viewport-applied`, win.innerWidth === width);
+            check(`${width}-compact-checkboxes`, compactCheckboxes);
+            check(`${width}-names-adjacent-and-aligned`, alignedNames);
+            check(`${width}-picker-fits-viewport`, panelRect.left >= -1 && panelRect.right <= width + 1 && panel.scrollWidth <= panel.clientWidth + 1 && list.scrollWidth <= list.clientWidth + 1);
+            check(`${width}-bounded-scroll-list`, listRect.height > 0 && listRect.height <= 302 && list.scrollHeight > list.clientHeight && ["auto", "scroll"].includes(win.getComputedStyle(list).overflowY));
+            list.scrollTop = list.scrollHeight;
+            check(`${width}-list-scrolls`, list.scrollTop > 0);
+            list.scrollTop = 0;
+          }
+
+          setSearch(firstName.toLocaleUpperCase());
+          const matchingRows = [...list.querySelectorAll(".inventory-selection-row")];
+          check("search-shows-matching-name", visible(firstRow));
+          check("search-hides-nonmatches", matchingRows.some((row) => !row.textContent.toLocaleLowerCase().includes(firstName.toLocaleLowerCase())) && matchingRows.every((row) => visible(row) === row.textContent.toLocaleLowerCase().includes(firstName.toLocaleLowerCase())));
+          check("search-keeps-selected-item", firstCheckbox.checked);
+
+          setSearch("__inventory_picker_missing_product__");
+          check("no-results-hides-all-rows", [...list.querySelectorAll(".inventory-selection-row")].every((row) => win.getComputedStyle(row).display === "none" && row.getBoundingClientRect().height === 0));
+          check("no-results-shows-empty-state", visible(empty));
+          check("hidden-selected-item-stays-checked", firstCheckbox.checked);
+
+          setSearch("");
+          check("clearing-search-restores-items", [...list.querySelectorAll(".inventory-selection-row")].every(visible) && !visible(empty));
+          check("clearing-search-keeps-selection", firstCheckbox.checked);
+
+          for (const scope of ["full", "category", "serving"]) {
+            setScope(scope);
+            check(`${scope}-hides-picker`, !visible(panel));
+            setScope("selected");
+            const selected = [...list.querySelectorAll("[data-inventory-select]:checked")];
+            check(`${scope}-roundtrip-keeps-selection`, visible(panel) && selected.length === 1 && selected[0].value === firstValue);
+          }
+
+          setSearch(firstName);
+          win.showInventorySetup();
+          check("new-setup-resets-scope-and-search", doc.querySelector("#inventoryScope").value === "full" && doc.querySelector("#inventorySelectionSearch").value === "" && !visible(panel));
+          setScope("selected");
+          check("new-setup-clears-selection", list.querySelectorAll("[data-inventory-select]:checked").length === 0);
+          check("new-setup-restores-catalog", list.querySelectorAll(".inventory-selection-row").length === originalRows.length && [...list.querySelectorAll(".inventory-selection-row")].every(visible) && !visible(empty));
+        } catch (error) {
+          checks.push(`FAIL:runtime:${error.stack || error.message}`);
+        }
+        document.querySelector("#results").textContent = checks.join("|");
+      }, { once: true });
+    </script>
+  </body>
+</html>

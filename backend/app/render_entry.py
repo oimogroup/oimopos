@@ -40,7 +40,7 @@ async def cloud_headers(request, call_next):
 
 @app.get("/", include_in_schema=False)
 def home():
-    return RedirectResponse("/login")
+    return FileResponse(PUBLIC / "landing.html", headers={"Cache-Control": "no-cache"})
 
 
 PUBLIC = Path(__file__).resolve().parents[1] / "public"
@@ -58,6 +58,9 @@ def legacy_redirect(path):
         query = request.url.query
         return RedirectResponse(path + ("?" + query if query else ""), status_code=301)
     return endpoint
+
+
+app.add_api_route("/landing.html", legacy_redirect("/"), methods=["GET"], include_in_schema=False)
 
 
 for page, filename in PAGES.items():

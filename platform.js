@@ -2,6 +2,7 @@ const sessionKey = "ashkana-auth-session-v1";
 const $ = (selector) => document.querySelector(selector);
 let tenants = [];
 let plans = [];
+let connectionRequests = [];
 const planLabel = code => plans.find(plan => plan.code === code)?.name || ({canteen:"Столовая", restaurant:"Ресторан", starter:"Starter (архивный)", business:"Business (архивный)", enterprise:"Enterprise (архивный)"})[code] || code;
 let currentCredentials = null;
 const platformLoginUrl = new URL("/login", location.origin).href;
@@ -89,7 +90,7 @@ function renderTenants() {
         <td><div class="owner-cell"><span class="owner-avatar">${escapeHtml(initials(owner))}</span><div class="company-cell"><b>${escapeHtml(owner)}</b><small>${escapeHtml(tenant.owner_login || "Логин не назначен")}</small></div></div></td>
         <td><span class="status-badge ${escapeHtml(tenant.subscription_status)}">${escapeHtml(statusLabel(tenant.subscription_status))}</span>${tenant.trial_ends_at ? `<span class="subscription-date">до ${formatDate(tenant.trial_ends_at)}</span>` : ""}</td>
         <td><span class="status-badge ${escapeHtml(tenant.status)}">${escapeHtml(statusLabel(tenant.status))}</span></td>
-        <td><div class="row-actions"><a class="row-action" href="${escapeHtml(tenantLoginUrl(tenant))}" target="_blank" rel="noopener noreferrer" title="Открыть вход в админку" aria-label="Открыть вход в админку">${icon("logout")}</a><button class="row-action" data-copy-login="${escapeHtml(tenant.id)}" type="button" title="Скопировать ссылку на вход" aria-label="Скопировать ссылку на вход">${icon("copy")}</button><button class="row-action" data-edit-tenant="${escapeHtml(tenant.id)}" type="button" title="Настроить клиента" aria-label="Настроить клиента">${icon("settings")}</button><button class="row-action warning" data-toggle-tenant="${escapeHtml(tenant.id)}" data-next-status="${nextStatus}" type="button" title="${toggleLabel}" aria-label="${toggleLabel}">${icon(tenant.status === "active" ? "pause" : "play")}</button><button class="row-action warning" data-delete-tenant="${escapeHtml(tenant.id)}" type="button" aria-label="Удалить аккаунт" title="Удалить аккаунт"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div></td>
+        <td><div class="row-actions"><a class="row-action icon-button" href="${escapeHtml(tenantLoginUrl(tenant))}" target="_blank" rel="noopener noreferrer" title="Открыть вход в админку" aria-label="Открыть вход в админку">${icon("logout")}</a><button class="row-action icon-button" data-copy-login="${escapeHtml(tenant.id)}" type="button" title="Скопировать ссылку на вход" aria-label="Скопировать ссылку на вход">${icon("copy")}</button><button class="row-action icon-button" data-edit-tenant="${escapeHtml(tenant.id)}" type="button" title="Настроить клиента" aria-label="Настроить клиента">${icon("settings")}</button><button class="row-action icon-button${tenant.status === "active" ? " danger-button" : ""}" data-toggle-tenant="${escapeHtml(tenant.id)}" data-next-status="${nextStatus}" type="button" title="${toggleLabel}" aria-label="${toggleLabel}">${icon(tenant.status === "active" ? "pause" : "play")}</button><button class="row-action icon-button danger-button" data-delete-tenant="${escapeHtml(tenant.id)}" type="button" aria-label="Удалить аккаунт" title="Удалить аккаунт"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div></td>
       </tr>`;
   }).join("");
   $("#tenantEmpty").classList.toggle("hidden", filtered.length > 0);
@@ -334,6 +335,7 @@ async function bootstrap() {
     $("#sessionInitials").textContent = response.session.initials;
     await loadTenants();
     await loadPlans();
+    await loadConnectionRequests();
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       sessionStorage.removeItem(sessionKey);
@@ -413,6 +415,7 @@ $("#planCards").addEventListener("submit", async event => {
     plans = plans.map(plan => plan.code === result.code ? result : plan);
     form.querySelector(".plan-save-status").textContent = "Цена сохранена";
     await loadPlans();
+    await loadConnectionRequests();
     showToast("Цена тарифа сохранена");
   } catch (error) { form.querySelector(".plan-save-status").textContent = error.message; }
   finally { button.disabled = false; }
@@ -455,4 +458,36 @@ $("#deleteTenantForm").addEventListener("submit", async event => {
     $("#cancelDeleteTenant").disabled = false;
     $("#confirmDeleteTenant").disabled = $("#deleteTenantConfirmation").value !== deletingTenant?.name;
   }
+});
+
+async function loadConnectionRequests() {
+  const list=$('#connectionRequestsList');
+  try {
+    connectionRequests=await window.AshkanaApi.connectionRequests();
+    $('#connectionRequestCount').textContent=connectionRequests.filter(r=>r.status==='new').length || '';
+    list.innerHTML=connectionRequests.length ? connectionRequests.map(row=>`<article class="connection-request-row"><div><strong>${escapeHtml(row.company)}</strong><small>${escapeHtml(row.name)} · ${escapeHtml(planLabel(row.plan))} · ${escapeHtml(formatDate(row.created_at))}</small></div><a href="tel:+${escapeHtml(row.phone)}">+${escapeHtml(row.phone)}</a><span class="request-status ${row.status==='new'?'request-new':''}">${row.status==='new'?'Новая':'Связались'}</span><div class="request-row-actions">${row.status==='new'?`<button class="secondary-button" type="button" data-contact-request="${escapeHtml(row.id)}">Связались</button>`:''}<button class="secondary-button" type="button" data-create-from-request="${escapeHtml(row.id)}">Создать аккаунт</button></div></article>`).join('') : '<p class="requests-empty">Пока нет заявок. Новые обращения с лендинга появятся здесь.</p>';
+  } catch(error) {list.textContent='Не удалось загрузить заявки. '+error.message;}
+}
+$('#refreshConnectionRequests').addEventListener('click',async event=>{
+  const button=event.currentTarget;button.disabled=true;
+  try {await loadConnectionRequests();}finally{button.disabled=false;}
+});
+$('#connectionRequestsList').addEventListener('click',async event=>{
+  const contacted=event.target.closest('[data-contact-request]');
+  if(contacted){
+    contacted.disabled=true;
+    try{await window.AshkanaApi.markRequestContacted(contacted.dataset.contactRequest);await loadConnectionRequests();}
+    catch(error){showToast(error.message);contacted.disabled=false;}
+    return;
+  }
+  const create=event.target.closest('[data-create-from-request]');
+  if(!create)return;
+  const row=connectionRequests.find(item=>String(item.id)===create.dataset.createFromRequest);
+  if(!row)return;
+  openTenantModal();
+  $('#tenantName').value=row.company;
+  $('#tenantName').dispatchEvent(new Event('input',{bubbles:true}));
+  $('#tenantOwnerName').value=row.name;
+  $('#tenantPhone').value='+'+row.phone;
+  $('#tenantPlan').value=row.plan;
 });

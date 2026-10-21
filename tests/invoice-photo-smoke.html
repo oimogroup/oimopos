@@ -1,0 +1,281 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Invoice photo checks</title>
+  <style>body{margin:0;background:#f5f1f4;font:13px system-ui,sans-serif}#results{margin:16px;white-space:pre-wrap}iframe{border:0;background:white}</style>
+</head>
+<body>
+  <pre id="results">RUNNING</pre>
+  <script>
+    const checks = [];
+    const check = (name, condition) => {
+      checks.push(`${condition ? 'PASS' : 'FAIL'}:${name}`);
+      document.querySelector('#results').textContent = checks.join('|');
+    };
+    const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
+    async function until(predicate, label) {
+      for (let attempt = 0; attempt < 160; attempt++) {
+        if (predicate()) return;
+        await pause();
+      }
+      throw new Error(`Timed out: ${label}`);
+    }
+
+    async function run() {
+      try {
+        const params = new URLSearchParams(location.search);
+        const preview = params.has('preview');
+        const width = Math.min(1920, Math.max(320, Number(params.get('width')) || 1280));
+        const height = Math.min(1200, Math.max(320, Number(params.get('height')) || 900));
+        const source = await fetch('../pos').then(response => {
+          if (!response.ok) throw new Error(`POS shell: ${response.status}`);
+          return response.text();
+        });
+        const actor = {id: 21, name: 'Айбек Повар', staffRole: 'production', roleLabel: 'Производство', initials: 'АП', permissions: {production: true, posSupply: true}};
+        const items = [
+          {id: 'rice', name: 'Рис длиннозёрный шлифованный высшего сорта', unit: 'кг', category: 'Крупы', averageCost: 100},
+          {id: 'eggs', name: 'Яйцо куриное', unit: 'шт', category: 'Продукты', averageCost: 10},
+          {id: 'milk', name: 'Молоко пастеризованное 3,2%', unit: 'л', category: 'Молочные продукты', averageCost: 80},
+          {id: 'flour', name: 'Мука пшеничная высшего сорта', unit: 'кг', category: 'Бакалея', averageCost: 50},
+          {id: 'spice', name: 'Приправа для праздничного плова', unit: 'г', category: 'Специи', averageCost: 2},
+        ];
+        const maliciousName = '<img src=x onerror="window.__supplyImportXss=true">';
+        const imported = {
+          fileName: 'накладная.csv', total: 740,
+          rows: [
+            {row: 2, name: items[0].name, quantity: 1000, price: 0.12, unit: 'г', itemId: 'rice', total: 120},
+            {row: 3, name: items[0].name, quantity: 2, price: 140, unit: 'кг', itemId: 'rice', total: 280},
+            {row: 4, name: items[2].name, quantity: 500, price: 0.08, unit: 'мл', itemId: 'milk', total: 40},
+            {row: 5, name: 'Пшеничная мука от поставщика', quantity: 2, price: 50, unit: 'кг', itemId: '', total: 100},
+            {row: 6, name: maliciousName, quantity: 100, price: 2, unit: 'г', itemId: '', total: 200},
+          ],
+        };
+        const fixture = JSON.stringify({actor, items, imported}).replace(/</g, '\\u003c');
+        const frame = document.createElement('iframe');
+        frame.id = 'posSupplyImportFixture';
+        frame.style.cssText = `position:fixed;top:0;left:${preview ? 0 : -10000}px;width:${width}px;height:${height}px;${preview ? 'z-index:10' : ''}`;
+        document.body.append(frame);
+        const shell = source.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
+          .replace('<head>', '<head><base href="/">')
+          .replace('</body>', `
+            <script>
+              window.__fixture = ${fixture};
+              window.__runtimeErrors = [];
+              window.addEventListener('error', event => window.__runtimeErrors.push(event.message));
+              window.addEventListener('unhandledrejection', event => window.__runtimeErrors.push(String(event.reason)));
+              window.__mock = {writes: [], network: [], previews: []};
+              window.fetch = async (...args) => {
+                window.__mock.network.push(String(args[0]));
+                throw new Error('Real network access is disabled in this fixture');
+              };
+              window.__mock.workspace = {version: 1, state: {
+                serviceMode: 'canteen', branches: [{id: 'b1', name: 'Oimo · Столовая', status: 'active'}],
+                menuCategories: [], recipes: [], products: [], ingredients: window.__fixture.items, sales: [],
+                logisticsState: {branchStocks: {b1: {}}, batches: []},
+                posState: {customers: [], openOrders: [], cashMovements: []}
+              }};
+              window.__mock.preview = async payload => ({...window.__fixture.imported, fileName: payload.fileName});
+              window.AshkanaApi = {
+                me: async () => ({session: {role: 'branch', staffRole: 'pos_terminal', branchId: 'b1', registerId: 1, registerName: 'Основная касса', tenantSlug: 'supply-import-smoke'}}),
+                workspace: async () => window.__mock.workspace,
+                posOperator: async () => ({operator: window.__fixture.actor, shift: null}),
+                posOperators: async () => [window.__fixture.actor],
+                posProductionContext: async () => ({recipes: [], batches: [], productionShift: {
+                  shift: {id: 'shift-1', employeeId: window.__fixture.actor.id, employeeName: window.__fixture.actor.name, openedAt: '2026-10-06T08:00:00'}, counts: [], ingredientStocks: []
+                }}),
+                posTransferHistory: async () => ({actorId: window.__fixture.actor.id, documents: []}),
+                posReceiving: async () => ({documents: [], version: 1}),
+                posSupplyContext: async () => ({
+                  suppliers: [
+                    {id: 'supplier-1', name: 'Фрунзе Маркет', prices: {rice: 100, eggs: 10}},
+                    {id: 'supplier-2', name: 'Другой поставщик', prices: {rice: 999, eggs: 888, milk: 777, flour: 666, spice: 555}}
+                  ],
+                  items: window.__fixture.items, accounts: [{id: 'bank', name: 'Расчётный счёт', type: 'bank'}], supplies: []
+                }),
+                previewSupplyImport: async payload => {
+                  window.__mock.previews.push(payload);
+                  return window.__mock.preview(payload);
+                },
+                action: async (name, payload) => {
+                  window.__mock.writes.push({name, payload});
+                  throw new Error('This fixture never posts a real supply');
+                },
+                lockPos: async () => ({}), logout: async () => ({})
+              };
+            <\/script>
+            <script src="/company-settings.js"><\/script><script src="/custody.js"><\/script><script src="/app.js"><\/script><script src="/pos-supply-photo.js"><\/script></body>`);
+        await new Promise(resolve => {frame.addEventListener('load', resolve, {once: true}); frame.srcdoc = shell;});
+        const win = frame.contentWindow, doc = frame.contentDocument;
+        const q = selector => doc.querySelector(selector);
+        const rows = () => [...doc.querySelectorAll('#posSupplyImportRows [data-supply-import-row]')];
+        const selection = index => q(`[data-supply-import-row="${index}"] [data-supply-import-item]`);
+        const visible = element => Boolean(element && !element.hidden && !element.closest('.hidden') && win.getComputedStyle(element).display !== 'none');
+        const lines = () => [...doc.querySelectorAll('#posSupplyLines [data-supply-line]')].map(row => ({
+          itemId: row.querySelector('[data-supply-item]').value,
+          quantity: Number(row.querySelector('[data-supply-quantity]').value),
+          price: Number(row.querySelector('[data-supply-price]').value),
+        }));
+        const draft = () => JSON.stringify({items: lines(), fields: ['posSupplySupplier', 'posSupplyInvoice', 'posSupplyComment', 'posSupplyPaymentMode'].map(id => [id, q('#' + id).value])});
+        const map = (index, itemId) => {
+          const select = selection(index);
+          select.focus();
+          select.value = itemId;
+          select.dispatchEvent(new win.Event('change', {bubbles: true}));
+        };
+        const importedInputsPreserved = () => [...doc.querySelectorAll('#posSupplyLines [data-supply-line]')].every(row =>
+          row.dataset.supplyImported === 'true' && ['[data-supply-quantity]', '[data-supply-price]'].every(selector => {
+            const input = row.querySelector(selector);
+            return input.step === 'any' && input.checkValidity();
+          })
+        );
+        const makeFile = (name = 'накладная.csv') => new win.File(['Наименование,Количество,Цена\nРис,1,120'], name, {type: name.endsWith('.csv') ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        await until(() => q('#operatorLock').classList.contains('hidden') && !q('#supplyButton').classList.contains('hidden'), 'production operator ready');
+        await win.openPosSupply();
+        const photoId = 'photo-00000000-0000-4000-8000-000000000001';
+        const photoFile = new win.File(['mock-photo'], 'накладная.jpg', {type:'image/jpeg'});
+        const cleanLines = () => {q('#posSupplyLines').innerHTML = ''; win.addPosSupplyLine();};
+        const photo = () => win.SupplyPhotos.snapshot();
+        const edit = (selector, value) => {const input = q(selector); input.value = value; input.dispatchEvent(new win.Event('input', {bubbles:true}));};
+        const fakeDocument = (number, itemId, quantity, price, total) => ({supplierName:'Фрунзе Маркет',supplierId:'supplier-1',invoiceNumber:number,date:'2026-10-08',total,warnings:[],rows:[{name:items.find(item=>item.id===itemId).name,itemId,unit:items.find(item=>item.id===itemId).unit,quantity,price,total,warnings:[]}]});
+        let uploads = 0, reads = 0;
+        win.AshkanaApi.uploadSupplyPhoto = async () => { uploads++; return {id:photoId,fileName:'накладная.jpg',usedDocumentIndexes:[]}; };
+        win.AshkanaApi.recognizeSupplyPhoto = async () => { reads++; return {documents:[fakeDocument('НК-1','rice',2,100,200),fakeDocument('НК-2','milk',3,80,240)]}; };
+        check('production-has-visible-photo-button',visible(q('#posSupplyPhotoButton')) && q('#posSupplyPhotoButton').textContent.includes('Фото накладной'));
+        check('image-picker-supports-phone-formats',q('#posSupplyPhotoFile').accept.includes('image/jpeg') && q('#posSupplyPhotoFile').accept.includes('image/png'));
+        await win.SupplyPhotos.upload(photoFile);
+        check('upload-attaches-original-without-stock-write',uploads===1 && photo().id===photoId && win.__mock.writes.length===0);
+        check('unconfigured-ai-is-explained',q('#posSupplyPhotoRecognize').disabled && q('#posSupplyPhotoSetup').textContent.includes('не подключено'));
+        check('original-can-be-opened-and-downloaded',q('#posSupplyPhotoOpen').href.includes('client=pos') && q('#posSupplyPhotoDownload').href.includes('download=true'));
+        check('manual-supply-allowed-with-original',!win.SupplyPhotos.blocksSave() && !q('#savePosSupplyButton').disabled);
+        check('payload-only-contains-photo-reference',JSON.stringify(win.SupplyPhotos.payload())===JSON.stringify({photoId,photoDocumentIndex:0}));
+        check('photo-reference-persists-in-draft',JSON.parse(win.sessionStorage.getItem(win.supplyDraftKey())).photo.id===photoId);
+        q('#closeSupplyButton').click(); await win.openPosSupply();
+        check('reopening-restores-photo',visible(q('#posSupplyPhotoPanel')) && photo().id===photoId);
+        const context = await win.AshkanaApi.posSupplyContext();
+        win.AshkanaApi.posSupplyContext = async () => ({...context,photoImport:{enabled:true}});
+        q('#closeSupplyButton').click(); await win.openPosSupply();
+        check('configured-ai-enables-recognition',!q('#posSupplyPhotoRecognize').disabled);
+        await win.SupplyPhotos.recognize();
+        check('multiple-documents-remain-separate',photo().documents.length===2 && q('#posSupplyPhotoDocument').options.length===2 && q('#posSupplyPhotoInvoice').value==='НК-1');
+        check('preview-blocks-final-stock-post',win.SupplyPhotos.blocksSave() && q('#savePosSupplyButton').disabled && win.__mock.writes.length===0);
+        check('matching-document-is-applicable',!q('#posSupplyPhotoApply').disabled);
+        edit('[data-photo-quantity]','');
+        check('unreadable-quantity-stays-empty-and-blocks',q('[data-photo-quantity]').value==='' && q('#posSupplyPhotoApply').disabled);
+        edit('[data-photo-quantity]','3');
+        check('arithmetic-mismatch-blocks-apply',q('#posSupplyPhotoApply').disabled && q('#posSupplyPhotoCheck').textContent.includes('не совпадает'));
+        edit('[data-photo-quantity]','2');
+        edit('[data-photo-unit]','');
+        check('unknown-unit-requires-selection',q('#posSupplyPhotoApply').disabled);
+        edit('[data-photo-unit]','кг');
+        const selector = q('#posSupplyPhotoDocument'); selector.value='1'; selector.dispatchEvent(new win.Event('change',{bubbles:true}));
+        check('second-invoice-keeps-own-values',q('#posSupplyPhotoInvoice').value==='НК-2' && q('[data-photo-quantity]').value==='3' && q('#posSupplyPhotoTotal').value==='240');
+        selector.value='0'; selector.dispatchEvent(new win.Event('change',{bubbles:true}));
+        check('switching-preserves-first-invoice-edits',q('[data-photo-quantity]').value==='2' && q('[data-photo-unit]').value==='кг');
+        win.addPosSupplyLine({itemId:'eggs',quantity:2,price:10});
+        win.SupplyPhotos.apply();
+        check('invoices-cannot-merge-into-existing-draft',photo().appliedIndex==null && q('#posSupplyPhotoMessage').textContent.includes('уже есть позиции'));
+        cleanLines(); win.SupplyPhotos.apply();
+        check('reviewed-invoice-populates-supply',photo().appliedIndex===0 && lines().length===1 && lines()[0].quantity===2 && q('#posSupplyInvoice').value==='НК-1');
+        check('stock-still-needs-final-confirmation',!q('#savePosSupplyButton').disabled && win.__mock.writes.length===0);
+        check('original-is-linked-to-selected-document',win.SupplyPhotos.payload().photoId===photoId && win.SupplyPhotos.payload().photoDocumentIndex===0);
+        const continuation = win.SupplyPhotos.afterSaved(); win.resetPosSupplyForm(); win.SupplyPhotos.restore(continuation);
+        check('next-invoice-survives-first-save',photo().index===1 && photo().used.includes(0) && q('#posSupplyPhotoInvoice').value==='НК-2');
+        check('processed-invoice-cannot-be-selected-again',q('#posSupplyPhotoDocument').options[0].disabled);
+        check('second-invoice-remains-unposted',q('#savePosSupplyButton').disabled && win.__mock.writes.length===0);
+        win.SupplyPhotos.apply();
+        check('second-invoice-keeps-separate-photo-index',win.SupplyPhotos.payload().photoDocumentIndex===1 && lines().length===1 && lines()[0].itemId==='milk');
+        check('last-invoice-finishes-queue',win.SupplyPhotos.afterSaved()===null);
+        win.resetPosSupplyForm();
+        await win.SupplyPhotos.upload(new win.File(['x'],'file.svg',{type:'image/svg+xml'}));
+        check('unsupported-photo-rejected-before-upload',uploads===1 && q('#posSupplyPhotoMessage').textContent.includes('JPG'));
+        await win.SupplyPhotos.upload(photoFile);
+        win.AshkanaApi.recognizeSupplyPhoto = async () => {throw new Error('Сервис временно недоступен');};
+        await win.SupplyPhotos.recognize();
+        check('recognition-error-keeps-download-and-manual-form',photo().id===photoId && !win.SupplyPhotos.blocksSave() && q('#posSupplyPhotoMessage').textContent.includes('недоступен'));
+        win.AshkanaApi.recognizeSupplyPhoto = async () => ({documents:[{...fakeDocument('X','rice',1,100,100),supplierName:'<img src=x onerror=alert(1)>',supplierId:'',rows:[{...fakeDocument('X','rice',1,100,100).rows[0],name:'<img src=x onerror=alert(1)>'}]}]});
+        await win.SupplyPhotos.recognize();
+        check('ocr-text-is-escaped',!q('#posSupplyPhotoRows img') && q('#posSupplyPhotoRows').textContent.includes('<img'));
+        check('unmatched-supplier-is-not-guessed',q('#posSupplyPhotoSupplier').value==='' && q('#posSupplyPhotoApply').disabled);
+        for (const [w,h] of [[320,568],[390,844],[768,1024],[1280,900]]) {
+          frame.style.width=w+'px'; frame.style.height=h+'px'; await pause(70);
+          const panel=q('#posSupplyPhotoPanel'), drawer=q('#supplyDrawer aside');
+          check(`photo-panel-no-horizontal-overflow-${w}`,panel.scrollWidth<=panel.clientWidth+1 && drawer.scrollWidth<=drawer.clientWidth+1);
+          check(`photo-controls-touch-size-${w}`,q('#posSupplyPhotoApply').getBoundingClientRect().height>=44 && q('[data-photo-quantity]').getBoundingClientRect().height>=44);
+        }
+        win.SupplyPhotos.reset(); win.updatePosSupplyImportControls();
+        let release;
+        win.AshkanaApi.uploadSupplyPhoto=()=>new Promise(resolve=>{release=resolve;});
+        const pending=win.SupplyPhotos.upload(photoFile);
+        await until(()=>Boolean(release),'upload pending');
+        q('#closeSupplyButton').click(); await win.openPosSupply();
+        release({id:photoId,fileName:'late.jpg'}); await pending;
+        check('late-upload-does-not-replace-reopened-draft',!photo() && !visible(q('#posSupplyPhotoPanel')));
+        check('browser-performs-no-stock-or-payment-writes',win.__mock.writes.length===0);
+        win.AshkanaApi.uploadSupplyPhoto=async()=>({id:photoId,fileName:'накладная.jpg'});
+        win.AshkanaApi.recognizeSupplyPhoto=async()=>({documents:[fakeDocument('НК-1','rice',2,100,200),fakeDocument('НК-2','milk',3,80,240)]});
+        await win.SupplyPhotos.upload(photoFile); await win.SupplyPhotos.recognize();
+        cleanLines(); win.SupplyPhotos.apply();
+        const savedContext=win.AshkanaApi.posSupplyContext;
+        win.AshkanaApi.posSupplyContext=async()=>({...await savedContext(),supplies:[{number:'ПСТ-0',supplier:'Фрунзе Маркет',items:[],total:100,debt:100,photo:{id:photoId}}]});
+        q('#closeSupplyButton').click(); await win.openPosSupply();
+        win.AshkanaApi.action=async(name,payload)=>{
+          win.__mock.writes.push({name,payload});
+          return {state:{...win.__mock.workspace.state,logisticsState:{...win.__mock.workspace.state.logisticsState,supplies:[{
+            id:'saved-supply',branchId:'b1',number:'ПСТ-1',supplier:'Фрунзе Маркет',receivedAt:'2026-10-08T08:00:00Z',items:payload.items,total:200,debt:200,
+            photo:{id:payload.photoId,fileName:'накладная.jpg',documentIndex:payload.photoDocumentIndex}
+          }]}}};
+        };
+        win.AshkanaApi.posSupplyContext=async()=>{throw new Error('Context refresh unavailable');};
+        await win.savePosSupply({preventDefault(){}});
+        check('confirmed-save-survives-context-refresh-error',win.__mock.writes.length===1 && photo().index===1 && photo().used.includes(0));
+        check('confirmed-invoice-rows-cleared-before-next-document',lines().every(row=>!row.itemId && !row.quantity && !row.price) && q('#savePosSupplyButton').disabled);
+        check('previous-original-links-survive-refresh-error',q('#posRecentSupplies a[href*="client=pos"]') && q('#posRecentSupplies a[download]'));
+        await win.savePosSupply({preventDefault(){}});
+        check('second-click-cannot-repost-confirmed-invoice',win.__mock.writes.length===1);
+        win.SupplyPhotos.apply();
+        check('next-invoice-retains-correct-lines-after-refresh-error',lines().length===1 && lines()[0].itemId==='milk' && win.SupplyPhotos.payload().photoDocumentIndex===1);
+        let failRefresh;
+        win.AshkanaApi.posSupplyContext=()=>new Promise((resolve,reject)=>{failRefresh=reject;});
+        const lastSave=win.savePosSupply({preventDefault(){}});
+        await until(()=>Boolean(failRefresh),'last invoice awaiting context');
+        q('#closeSupplyButton').click();
+        failRefresh(new Error('Context unavailable')); await lastSave;
+        win.AshkanaApi.posSupplyContext=savedContext;
+        await win.openPosSupply();
+        check('closing-after-last-save-never-restores-invalid-photo',!photo() && !win.SupplyPhotos.blocksSave() && lines().every(row=>!row.itemId));
+        check('both-reviewed-invoices-post-once-with-distinct-index',win.__mock.writes.length===2 && win.__mock.writes[0].payload.photoDocumentIndex===0 && win.__mock.writes[1].payload.photoDocumentIndex===1);
+        win.resetPosSupplyForm();
+        await win.SupplyPhotos.upload(photoFile); await win.SupplyPhotos.recognize(); win.SupplyPhotos.apply();
+        const originalKey=win.supplyDraftKey, oldScope=originalKey(), newScope=oldScope+'-other-operator';
+        let finishPost;
+        win.AshkanaApi.action=()=>new Promise(resolve=>{finishPost=resolve;});
+        const lateSave=win.savePosSupply({preventDefault(){}});
+        await until(()=>Boolean(finishPost),'supply post pending');
+        win.supplyDraftKey=()=>newScope;
+        win.sessionStorage.setItem(newScope,'other-operator-draft');
+        win.SupplyPhotos.reset(); cleanLines(); win.addPosSupplyLine({itemId:'eggs',quantity:4,price:10});
+        const otherDraft=draft();
+        finishPost(win.__mock.workspace); await lateSave;
+        check('late-save-cannot-touch-another-operator-draft',draft()===otherDraft && win.sessionStorage.getItem(newScope)==='other-operator-draft' && !photo());
+        check('late-save-keeps-original-operator-next-invoice',JSON.parse(win.sessionStorage.getItem(oldScope)).photo.index===1);
+        win.supplyDraftKey=originalKey;
+        win.sessionStorage.removeItem(oldScope);win.sessionStorage.removeItem(newScope);
+        win.resetPosSupplyForm();
+        check('runtime-no-errors',win.__runtimeErrors.length===0);
+        if(preview){
+          frame.style.width=width+'px';frame.style.height=height+'px';
+          win.AshkanaApi.uploadSupplyPhoto=async()=>({id:photoId,fileName:'Накладная овощи.jpg'});
+          win.AshkanaApi.recognizeSupplyPhoto=async()=>({documents:[fakeDocument('НК-17','rice',2,100,200)]});
+          await win.SupplyPhotos.upload(photoFile); await win.SupplyPhotos.recognize();
+          q('#posSupplyPhotoPanel').scrollIntoView({block:'start'});
+          const canvas=doc.createElement('canvas');canvas.width=250;canvas.height=300;const ctx=canvas.getContext('2d');ctx.fillStyle='#fff';ctx.fillRect(0,0,250,300);ctx.fillStyle='#444';ctx.font='18px sans-serif';ctx.fillText('НАКЛАДНАЯ №17',20,40);ctx.font='14px sans-serif';ctx.fillText('Рис     2 кг     200 сом',20,90);ctx.fillText('Итого: 200 сом',20,150);q('#posSupplyPhotoImage').src=canvas.toDataURL();
+        }
+        document.body.dataset.testComplete='true';
+      } catch(error){check(`runtime:${error.message}`,false);document.body.dataset.testComplete='true';}
+    }
+    run();
+  </script>
+</body>
+</html>

@@ -59,3 +59,23 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '013_service_
 \if :run_013
   \ir 013_service_plans.sql
 \endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '014_employee_soft_delete') AS run_014 \gset
+\if :run_014
+  \ir 014_employee_soft_delete.sql
+\endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '015_deleted_employee_login_reuse') AS run_015 \gset
+\if :run_015
+  \ir 015_deleted_employee_login_reuse.sql
+\endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '016_supply_photos') AS run_016 \gset
+\if :run_016
+  \ir 016_supply_photos.sql
+\endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '017_connection_requests') AS run_017 \gset
+\if :run_017
+  \ir 017_connection_requests.sql
+\endif

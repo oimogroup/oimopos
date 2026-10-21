@@ -1,0 +1,283 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>POS supply import checks</title>
+  <style>body{margin:0;background:#f5f1f4;font:13px system-ui,sans-serif}#results{margin:16px;white-space:pre-wrap}iframe{border:0;background:white}</style>
+</head>
+<body>
+  <pre id="results">RUNNING</pre>
+  <script>
+    const checks = [];
+    const check = (name, condition) => {
+      checks.push(`${condition ? 'PASS' : 'FAIL'}:${name}`);
+      document.querySelector('#results').textContent = checks.join('|');
+    };
+    const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
+    async function until(predicate, label) {
+      for (let attempt = 0; attempt < 160; attempt++) {
+        if (predicate()) return;
+        await pause();
+      }
+      throw new Error(`Timed out: ${label}`);
+    }
+
+    async function run() {
+      try {
+        const params = new URLSearchParams(location.search);
+        const preview = params.has('preview');
+        const width = Math.min(1920, Math.max(320, Number(params.get('width')) || 1280));
+        const height = Math.min(1200, Math.max(320, Number(params.get('height')) || 900));
+        const source = await fetch('../pos').then(response => {
+          if (!response.ok) throw new Error(`POS shell: ${response.status}`);
+          return response.text();
+        });
+        const actor = {id: 21, name: 'Айбек Повар', staffRole: 'production', roleLabel: 'Производство', initials: 'АП', permissions: {production: true, posSupply: true}};
+        const items = [
+          {id: 'rice', name: 'Рис длиннозёрный шлифованный высшего сорта', unit: 'кг', category: 'Крупы', averageCost: 100},
+          {id: 'eggs', name: 'Яйцо куриное', unit: 'шт', category: 'Продукты', averageCost: 10},
+          {id: 'milk', name: 'Молоко пастеризованное 3,2%', unit: 'л', category: 'Молочные продукты', averageCost: 80},
+          {id: 'flour', name: 'Мука пшеничная высшего сорта', unit: 'кг', category: 'Бакалея', averageCost: 50},
+          {id: 'spice', name: 'Приправа для праздничного плова', unit: 'г', category: 'Специи', averageCost: 2},
+        ];
+        const maliciousName = '<img src=x onerror="window.__supplyImportXss=true">';
+        const imported = {
+          fileName: 'накладная.csv', total: 740,
+          rows: [
+            {row: 2, name: items[0].name, quantity: 1000, price: 0.12, unit: 'г', itemId: 'rice', total: 120},
+            {row: 3, name: items[0].name, quantity: 2, price: 140, unit: 'кг', itemId: 'rice', total: 280},
+            {row: 4, name: items[2].name, quantity: 500, price: 0.08, unit: 'мл', itemId: 'milk', total: 40},
+            {row: 5, name: 'Пшеничная мука от поставщика', quantity: 2, price: 50, unit: 'кг', itemId: '', total: 100},
+            {row: 6, name: maliciousName, quantity: 100, price: 2, unit: 'г', itemId: '', total: 200},
+          ],
+        };
+        const fixture = JSON.stringify({actor, items, imported}).replace(/</g, '\\u003c');
+        const frame = document.createElement('iframe');
+        frame.id = 'posSupplyImportFixture';
+        frame.style.cssText = `position:fixed;top:0;left:${preview ? 0 : -10000}px;width:${width}px;height:${height}px;${preview ? 'z-index:10' : ''}`;
+        document.body.append(frame);
+        const shell = source.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
+          .replace('<head>', '<head><base href="/">')
+          .replace('</body>', `
+            <script>
+              window.__fixture = ${fixture};
+              window.__runtimeErrors = [];
+              window.addEventListener('error', event => window.__runtimeErrors.push(event.message));
+              window.addEventListener('unhandledrejection', event => window.__runtimeErrors.push(String(event.reason)));
+              window.__mock = {writes: [], network: [], previews: []};
+              window.fetch = async (...args) => {
+                window.__mock.network.push(String(args[0]));
+                throw new Error('Real network access is disabled in this fixture');
+              };
+              window.__mock.workspace = {version: 1, state: {
+                serviceMode: 'canteen', branches: [{id: 'b1', name: 'Oimo · Столовая', status: 'active'}],
+                menuCategories: [], recipes: [], products: [], ingredients: window.__fixture.items, sales: [],
+                logisticsState: {branchStocks: {b1: {}}, batches: []},
+                posState: {customers: [], openOrders: [], cashMovements: []}
+              }};
+              window.__mock.preview = async payload => ({...window.__fixture.imported, fileName: payload.fileName});
+              window.AshkanaApi = {
+                me: async () => ({session: {role: 'branch', staffRole: 'pos_terminal', branchId: 'b1', registerId: 1, registerName: 'Основная касса', tenantSlug: 'supply-import-smoke'}}),
+                workspace: async () => window.__mock.workspace,
+                posOperator: async () => ({operator: window.__fixture.actor, shift: null}),
+                posOperators: async () => [window.__fixture.actor],
+                posProductionContext: async () => ({recipes: [], batches: [], productionShift: {
+                  shift: {id: 'shift-1', employeeId: window.__fixture.actor.id, employeeName: window.__fixture.actor.name, openedAt: '2026-10-06T08:00:00'}, counts: [], ingredientStocks: []
+                }}),
+                posTransferHistory: async () => ({actorId: window.__fixture.actor.id, documents: []}),
+                posReceiving: async () => ({documents: [], version: 1}),
+                posSupplyContext: async () => ({
+                  suppliers: [
+                    {id: 'supplier-1', name: 'Фрунзе Маркет', prices: {rice: 100, eggs: 10}},
+                    {id: 'supplier-2', name: 'Другой поставщик', prices: {rice: 999, eggs: 888, milk: 777, flour: 666, spice: 555}}
+                  ],
+                  items: window.__fixture.items, accounts: [{id: 'bank', name: 'Расчётный счёт', type: 'bank'}], supplies: []
+                }),
+                previewSupplyImport: async payload => {
+                  window.__mock.previews.push(payload);
+                  return window.__mock.preview(payload);
+                },
+                action: async (name, payload) => {
+                  window.__mock.writes.push({name, payload});
+                  throw new Error('This fixture never posts a real supply');
+                },
+                lockPos: async () => ({}), logout: async () => ({})
+              };
+            <\/script>
+            <script src="/company-settings.js"><\/script><script src="/custody.js"><\/script><script src="/app.js"><\/script></body>`);
+        await new Promise(resolve => {frame.addEventListener('load', resolve, {once: true}); frame.srcdoc = shell;});
+        const win = frame.contentWindow, doc = frame.contentDocument;
+        const q = selector => doc.querySelector(selector);
+        const rows = () => [...doc.querySelectorAll('#posSupplyImportRows [data-supply-import-row]')];
+        const selection = index => q(`[data-supply-import-row="${index}"] [data-supply-import-item]`);
+        const visible = element => Boolean(element && !element.hidden && !element.closest('.hidden') && win.getComputedStyle(element).display !== 'none');
+        const lines = () => [...doc.querySelectorAll('#posSupplyLines [data-supply-line]')].map(row => ({
+          itemId: row.querySelector('[data-supply-item]').value,
+          quantity: Number(row.querySelector('[data-supply-quantity]').value),
+          price: Number(row.querySelector('[data-supply-price]').value),
+        }));
+        const draft = () => JSON.stringify({items: lines(), fields: ['posSupplySupplier', 'posSupplyInvoice', 'posSupplyComment', 'posSupplyPaymentMode'].map(id => [id, q('#' + id).value])});
+        const map = (index, itemId) => {
+          const select = selection(index);
+          select.focus();
+          select.value = itemId;
+          select.dispatchEvent(new win.Event('change', {bubbles: true}));
+        };
+        const importedInputsPreserved = () => [...doc.querySelectorAll('#posSupplyLines [data-supply-line]')].every(row =>
+          row.dataset.supplyImported === 'true' && ['[data-supply-quantity]', '[data-supply-price]'].every(selector => {
+            const input = row.querySelector(selector);
+            return input.step === 'any' && input.checkValidity();
+          })
+        );
+        const makeFile = (name = 'накладная.csv') => new win.File(['Наименование,Количество,Цена\nРис,1,120'], name, {type: name.endsWith('.csv') ? 'text/csv' : 'application/vnd.openxmlformats-officedocument.spreadsheetml.sheet'});
+        await until(() => q('#operatorLock').classList.contains('hidden') && !q('#supplyButton').classList.contains('hidden'), 'production operator ready');
+        await win.openPosSupply();
+        check('production-supply-import-is-reachable', visible(q('#supplyDrawer')) && Boolean(q('#posSupplyImportFile')));
+        check('picker-accepts-xlsx-and-csv', q('#posSupplyImportFile').accept.includes('.xlsx') && q('#posSupplyImportFile').accept.includes('.csv'));
+        q('#posSupplyLines').innerHTML = '';
+        win.addPosSupplyLine({itemId: 'rice', quantity: 2, price: 100});
+        win.addPosSupplyLine({itemId: 'eggs', quantity: 12, price: 10});
+        q('#posSupplyInvoice').value = 'НК-0123';
+        q('#posSupplyComment').value = 'Поставка на кухню';
+        q('#posSupplyForm').dispatchEvent(new win.Event('input', {bubbles: true}));
+        const initialDraft = draft();
+
+        const fileInput = q('#posSupplyImportFile');
+        Object.defineProperty(fileInput, 'files', {configurable: true, value: [makeFile()]});
+        fileInput.dispatchEvent(new win.Event('change', {bubbles: true}));
+        await until(() => rows().length === 5 && win.__mock.previews.length === 1, 'file input preview');
+        delete fileInput.files;
+        check('file-picker-sends-file-and-original-name', win.__mock.previews[0].fileName === 'накладная.csv' && typeof win.__mock.previews[0].file === 'string' && win.__mock.previews[0].file.length > 0);
+        check('preview-shows-every-source-row', rows().length === imported.rows.length && visible(q('#posSupplyImportPreview')));
+        check('preview-preserves-draft-without-writes', draft() === initialDraft && win.__mock.writes.length === 0);
+        check('exact-matches-are-preselected-and-editable', selection(0).value === 'rice' && selection(1).value === 'rice' && selection(2).value === 'milk' && !selection(0).disabled);
+        check('preview-options-load-only-when-used', rows().every(row => row.querySelector('select').options.length <= 2));
+        selection(0).focus();
+        check('focusing-preview-select-loads-options-without-losing-match', selection(0).options.length === items.length + 1 && selection(0).value === 'rice');
+        check('unmatched-rows-block-apply', selection(3).value === '' && selection(4).value === '' && q('#posSupplyImportApply').disabled);
+        check('preview-summary-has-file-total', q('#posSupplyImportSummary').textContent.replace(/\s/g, '').includes('740'));
+        check('malicious-source-name-is-text-only', q('#posSupplyImportRows').textContent.includes(maliciousName) && !q('#posSupplyImportRows img') && !win.__supplyImportXss);
+        await win.applyPosSupplyImport();
+        check('direct-apply-cannot-drop-unknown-rows', draft() === initialDraft && rows().length === 5);
+        map(3, 'flour');
+        check('one-unmatched-row-still-blocks-apply', q('#posSupplyImportApply').disabled);
+        map(4, 'spice');
+        check('manual-mapping-enables-complete-import', !q('#posSupplyImportApply').disabled);
+        await win.savePosSupply({preventDefault() {}});
+        check('unapplied-preview-blocks-final-supply-save', q('#savePosSupplyButton').disabled && win.__mock.writes.length === 0);
+        map(3, 'eggs');
+        check('incompatible-kg-to-piece-unit-blocks-apply', q('#posSupplyImportApply').disabled);
+        await win.applyPosSupplyImport();
+        check('unit-conflict-preserves-draft', draft() === initialDraft && win.__mock.writes.length === 0);
+        map(3, 'flour');
+        await win.applyPosSupplyImport();
+        const merged = new Map(lines().map(row => [row.itemId, row]));
+        check('apply-adds-to-draft-and-merges-duplicate-items', lines().length === 5 && merged.size === 5);
+        check('rice-conversion-and-weighted-price-include-existing-line', merged.get('rice')?.quantity === 5 && merged.get('rice')?.price === 120);
+        check('millilitres-convert-to-litres-and-unit-price', merged.get('milk')?.quantity === 0.5 && merged.get('milk')?.price === 80);
+        check('existing-unrelated-line-is-preserved', merged.get('eggs')?.quantity === 12 && merged.get('eggs')?.price === 10);
+        check('all-manually-mapped-items-are-included', merged.get('flour')?.quantity === 2 && merged.get('flour')?.price === 50 && merged.get('spice')?.quantity === 100 && merged.get('spice')?.price === 2);
+        check('conversion-and-merge-preserve-total', Math.abs(win.posSupplyTotal() - 1060) < 0.001);
+        check('apply-preserves-supplier-and-document-fields', q('#posSupplySupplier').value === 'supplier-1' && q('#posSupplyInvoice').value === 'НК-0123' && q('#posSupplyComment').value === 'Поставка на кухню');
+        check('apply-requires-separate-final-supply-confirmation', win.__mock.writes.length === 0 && !q('#savePosSupplyButton').disabled && visible(q('#supplyDrawer')));
+        const importedDraft = draft();
+        const importedItems = JSON.stringify(lines());
+        check('imported-lines-keep-unrestricted-number-precision', importedInputsPreserved());
+        const saved = JSON.parse(win.sessionStorage.getItem(win.supplyDraftKey()));
+        check('saved-draft-retains-import-metadata-and-numbers', saved.rows.length === 5 && saved.rows.every(row => row.imported) &&
+          JSON.stringify(saved.rows.map(row => ({itemId: row.itemId, quantity: Number(row.quantity), price: Number(row.price)}))) === importedItems);
+        q('#posSupplySupplier').value = 'supplier-2';
+        q('#posSupplySupplier').dispatchEvent(new win.Event('change', {bubbles: true}));
+        check('supplier-change-preserves-imported-quantities-and-prices', q('#posSupplySupplier').value === 'supplier-2' && JSON.stringify(lines()) === importedItems && Math.abs(win.posSupplyTotal() - 1060) < 0.001);
+        const switchedDraft = draft();
+        q('#closeSupplyButton').click();
+        await win.openPosSupply();
+        check('reopening-restores-imported-draft-with-selected-supplier', draft() === switchedDraft && q('#posSupplySupplier').value === 'supplier-2');
+        check('reopened-imported-inputs-preserve-values-and-step-any', JSON.stringify(lines()) === importedItems && importedInputsPreserved());
+        q('#posSupplySupplier').value = 'supplier-1';
+        q('#posSupplySupplier').dispatchEvent(new win.Event('change', {bubbles: true}));
+        check('supplier-change-after-reopen-still-preserves-imported-prices', draft() === importedDraft);
+
+        await win.importPosSupplyFile(makeFile('повтор.xlsx'));
+        check('xlsx-preview-also-sends-original-filename', win.__mock.previews.at(-1).fileName === 'повтор.xlsx' && rows().length === 5);
+        q('#posSupplyImportCancel').click();
+        check('cancel-only-discards-import-preview', !visible(q('#posSupplyImportPreview')) && draft() === importedDraft && win.__mock.writes.length === 0);
+        win.__mock.preview = async () => {throw new Error('Тест: в файле не найдены количество и цена');};
+        await win.importPosSupplyFile(makeFile('ошибка.csv'));
+        check('parser-error-is-visible-and-draft-safe', q('#posSupplyImportError').textContent.includes('не найдены количество и цена') && draft() === importedDraft);
+        check('parser-error-does-not-leave-stale-applicable-rows', !visible(q('#posSupplyImportPreview')) || q('#posSupplyImportApply').disabled);
+
+        let releaseOld;
+        win.__mock.preview = () => new Promise(resolve => {releaseOld = resolve;});
+        const previewsBefore = win.__mock.previews.length;
+        const pendingOld = win.importPosSupplyFile(makeFile('старый-ответ.csv'));
+        await until(() => Boolean(releaseOld), 'first preview pending');
+        await win.importPosSupplyFile(makeFile('двойной-клик.csv'));
+        check('repeat-import-is-guarded-while-busy', win.__mock.previews.length === previewsBefore + 1);
+        q('#closeSupplyButton').click();
+        await win.openPosSupply();
+        check('close-and-reopen-keep-draft', draft() === importedDraft);
+        const fresh = {fileName: 'новый-файл.xlsx', total: 160, rows: [
+          {row: 2, name: 'Свежий ответ: молоко', quantity: 2, price: 80, unit: 'л', itemId: 'milk', total: 160},
+        ]};
+        win.__mock.preview = async () => fresh;
+        await win.importPosSupplyFile(makeFile(fresh.fileName));
+        check('reopened-drawer-can-start-new-preview', rows().length === 1 && q('#posSupplyImportRows').textContent.includes('Свежий ответ'));
+        releaseOld(imported);
+        await pendingOld;
+        check('late-old-response-cannot-replace-reopened-preview', rows().length === 1 && q('#posSupplyImportRows').textContent.includes('Свежий ответ') && !q('#posSupplyImportRows').textContent.includes(maliciousName));
+        check('stale-response-does-not-change-draft-or-write', draft() === importedDraft && win.__mock.writes.length === 0);
+        q('#posSupplyImportCancel').click();
+
+        win.__mock.preview = async payload => ({...imported, fileName: payload.fileName});
+        await win.importPosSupplyFile(makeFile('накладная-производства.xlsx'));
+        map(3, 'flour');
+        map(4, 'spice');
+        const panel = q('#supplyDrawer .supply-drawer');
+        const scroll = q('#supplyDrawer .supply-scroll-body');
+        const header = panel.querySelector('.modal-header');
+        const footer = panel.querySelector('.supply-form-footer');
+        const fitsHorizontally = node => {
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.left >= -1 && rect.right <= win.innerWidth + 1 && node.scrollWidth <= node.clientWidth + 1;
+        };
+        const fitsVertically = node => {
+          const rect = node.getBoundingClientRect();
+          return rect.height > 0 && rect.top >= -1 && rect.bottom <= win.innerHeight + 1;
+        };
+        for (const [viewportWidth, viewportHeight] of [[320, 700], [440, 900], [1280, 900]]) {
+          frame.style.width = `${viewportWidth}px`;
+          frame.style.height = `${viewportHeight}px`;
+          scroll.scrollTop = 0;
+          await pause(80);
+          const size = `${viewportWidth}x${viewportHeight}`;
+          check(`import-has-no-horizontal-overflow-${size}`, [panel, scroll, q('#posSupplyImportPreview'), ...rows(), ...rows().map(row => row.querySelector('[data-supply-import-item]'))].every(fitsHorizontally) && doc.documentElement.scrollWidth <= win.innerWidth + 1);
+          check(`supply-header-and-confirmation-stay-visible-${size}`, [header, footer, q('#savePosSupplyButton')].every(fitsVertically));
+          const headerTop = header.getBoundingClientRect().top;
+          const footerTop = footer.getBoundingClientRect().top;
+          q('#posSupplyImportApply').scrollIntoView({block: 'center'});
+          await pause(80);
+          const applyRect = q('#posSupplyImportApply').getBoundingClientRect();
+          const scrollRect = scroll.getBoundingClientRect();
+          check(`import-apply-is-reachable-above-footer-${size}`, applyRect.top >= scrollRect.top - 1 && applyRect.bottom <= scrollRect.bottom + 1 && applyRect.bottom <= footer.getBoundingClientRect().top + 1);
+          check(`preview-scroll-does-not-move-supply-frame-${size}`, Math.abs(header.getBoundingClientRect().top - headerTop) <= 1 && Math.abs(footer.getBoundingClientRect().top - footerTop) <= 1);
+        }
+        frame.style.width = `${width}px`;
+        frame.style.height = `${height}px`;
+        q('#posSupplyImportPreview').scrollIntoView({block: 'start'});
+        doc.activeElement?.blur();
+        await pause(80);
+        check('preview-and-draft-only-never-post-supply', win.__mock.writes.length === 0);
+        check('fixture-never-uses-real-network', win.__mock.network.length === 0);
+        check('runtime-no-errors', win.__runtimeErrors.length === 0);
+        document.body.dataset.testComplete = 'true';
+      } catch (error) {
+        check(`runtime:${error.message}`, false);
+        document.body.dataset.testComplete = 'true';
+      }
+    }
+    run();
+  </script>
+</body>
+</html>

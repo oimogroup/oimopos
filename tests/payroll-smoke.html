@@ -1,0 +1,53 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Payroll UI checks</title><pre id="results" style="white-space:pre-wrap">RUNNING</pre><iframe id="app" src="/admin?test=1#finance/payroll" style="width:1440px;height:1000px;position:fixed;left:-10000px"></iframe><script>
+(async()=>{
+ const checks=[],check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');},pause=()=>new Promise(r=>setTimeout(r,20));
+ try{
+  const frame=document.querySelector('#app');await new Promise(r=>frame.addEventListener('load',r,{once:true}));
+  const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s),posts=[];
+  const context={start:'2026-10-01',end:'2026-10-20',companyToday:'2026-10-21',version:10,currency:'KGS',timezone:'Asia/Almaty',total:1000,rows:[{employeeId:'1',employeeName:'Анна <официант>',staffRole:'waiter',branchId:'b1',hours:8,shifts:1,fixed:700,commission:300,adjustment:0,total:1000}],employees:[{id:1,display_name:'Анна <официант>',staff_role:'waiter',branch_id:'b1',is_active:true}],policies:[],runs:[],payments:[],events:[],workShifts:[],openShifts:[],balances:{},accounts:[{id:'finance-bank',name:'Банк',type:'bank',status:'active'}],categories:['Салаты','Напитки']};
+  const snapshot=w.eval('JSON.parse(JSON.stringify({branches,ingredients,recipes,products,preparations,menuCategories,ingredientCategories,stations,logisticsState,financeState,sales:[],companySettings:{general:{currency:"KGS",timezone:"Asia/Almaty"}}}))');
+  w.AshkanaApi.payroll=async()=>JSON.parse(JSON.stringify(context));
+  let fail=false;
+  w.AshkanaApi.action=async(action,payload)=>{
+   posts.push({action,payload});if(fail)throw new Error('Данные изменились. Обновите расчёт.');
+   if(action==='payroll.policy')context.policies.push({...payload,id:'policy1',sequence:1,employeeName:context.employees[0].display_name});
+   if(action==='payroll.time')context.workShifts.push({...payload,id:'time1',employeeName:context.employees[0].display_name,source:'owner'});
+   if(action==='payroll.approve'){context.runs.push({id:'run1',start:context.start,end:context.end,createdAt:'2026-10-21T06:00:00Z',total:1000,rows:context.rows.map(r=>({...r,paid:0}))});context.balances={'1':1000};}
+   if(action==='payroll.pay'){context.runs[0].rows[0].paid+=payload.amount;context.balances['1']-=payload.amount;context.payments.push({id:'payment1',employeeId:'1',employeeName:context.employees[0].display_name,amount:payload.amount,occurredAt:'2026-10-21T06:00:00Z',reason:payload.reason});}
+   if(action==='payroll.reverse'){context.payments[0].reversedAt='2026-10-21T07:00:00Z';context.payments[0].reversalReason=payload.reason;context.runs[0].rows[0].paid=0;context.balances['1']=1000;}
+   return {version:11,state:snapshot,entity:{id:'fixture'}};
+  };
+  await w.OimoPayroll.open();
+  check('payroll-route-opens',q('#finance-pane-payroll').classList.contains('active'));
+  check('employee-name-escaped',q('#payrollRows').textContent.includes('Анна <официант>')&&!q('#payrollRows официант'));
+  check('preview-is-visible',q('#payrollRows').textContent.includes('1 000')||q('#payrollRows').textContent.includes('1 000'));
+  check('approval-requires-reviewed-period',!q('#payrollApprove').disabled);
+  q('[data-payroll-policy]').click();const form=q('#payrollForm');form.elements.fixedMode.value='shift';form.elements.fixedAmount.value='500';form.elements.personalPercent.value='5';form.elements.cat0personal.value='7';form.requestSubmit();
+  for(let i=0;i<80&&q('#payrollDialog').open;i++)await pause();
+  check('rates-sent-to-server',posts[0]?.action==='payroll.policy'&&posts[0].payload.fixedAmount===500&&posts[0].payload.categoryRates['Салаты'].personal===7);
+  q('#payrollAddTime').click();
+  check('manual-work-time-form-complete',!!form.elements.openedAt&&!!form.elements.closedAt&&!!form.elements.reason);
+  form.elements.openedAt.value='2026-10-19T09:00';form.elements.closedAt.value='2026-10-19T17:00';form.elements.reason.value='Подтверждённый табель';form.requestSubmit();
+  for(let i=0;i<80&&q('#payrollDialog').open;i++)await pause();
+  check('manual-time-is-sent-with-offset',posts.at(-1).action==='payroll.time'&&posts.at(-1).payload.openedAt.endsWith('Z'));
+  q('#payrollApprove').click();form.requestSubmit();
+  for(let i=0;i<80&&q('#payrollDialog').open;i++)await pause();
+  check('approval-includes-server-version',posts.at(-1).action==='payroll.approve'&&posts.at(-1).payload.expectedVersion===10);
+  check('approved-run-shown-and-period-locked',!!q('[data-payroll-pay]')&&q('#payrollApprove').disabled);
+  q('[data-payroll-pay]').click();form.elements.amount.value='300';form.elements.accountId.value='finance-bank';form.requestSubmit();
+  for(let i=0;i<80&&q('#payrollDialog').open;i++)await pause();
+  check('partial-payment-server-action',posts.at(-1).action==='payroll.pay'&&posts.at(-1).payload.amount===300);
+  check('payment-history-visible',!!q('[data-payroll-reverse]'));
+  q('[data-payroll-reverse]').click();form.elements.accountId.value='finance-bank';form.elements.reason.value='Возврат ошибочной выплаты';form.requestSubmit();
+  for(let i=0;i<80&&q('#payrollDialog').open;i++)await pause();
+  check('payment-reversal-is-a-document',posts.at(-1).action==='payroll.reverse'&&!q('[data-payroll-reverse]'));
+  fail=true;q('[data-payroll-adjust]').click();form.elements.amount.value='100';form.elements.reason.value='Проверка ошибки';form.requestSubmit();
+  for(let i=0;i<80&&q('#payrollDialogSubmit').disabled;i++)await pause();
+  check('rejected-operation-stays-reviewable',q('#payrollDialog').open&&q('#payrollFormError').textContent.includes('Обновите'));
+  q('#payrollDialogCancel').click();q('#payrollFrom').value='2026-09-01';q('#payrollFrom').dispatchEvent(new w.Event('change'));
+  check('changed-period-needs-refresh',q('#payrollApprove').disabled&&q('#payrollExport').disabled);
+  check('test-mode-no-real-posts',posts.every(r=>r.action.startsWith('payroll.')));
+ }catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oimo POS — касса заведения</title>
-    <link rel="stylesheet" href="styles.css?v=receipt-scroll-50" />
-    <link rel="stylesheet" href="minimal.css?v=sales-report-26" />
-      <link rel="stylesheet" href="oimo.css?v=11" />
+    <link rel="stylesheet" href="styles.css?v=offline-1" />
+    <link rel="stylesheet" href="minimal.css?v=actions-15" />
+      <link rel="stylesheet" href="oimo.css?v=clear-ux-1" />
   </head>
   <body data-ui="pos">
     <svg class="ui-icon-sprite" aria-hidden="true">
@@ -16,6 +16,8 @@
       <symbol id="pos-close" viewBox="0 0 24 24"><path d="m6 6 12 12M18 6 6 18"/></symbol>
       <symbol id="pos-tray" viewBox="0 0 24 24"><path d="M3 18h18M5 18a7 7 0 0 1 14 0M12 8V5m-2 0h4"/></symbol>
       <symbol id="pos-plus" viewBox="0 0 24 24"><path d="M12 5v14M5 12h14"/></symbol>
+      <symbol id="pos-chevron" viewBox="0 0 24 24"><path d="m7 9 5 5 5-5"/></symbol>
+      <symbol id="pos-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
       <symbol id="pos-card" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><path d="M3 10h18M7 15h3"/></symbol>
       <symbol id="pos-cash" viewBox="0 0 24 24"><rect x="3" y="5" width="18" height="14" rx="2"/><circle cx="12" cy="12" r="3"/><path d="M7 8H6v1m11-1h1v1M7 16H6v-1m11 1h1v-1"/></symbol>
       <symbol id="pos-qr" viewBox="0 0 24 24"><path d="M4 4h6v6H4zM14 4h6v6h-6zM4 14h6v6H4zM14 14h2m4 0v2m-6 4h2m2-4h2v4h-4v-2"/></symbol>
@@ -25,6 +27,10 @@
       <symbol id="pos-wallet" viewBox="0 0 24 24"><path d="M4 6h15a2 2 0 0 1 2 2v10H4a2 2 0 0 1-2-2V6a2 2 0 0 1 2-2h13v2m0 5h4v4h-4a2 2 0 0 1 0-4Z"/></symbol>
       <symbol id="pos-pause" viewBox="0 0 24 24"><path d="M8 5v14m8-14v14"/></symbol>
       <symbol id="pos-supply" viewBox="0 0 24 24"><path d="M3 7h11v10H3zM14 10h4l3 3v4h-7zM6 17a2 2 0 1 0 4 0m6 0a2 2 0 1 0 4 0M6 11h5"/></symbol>
+      <symbol id="pos-printer" viewBox="0 0 24 24"><path d="M6 9V3h12v6M6 18H3V9h18v9h-3M6 14h12v7H6zM17 12h1"/></symbol>
+      <symbol id="pos-download" viewBox="0 0 24 24"><path d="M12 3v13m-5-5 5 5 5-5M4 17v4h16v-4"/></symbol>
+      <symbol id="pos-upload" viewBox="0 0 24 24"><path d="M12 16V3m-5 5 5-5 5 5M4 15v6h16v-6"/></symbol>
+      <symbol id="pos-camera" viewBox="0 0 24 24"><path d="M3 7h4l2-3h6l2 3h4v13H3z"/><circle cx="12" cy="13" r="4"/></symbol>
     </svg>
     <div class="app-shell">
       <header class="topbar">
@@ -80,19 +86,29 @@
             <small id="cashierActionCaption">Сменить кассира</small>
           </div>
         </button>
-        <button class="topbar-action hidden" id="closeProductionTerminal" type="button" title="Заблокировать терминал и перейти к ПИН-коду">Закрыть терминал</button>
+        <button class="topbar-action" id="workShiftButton" type="button">Рабочее время</button>
         <button class="topbar-action" id="terminalFunctionsButton" type="button" aria-label="Функции терминала">☰ Функции</button><time class="clock" id="clock">--:--</time>
+        <button class="topbar-action hidden" id="closeProductionTerminal" type="button" aria-label="Закрыть терминал" title="Закрыть терминал — перейти к ПИН-коду"><svg class="ui-icon" aria-hidden="true"><use href="#pos-close"/></svg></button>
       </header>
 
+      <div class="offline-strip"><button type="button" id="offlineStatusButton" aria-controls="offlineDetails">Проверяем автономную кассу…</button></div>
+
       <section id="productionHome" class="production-home hidden">
-        <p class="eyebrow">Рабочее место кухни</p>
         <h1>Производство и раздача</h1>
-        <p class="production-home-intro">Готовьте, передавайте блюда и принимайте поставки. Все движения сохраняются в журнале.</p>
-        <div class="production-shift-strip"><div><strong id="productionShiftStatus">Проверяем смену…</strong><p id="productionShiftCaption"></p></div><button id="productionShiftButton" class="topbar-action" type="button">Смена производства</button></div>
-        <div class="production-home-actions">
-          <button class="production-action-card" type="button" onclick="openPosProduction()"><svg class="ui-icon"><use href="#pos-tray"/></svg><strong>Передать на раздачу</strong><span>Выберите блюдо и количество — касса получит уведомление</span><b aria-hidden="true">→</b></button>
-          <button class="production-action-card" type="button" onclick="openPosSupply()"><svg class="ui-icon"><use href="#pos-supply"/></svg><strong>Принять поставку</strong><span>Добавьте ингредиенты на склад по накладной</span><b aria-hidden="true">→</b></button>
+        <div class="production-shift-strip">
+          <svg class="ui-icon production-shift-icon" aria-hidden="true"><use href="#pos-orders"/></svg>
+          <div class="production-shift-info"><strong id="productionShiftStatus">Проверяем смену…</strong><p id="productionShiftCaption"></p></div>
+          <button id="productionShiftButton" class="secondary-button" type="button">Смена производства</button>
         </div>
+        <div class="production-home-actions">
+          <button class="production-action-card" type="button" onclick="openPosProduction()"><svg class="ui-icon" aria-hidden="true"><use href="#pos-tray"/></svg><strong>Передать на раздачу</strong><b aria-hidden="true">→</b></button>
+          <button class="production-action-card" type="button" onclick="openPosSupply()"><svg class="ui-icon" aria-hidden="true"><use href="#pos-supply"/></svg><strong>Принять поставку</strong><b aria-hidden="true">→</b></button>
+        </div>
+        <section class="transfer-history-home" aria-labelledby="productionHistoryTitle">
+          <header><h2 id="productionHistoryTitle">Передачи за смену</h2><button type="button" class="secondary-button" onclick="openTransferHistory()">История смен <span aria-hidden="true">→</span></button></header>
+          <p id="productionHistoryMessage" class="transfer-history-message" role="status"></p>
+          <div id="productionHistoryList"></div>
+        </section>
       </section>
       <main class="workspace">
         <section class="catalog-panel">
@@ -171,15 +187,23 @@
       </main>
     </div>
 
+    <dialog id="workTimeDialog" class="work-time-dialog"><header><h2>Рабочее время</h2><button class="icon-button" id="workTimeClose" type="button" aria-label="Закрыть">×</button></header><p id="workTimeEmployee"></p><p id="workTimeState" role="status" aria-live="polite">Загрузка…</p><p class="printer-help">Отмечайте фактическое начало и окончание рабочего дня. Рабочая смена и кассовая смена учитываются отдельно. Выход из кассы не заканчивает рабочий день.</p><p id="workTimeError" role="alert"></p><button id="workTimeRefresh" class="secondary-button" type="button">Обновить статус</button><button type="button" id="workTimeAction" class="primary-button" disabled>Загрузка…</button></dialog>
     <div class="modal-backdrop hidden" id="terminalFunctions" role="dialog" aria-modal="true" aria-labelledby="functionsTitle">
-      <section class="modal functions-modal"><div class="modal-header"><h2 id="functionsTitle">Функции</h2><button class="icon-button" id="closeFunctions" type="button" aria-label="Закрыть">×</button></div>
-      <button type="button" id="salesReportButton">Отчёт по продажам</button><h3>Учёт и операции</h3><div class="function-grid" id="functionOperations"></div>
-      <h3>Терминал</h3><div class="function-grid"><button type="button" id="functionSettings">Настройки и печать</button><button type="button" id="functionSync">Обновить данные</button><button type="button" id="functionLock">Закрыть терминал · ПИН</button></div></section>
+      <section class="modal functions-modal"><div class="modal-header"><h2 id="functionsTitle">Действия кассы</h2><button class="icon-button" id="closeFunctions" type="button" aria-label="Закрыть">×</button></div>
+      <div class="function-grid"><button type="button" id="salesReportButton">Отчёт по продажам</button><button type="button" id="salesImportButton">Импорт продаж из Excel</button></div><h3>Склад и смена</h3><div class="function-grid" id="functionOperations"></div>
+      <h3>Терминал</h3><div class="function-grid"><button type="button" id="functionSettings">Настройки и печать</button><button type="button" id="functionSync">Обновить данные</button><a href="/docs/user-guide/#cashier-day" target="_blank" rel="noopener" class="function-guide-link">Руководство со скриншотами ↗</a></div></section>
+    </div>
+    <div class="modal-backdrop hidden" id="salesImportModal" role="dialog" aria-modal="true" aria-labelledby="salesImportTitle">
+      <section class="modal sales-import-modal"><header class="modal-header"><h2 id="salesImportTitle">Импорт продаж</h2><button type="button" class="icon-button" id="closeSalesImport" aria-label="Закрыть">×</button></header>
+      <div class="sales-import-upload"><label for="salesImportFile">Файл продаж <span>Excel · .xlsx</span></label>
+      <input id="salesImportFile" type="file" accept=".xlsx" aria-label="Файл продаж Excel"></div>
+      <p id="salesImportError" role="alert"></p><div id="salesImportRows"><p class="sales-import-empty">Выберите файл, чтобы проверить блюда перед списанием</p></div>
+      <footer><span id="salesImportSummary">Ничего не выбрано</span><button id="salesImportCommit" type="button" class="primary-button" disabled>Списать выбранные продажи</button></footer></section>
     </div>
     <div class="modal-backdrop hidden" id="salesReportModal" role="dialog" aria-modal="true" aria-labelledby="salesReportTitle">
       <section class="modal sales-report-modal"><header class="modal-header"><h2 id="salesReportTitle">Отчёт по продажам</h2><button type="button" class="icon-button" id="closeSalesReport" aria-label="Закрыть">×</button></header>
-      <form id="salesReportForm" class="sales-report-filters"><label>Начиная с<input id="reportFrom" type="datetime-local" required></label><label>Заканчивая<input id="reportTo" type="datetime-local" required></label><label>Кассир<select id="reportCashier"><option value="">Все кассиры</option></select></label><label class="report-products"><input id="reportProducts" type="checkbox" checked> Продажи по товарам</label><button type="submit" class="primary-button">Составить отчёт</button></form>
-      <p id="reportError" role="alert"></p><div id="salesReportResult"></div><footer id="salesReportActions" class="hidden"><button type="button" id="reportPrint">Распечатать</button><button type="button" id="reportExcel" class="primary-button">Сохранить Excel</button></footer></section>
+      <div class="sales-report-content"><form id="salesReportForm" class="sales-report-filters"><label>Начиная с<input id="reportFrom" type="datetime-local" required></label><label>Заканчивая<input id="reportTo" type="datetime-local" required></label><label>Кассир<select id="reportCashier"><option value="">Все кассиры</option></select></label><label class="report-products"><input id="reportProducts" type="checkbox" checked> Продажи по товарам</label><button type="submit" class="primary-button">Составить отчёт</button></form>
+      <p id="reportError" role="alert"></p><div id="salesReportResult"></div></div><footer id="salesReportActions" class="hidden"><button type="button" id="reportPrint" class="secondary-button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-printer"/></svg><span>Распечатать</span></button><button type="button" id="reportExcel" class="primary-button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-download"/></svg><span>Сохранить Excel</span></button></footer></section>
     </div>
     <div class="modal-backdrop hidden" id="paymentModal" role="dialog" aria-modal="true" aria-labelledby="paymentTitle">
       <section class="modal payment-modal">
@@ -214,7 +238,8 @@
     <div class="drawer-backdrop hidden" id="historyDrawer">
       <aside class="history-drawer" role="dialog" aria-modal="true" aria-labelledby="archiveTitle">
         <header class="archive-header"><button id="closeHistoryButton" type="button">← Назад</button><h2 id="archiveTitle">Архив чеков</h2></header>
-        <div class="archive-toolbar"><div id="archiveFilters" role="group" aria-label="Фильтр чеков"><button data-archive-filter="all" class="active" type="button">Все чеки</button><button data-archive-filter="cash" type="button">Наличные</button><button data-archive-filter="card" type="button">Карта</button><button data-archive-filter="qr" type="button">QR</button><button data-archive-filter="refund" type="button">Возвраты</button></div><input id="archiveSearch" type="search" aria-label="Поиск чеков" placeholder="Номер или блюдо"><input id="archiveDate" type="date" aria-label="Дата чеков"><button id="archiveAllDates" type="button">Все даты</button></div>
+        <div class="archive-toolbar"><div id="archiveFilters" role="group" aria-label="Фильтр чеков"><button data-archive-filter="all" class="active" type="button">Все чеки</button><button data-archive-filter="cash" type="button">Наличные</button><button data-archive-filter="card" type="button">Карта</button><button data-archive-filter="qr" type="button">QR</button><button data-archive-filter="refund" type="button">Возвраты</button></div><input id="archiveSearch" type="search" aria-label="Поиск чеков" placeholder="Номер или блюдо"><input id="archiveDate" type="date" aria-label="Дата чеков"><button id="archiveAllDates" class="secondary-button" type="button">Все даты</button></div>
+        <div class="archive-shift-bar"><label>Смена<select id="archiveShift" aria-label="Смена продаж"><option value="all">Все смены</option></select></label><span id="archiveShiftMessage" role="status"></span></div>
         <div class="archive-body"><div class="archive-sidebar"><div class="history-list" id="historyList"></div><footer class="archive-summary"><span>Чеков: <b id="salesCount">0</b></span><strong id="salesTotal">0 сом</strong></footer></div><section id="archiveDetails" class="archive-details" aria-live="polite"></section></div>
       </aside>
     </div>
@@ -231,7 +256,7 @@
       <aside class="poster-drawer">
         <div class="modal-header"><div><p class="eyebrow">Текущий чек</p><h2>Гость и скидка</h2></div><button class="icon-button" id="closeCustomerButton" type="button" aria-label="Закрыть"><svg class="ui-icon"><use href="#pos-close"/></svg></button></div>
         <label class="drawer-search"><svg class="ui-icon"><use href="#pos-search"/></svg><input id="customerSearch" type="search" placeholder="Имя или телефон" /></label>
-        <button class="drawer-neutral-action" id="clearCustomerButton" type="button">Продолжить без гостя</button>
+        <button class="secondary-button drawer-neutral-action" id="clearCustomerButton" type="button">Продолжить без гостя</button>
         <div class="customer-list" id="customerList"></div>
         <form class="drawer-form" id="customerForm">
           <header><strong>Новый гость</strong><small>Скидка будет применена к текущему чеку</small></header>
@@ -263,13 +288,42 @@
           <label><span>Комментарий</span><input id="cashOperationComment" maxlength="240" placeholder="Основание операции" /></label>
           <div class="drawer-form-actions"><button class="secondary-button" id="cancelCashOperation" type="button">Отмена</button><button class="terminal-primary" type="submit">Провести</button></div>
         </form>
-        <section class="cash-movement-section"><header><strong>Операции смены</strong><button id="printXReportButton" type="button">Печать X‑отчёта</button></header><div id="cashMovementList"></div></section>
-        <button class="drawer-neutral-action" id="openTerminalSettingsButton" type="button">Настройки терминала и печати</button>
-        <button class="close-shift-action" id="openShiftCloseButton" type="button">Закрыть смену</button>
+        <section class="cash-movement-section"><header><strong>Операции смены</strong><button id="printXReportButton" class="secondary-button" type="button">Печать X‑отчёта</button></header><div id="cashMovementList"></div></section>
+        <button class="secondary-button drawer-neutral-action" id="openTerminalSettingsButton" type="button">Настройки терминала и печати</button>
+        <button class="secondary-button close-shift-action" id="openShiftCloseButton" type="button">Закрыть смену</button>
       </aside>
     </div>
 
-    <div class="drawer-backdrop hidden" id="productionShiftDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="productionShiftTitle"><header><h2 id="productionShiftTitle">Смена производства</h2><button class="icon-button" type="button" onclick="closeProductionShiftScreen()" aria-label="Закрыть">×</button></header><p class="production-hint">Остатки ингредиентов по учёту склада кухни.</p><form id="productionShiftForm"><h3>Остатки ингредиентов</h3><div id="productionIngredientStocks"></div><section id="productionPreparedStocks"><h3>Готовые блюда на кухне</h3><p id="productionShiftStockTotal" class="shift-stock-caption"></p><div id="productionShiftCounts"></div></section><p id="productionShiftError" role="alert"></p><button id="productionShiftSubmit" class="pay-button" type="submit">Принять смену</button></form></aside></div>
+    <div class="drawer-backdrop hidden" id="productionShiftDrawer">
+      <aside class="poster-drawer production-shift-panel" role="dialog" aria-modal="true" aria-labelledby="productionShiftTitle">
+        <header class="production-shift-header">
+          <div><h2 id="productionShiftTitle">Принять смену</h2><p id="productionShiftContext"></p></div>
+          <button class="icon-button" type="button" onclick="closeProductionShiftScreen()" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="#pos-close"/></svg></button>
+        </header>
+        <form id="productionShiftForm">
+          <div class="production-count-tools">
+            <label class="production-count-search"><svg class="ui-icon" aria-hidden="true"><use href="#pos-search"/></svg><input id="productionShiftSearch" type="search" placeholder="Найти ингредиент или блюдо" aria-label="Поиск по остаткам" autocomplete="off"></label>
+          </div>
+          <div class="production-count-columns" aria-hidden="true"><span>Наименование</span><span>По учёту</span><span>Факт</span></div>
+          <div id="productionShiftScroll" tabindex="0" role="region" aria-label="Остатки кухни">
+            <section id="productionIngredientSection" aria-labelledby="productionIngredientHeading">
+              <div class="production-count-group"><h3 id="productionIngredientHeading">Ингредиенты и товары</h3><span id="productionIngredientTotal"></span></div>
+              <div id="productionIngredientStocks"></div>
+            </section>
+            <section id="productionPreparedStocks" aria-labelledby="productionPreparedHeading">
+              <div class="production-count-group"><h3 id="productionPreparedHeading">Готовые блюда</h3><span id="productionShiftStockTotal"></span></div>
+              <div id="productionShiftCounts"></div>
+            </section>
+            <p id="productionCountEmpty" class="production-count-empty hidden" role="status">Ничего не найдено</p>
+          </div>
+          <footer id="productionShiftFooter">
+            <p id="productionShiftError" role="alert"></p>
+            <div id="productionShiftSummary" role="status"></div>
+            <button id="productionShiftSubmit" class="terminal-primary" type="submit">Принять смену</button>
+          </footer>
+        </form>
+      </aside>
+    </div>
     <div class="drawer-backdrop hidden" id="servingSurplusDrawer">
       <aside class="poster-drawer surplus-drawer" role="dialog" aria-modal="true" aria-labelledby="servingSurplusTitle">
         <header class="modal-header"><h2 id="servingSurplusTitle">Излишек на раздаче</h2><button class="icon-button" type="button" onclick="closeDrawer('#servingSurplusDrawer')" aria-label="Закрыть">×</button></header>
@@ -283,9 +337,31 @@
         <footer class="transfer-footer"><button class="terminal-primary" id="servingSurplusSubmit" type="submit" form="servingSurplusForm">Отправить руководителю</button></footer>
       </aside>
     </div>
-    <div class="drawer-backdrop hidden" id="servingWriteoffDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="servingWriteoffTitle"><header class="modal-header"><div><p class="eyebrow">Раздача</p><h2 id="servingWriteoffTitle">Списание блюд</h2></div><button class="icon-button" type="button" onclick="closeDrawer('#servingWriteoffDrawer')" aria-label="Закрыть">×</button></header><p class="production-hint">Количество сразу исключается из продажи. Окончательное списание подтверждает руководитель.</p><form id="servingWriteoffForm" class="receiving-card"><fieldset id="servingWriteoffFields"><label>Блюдо и партия<select id="servingWriteoffLot" required></select></label><p id="servingWriteoffAvailable" class="production-hint"></p><div class="production-quantity"><label>Количество<input id="servingWriteoffQuantity" type="number" required min="0.001" step="0.001" inputmode="decimal"></label><label>Единица<select id="servingWriteoffUnit"><option value="portions">порции / шт.</option><option value="kg">кг</option></select></label></div><label>Причина<select id="servingWriteoffReason" required><option value="">Выберите причину</option><option>Истёк срок хранения</option><option>Порча блюда</option><option>Брак приготовления</option><option>Остаток в конце дня</option><option>Другая причина</option></select></label><label>Комментарий<textarea id="servingWriteoffComment" maxlength="300" placeholder="Уточните обстоятельства списания"></textarea></label></fieldset><p id="servingWriteoffError" role="alert"></p><button class="pay-button" id="servingWriteoffSubmit" type="submit">Отправить на подтверждение</button></form><h3>Заявки на списание</h3><div id="servingWriteoffHistory"></div></aside></div>
-    <div id="receivingNotice" class="receiving-notice hidden" role="status"><span>С кухни поступили блюда. Подтвердите приёмку, чтобы начать продажу.</span><button type="button" onclick="openReceiving()">Посмотреть</button></div>
-    <div class="drawer-backdrop hidden" id="receivingDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="receivingTitle"><header class="modal-header"><h2 id="receivingTitle">Приёмка</h2><button class="icon-button" type="button" onclick="closeDrawer('#receivingDrawer')" aria-label="Закрыть">×</button></header><p id="receivingError" role="alert"></p><div id="receivingList"></div></aside></div>
+    <div class="drawer-backdrop hidden" id="servingWriteoffDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="servingWriteoffTitle"><header class="modal-header"><div><p class="eyebrow">Раздача</p><h2 id="servingWriteoffTitle">Списание блюд</h2></div><button class="icon-button" type="button" onclick="closeDrawer('#servingWriteoffDrawer')" aria-label="Закрыть">×</button></header><p class="production-hint">Количество сразу исключается из продажи. Окончательное списание подтверждает руководитель.</p><form id="servingWriteoffForm" class="receiving-card"><fieldset id="servingWriteoffFields"><label>Блюдо и партия<select id="servingWriteoffLot" required></select></label><p id="servingWriteoffAvailable" class="production-hint"></p><div class="production-quantity"><label>Количество<input id="servingWriteoffQuantity" type="number" required min="0.001" step="0.001" inputmode="decimal"></label><label>Единица<select id="servingWriteoffUnit"><option value="portions">порции / шт.</option><option value="kg">кг</option></select></label></div><label>Причина<select id="servingWriteoffReason" required><option value="">Выберите причину</option><option>Истёк срок хранения</option><option>Порча блюда</option><option>Брак приготовления</option><option>Остаток в конце дня</option><option>Другая причина</option></select></label><label>Комментарий<textarea id="servingWriteoffComment" maxlength="300" placeholder="Уточните обстоятельства списания"></textarea></label></fieldset><p id="servingWriteoffError" role="alert"></p><button class="terminal-primary" id="servingWriteoffSubmit" type="submit">Отправить на подтверждение</button></form><h3>Заявки на списание</h3><div id="servingWriteoffHistory"></div></aside></div>
+    <div id="receivingNotice" class="receiving-notice hidden" role="status"><span>С кухни поступили блюда. Подтвердите приёмку, чтобы начать продажу.</span><button class="primary-button" type="button" onclick="openReceiving()">Посмотреть</button></div>
+    <div class="drawer-backdrop hidden" id="receivingDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="receivingTitle"><header class="modal-header"><h2 id="receivingTitle">Приёмка</h2><button class="icon-button" type="button" onclick="closeDrawer('#receivingDrawer')" aria-label="Закрыть">×</button></header><div class="receiving-history-link"><button class="secondary-button" type="button" onclick="openTransferHistory()">История передач</button></div><p id="receivingError" role="alert"></p><div id="receivingList"></div></aside></div>
+    <div class="drawer-backdrop hidden" id="transferHistoryDrawer">
+      <aside class="poster-drawer transfer-history-drawer" role="dialog" aria-modal="true" aria-labelledby="transferHistoryTitle">
+        <header class="modal-header"><h2 id="transferHistoryTitle">История передач</h2><button class="icon-button" type="button" onclick="closeDrawer('#transferHistoryDrawer')" aria-label="Закрыть">×</button></header>
+        <div class="transfer-history-filters">
+          <label class="transfer-history-shift">Смена<select id="transferHistoryShift"><option value="all">Все смены</option></select></label>
+          <label class="transfer-history-search">Поиск<input id="transferHistorySearch" type="search" placeholder="Блюдо, партия или сотрудник"></label>
+          <label>Статус<select id="transferHistoryStatus"><option value="">Все статусы</option><option value="pending">Ожидает приёмки</option><option value="accepted">Принято</option><option value="difference">С расхождением</option><option value="rejected">Отказано</option><option value="canceled">Отменено</option></select></label>
+          <label>С даты<input id="transferHistoryFrom" type="date"></label><label>По дату<input id="transferHistoryTo" type="date"></label>
+          <button id="refreshTransferHistory" class="secondary-button" type="button">Обновить</button>
+        </div>
+        <p id="transferHistoryMessage" class="transfer-history-message" role="status"></p>
+        <div id="transferHistoryList" class="transfer-history-scroll"></div>
+      </aside>
+    </div>
+    <dialog id="productionShiftNotice" class="shift-notice" role="alertdialog" aria-labelledby="productionShiftNoticeTitle" aria-describedby="productionShiftNoticeMessage">
+      <form method="dialog">
+        <header><h2 id="productionShiftNoticeTitle">Не удалось выполнить действие</h2><button class="icon-button" value="close" aria-label="Закрыть">×</button></header>
+        <p id="productionShiftNoticeMessage"></p>
+        <p id="productionShiftNoticeHelp" class="hidden">Передачи принимает или отклоняет кассир на раздаче. Заявки на списание рассматривает руководитель. Затем можно повторить закрытие смены.</p>
+        <footer><button class="terminal-primary" value="confirm" autofocus>Понятно</button></footer>
+      </form>
+    </dialog>
     <dialog id="productionConfirmDialog" class="transfer-confirm">
       <form method="dialog"><h2>Отправить на раздачу?</h2><p id="productionConfirmSummary"></p><div><button class="secondary-button" value="cancel" autofocus>Не отправлять</button><button class="terminal-primary" value="send">Отправить</button></div></form>
     </dialog>
@@ -299,7 +375,7 @@
           </fieldset>
           <p id="productionError" role="alert"></p>
           <p id="productionResult" role="status"></p>
-          <div class="transfer-footer"><button id="addProductionLine" class="secondary-button" type="button">＋ Добавить блюдо</button><p id="productionSummary" aria-live="polite"></p><button id="saveProductionButton" class="pay-button" type="submit">Передать на раздачу</button></div>
+          <div class="transfer-footer"><button id="addProductionLine" class="secondary-button" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-plus"></use></svg> Добавить блюдо</button><p id="productionSummary" aria-live="polite"></p><button id="saveProductionButton" class="pay-button" type="submit">Передать на раздачу</button></div>
         </form>
       </aside>
     </div>
@@ -313,9 +389,37 @@
             <label><span>Поставщик</span><select id="posSupplySupplier" required></select></label>
             <label><span>Накладная №</span><input id="posSupplyInvoice" maxlength="80" placeholder="—" /></label>
           </div>
+          <div class="pos-supply-import-toolbar">
+            <button class="secondary-button" id="posSupplyPhotoButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-camera"/></svg>Фото накладной</button>
+            <input id="posSupplyPhotoFile" class="hidden" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-label="Фото накладной" />
+            <button class="secondary-button" id="posSupplyImportButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-upload"/></svg>Загрузить из файла</button>
+            <input id="posSupplyImportFile" class="hidden" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Файл поставки Excel или CSV" />
+            <span>Excel / CSV</span>
+            <button id="posSupplyImportTemplate" class="secondary-button pos-supply-template" type="button">Скачать шаблон</button>
+          </div>
+          <p id="posSupplyPhotoMessage" class="pos-supply-import-status" role="status"></p>
+          <section id="posSupplyPhotoPanel" class="supply-photo-panel hidden" aria-labelledby="posSupplyPhotoTitle">
+            <header><div><h3 id="posSupplyPhotoTitle">Фото накладной</h3><small id="posSupplyPhotoName"></small></div><button id="posSupplyPhotoRemove" class="icon-button" type="button" aria-label="Убрать фото из поставки">×</button></header>
+            <div class="supply-photo-source"><a id="posSupplyPhotoOpen" target="_blank" rel="noopener" aria-label="Открыть фото накладной"><img id="posSupplyPhotoImage" alt="Фото накладной" /></a><div><a id="posSupplyPhotoDownload" class="secondary-button" download><svg class="ui-icon" aria-hidden="true"><use href="#pos-download"/></svg>Скачать фото</a><button id="posSupplyPhotoRecognize" class="terminal-primary" type="button">Распознать</button><p id="posSupplyPhotoSetup"></p></div></div>
+            <div id="posSupplyPhotoReview" class="hidden">
+              <label>Накладная на фото<select id="posSupplyPhotoDocument"></select></label>
+              <p id="posSupplyPhotoWarnings" class="supply-photo-warnings" role="status"></p>
+              <div class="supply-photo-fields"><label>Поставщик<select id="posSupplyPhotoSupplier"></select></label><label>Накладная №<input id="posSupplyPhotoInvoice" maxlength="80" /></label><label>Дата и время<input id="posSupplyPhotoDate" type="datetime-local" /></label></div>
+              <div id="posSupplyPhotoRows" class="supply-photo-rows"></div>
+              <footer><label>Итого в накладной, сом<input id="posSupplyPhotoTotal" type="number" min="0" step="any" inputmode="decimal" /></label><p id="posSupplyPhotoCheck" role="status"></p><button id="posSupplyPhotoApply" class="terminal-primary" type="button">Добавить в поставку</button></footer>
+            </div>
+          </section>
+          <p id="posSupplyImportError" class="pos-supply-import-error" role="alert"></p>
+          <p id="posSupplyImportStatus" class="pos-supply-import-status" role="status"></p>
+          <section id="posSupplyImportPreview" class="pos-supply-import-preview hidden" aria-labelledby="posSupplyImportTitle">
+            <header><div><h3 id="posSupplyImportTitle">Позиции из файла</h3><p id="posSupplyImportFileName"></p></div><button id="posSupplyImportCancel" class="icon-button" type="button" aria-label="Отменить импорт"><svg class="ui-icon" aria-hidden="true"><use href="#pos-close"/></svg></button></header>
+            <div class="pos-supply-import-head" aria-hidden="true"><span>Из файла</span><span>В Oimo</span></div>
+            <div id="posSupplyImportRows" tabindex="0" role="region" aria-label="Сопоставление позиций поставки"></div>
+            <footer><p id="posSupplyImportSummary" role="status"></p><button id="posSupplyImportApply" class="terminal-primary" type="button" disabled>Добавить в поставку</button></footer>
+          </section>
           <div class="supply-lines-head"><span>Наименование</span><span>Количество</span><span>Цена</span><span>Сумма</span><span></span></div>
           <div class="supply-lines" id="posSupplyLines"></div>
-          <button class="add-supply-line" id="addPosSupplyLine" type="button"><svg class="ui-icon"><use href="#pos-plus"/></svg>Добавить позицию</button>
+          <button class="secondary-button add-supply-line" id="addPosSupplyLine" type="button"><svg class="ui-icon"><use href="#pos-plus"/></svg>Добавить позицию</button>
           <section class="supply-payment-box">
             <span id="posSupplyTotal" class="hidden">0 сом</span>
             <div class="supply-payment-grid">
@@ -350,10 +454,14 @@
 
         <section class="terminal-settings-section">
           <header><strong>Устройство</strong><small>Эти параметры сохраняются только в этом браузере</small></header>
-          <label><span>Печать чека</span><select id="receiptPrinterMode"><option value="browser">Системный принтер</option><option value="none">Без печати</option></select></label>
-          <label><span>Название принтера</span><input id="receiptPrinterName" type="text" maxlength="80" placeholder="Например, Касса · чековый принтер" /></label>
-          <label class="terminal-toggle"><input id="autoPrintReceipt" type="checkbox" /><span><strong>Печатать чек после оплаты</strong><small>Окно системной печати откроется автоматически</small></span></label>
-          <label class="terminal-toggle"><input id="printKitchenTicket" type="checkbox" /><span><strong>Печатать заказ на кухню</strong><small>Отдельный кухонный чек при подтверждении продажи</small></span></label>
+          <label><span>Способ печати</span><select id="receiptPrinterMode"><option value="browser">Системное окно печати</option><option value="qz">QZ Tray — через драйвер</option><option value="escpos">QZ Tray — ESC/POS</option><option value="none">Без печати</option></select></label>
+          <p class="printer-help" id="printerModeHint">Принтер выбирается в системном окне печати.</p>
+          <div id="qzPrinterControls" hidden><label class="printer-field"><span>Принтер на этой кассе</span><select id="receiptPrinterName"><option value="">Сначала найдите принтеры</option></select></label><button id="findPrintersButton" class="secondary-button" type="button">Найти принтеры</button><p class="printer-help">Для Windows, macOS и Linux. Установите драйвер принтера и <a href="https://qz.io/download/" target="_blank" rel="noopener noreferrer">QZ Tray</a> на кассе. QZ Tray может запросить разрешение на подключение и печать. Работа без запросов разрешения требует сертификата QZ.</p></div>
+          <label><span>Ширина бумаги</span><select id="receiptPaperWidth"><option value="80">80 мм</option><option value="58">58 мм</option></select></label>
+          <details class="printer-advanced" id="escposPrinterOptions" hidden><summary>Параметры ESC/POS</summary><label class="printer-field"><span>Печатаемая ширина в точках</span><select id="receiptDots"><option value="0">Автоматически: 384 для 58 мм, 576 для 80 мм</option><option value="384">384</option><option value="512">512</option><option value="576">576</option><option value="640">640</option><option value="832">832</option></select></label><label class="terminal-toggle"><input id="receiptCutPaper" type="checkbox"><span><strong>Отрезать бумагу после чека</strong><small>Включайте, только если у принтера есть автоотрезчик.</small></span></label><p class="printer-help">Требуется принтер с поддержкой ESC/POS и очередь, принимающая RAW-команды. Для других протоколов используйте режим «через драйвер».</p></details>
+          <p id="printerStatus" class="printer-status" role="status" aria-live="polite"></p>
+          <label class="terminal-toggle"><input id="autoPrintReceipt" type="checkbox" /><span><strong>Печатать чек после оплаты</strong><small>Отправлять чек выбранным способом после сохранения оплаты</small></span></label>
+          <label class="terminal-toggle"><input id="printKitchenTicket" type="checkbox" /><span><strong>Печатать заказ на кухню</strong><small>Кухонный чек на том же принтере после оплаты</small></span></label>
           <div class="terminal-settings-actions"><button class="secondary-button" id="testPrinterButton" type="button">Пробная печать</button><button class="terminal-primary" id="saveTerminalSettingsButton" type="button">Сохранить</button></div>
         </section>
 
@@ -407,11 +515,18 @@
       </section>
     </div>
 
+    <div id="printErrorNotice" class="print-error-notice hidden" role="status"><span id="printErrorText"></span><button id="printErrorHistory" type="button">Открыть чеки</button><button id="dismissPrintError" type="button" aria-label="Скрыть сообщение">×</button></div>
     <div class="toast hidden" id="toast"></div>
     <dialog id="productVariantDialog" class="variant-dialog"><header><h2 id="variantDialogTitle"></h2><button id="closeVariantDialog" type="button" aria-label="Закрыть">×</button></header><p>Выберите модификацию</p><div id="variantDialogOptions"></div></dialog>
     <script src="numeric-inputs.js?v=1"></script>
-    <script src="api-client.js?v=oimo-1"></script>
-    <script src="company-settings.js?v=oimo-1"></script>
-    <script src="app.js?v=mobile-flow-8"></script>
+    <script src="api-client.js?v=offline-1"></script>
+    <script src="company-settings.js?v=actions-15"></script>
+    <script src="receipt-printing.js?v=1"></script>
+    <dialog id="offlineDetails" class="offline-dialog"><header><h2>Связь и сохранённые чеки</h2><button type="button" id="offlineDetailsClose" aria-label="Закрыть">×</button></header><p id="offlineMessage" role="status"></p><div id="offlineQueue"></div><footer><button type="button" id="offlineExportButton">Скачать копию очереди</button><button type="button" id="offlineSyncButton">Проверить связь и отправить</button></footer><small>Не очищайте данные браузера и не удаляйте приложение, пока есть неотправленные чеки. Удаление данных устройства удаляет его локальную очередь.</small></dialog>
+    <script src="offline-pos-core.js?v=1"></script>
+    <script src="offline-pos.js?v=1"></script>
+    <script src="app.js?v=offline-1"></script>
+    <script src="pos-supply-photo.js?v=1"></script>
+    <script src="work-time.js?v=1"></script>
   </body>
 </html>

@@ -1,0 +1,231 @@
+<!doctype html>
+<html lang="ru">
+  <head><meta charset="utf-8"><title>Inventory document smoke test</title></head>
+  <body>
+    <pre id="results">RUNNING</pre>
+    <iframe id="app" src="../admin?test=1#inventory" style="position:fixed;left:-10000px;width:1920px;height:1000px;border:0"></iframe>
+    <script>
+      document.querySelector("#app").addEventListener("load", async () => {
+        const frame = document.querySelector("#app");
+        const win = frame.contentWindow;
+        const doc = frame.contentDocument;
+        const checks = [];
+        const check = (name, condition) => checks.push(`${condition ? "PASS" : "FAIL"}:${name}`);
+        const nextLayout = () => new Promise((resolve) => {
+          requestAnimationFrame(() => requestAnimationFrame(resolve));
+          setTimeout(resolve, 100); // Headless background frames may pause animation callbacks.
+        });
+        const visible = (element) => win.getComputedStyle(element).display !== "none" && element.getBoundingClientRect().height > 0;
+        const number = (element) => {
+          const text = typeof element === "string" ? element : element.textContent;
+          return /\d/.test(text) ? Number(text.replace(/\s/g, "").replace(/−/g, "-").replace(/,/g, ".").replace(/[^\d.+-]/g, "")) : NaN;
+        };
+        const rows = () => [...doc.querySelectorAll("#inventoryCountList .inventory-count-row")];
+        const row = (id) => rows().find((element) => element.dataset.inventoryItem === id);
+        const cell = (id, label) => [...row(id).querySelectorAll("td")].find((element) => element.dataset.label === label);
+        const edit = (id, value) => {
+          const input = row(id).querySelector(".inventory-actual");
+          input.value = value;
+          input.dispatchEvent(new win.Event("input", { bubbles: true }));
+        };
+        const search = (value) => {
+          const input = doc.querySelector("#inventoryCountSearch");
+          input.value = value;
+          input.dispatchEvent(new win.Event("input", { bubbles: true }));
+        };
+        const filter = (value) => {
+          const select = doc.querySelector("#inventoryCountFilter");
+          select.value = value;
+          select.dispatchEvent(new win.Event("change", { bubbles: true }));
+        };
+        const shown = () => rows().filter(visible).map((element) => element.dataset.inventoryItem).join(",");
+        const totals = () => ["#inventorySurplus", "#inventoryShortage", "#inventoryNetDifference"].map((selector) => number(doc.querySelector(selector))).join(",");
+        const addFixture = (inventory) => {
+          win.eval(`logisticsState.inventories.unshift(${JSON.stringify(inventory)})`);
+          return win.inventoryById(inventory.id);
+        };
+        const summary = (values) => ({
+          available: true, openingBasis: "inventory", lastCountAt: "2026-09-01T12:00:00Z", asOf: "2026-09-29T12:00:00Z",
+          opening: 0, incoming: 0, outgoing: 0, writtenOff: 0, writtenOffCost: 0, adjustments: 0, entries: [], ...values
+        });
+        const entry = (bucket, quantity, cost, documentNumber, movementType) => ({
+          bucket, quantity, cost, documentNumber, movementType, date: "2026-09-20T10:00:00Z", actor: "Айгүл <кладовщик>"
+        });
+
+        try {
+          const inventory = addFixture({
+            id: "inventory-document-smoke", number: "ИНВ-ТЕСТ-001", branchId: "b1", scope: "selected", status: "counting",
+            createdAt: "2026-09-29T12:00:00Z", countedAt: "2026-09-29T12:00:00Z", responsible: "Айгүл & команда", createdBy: "Тест", comment: "",
+            items: [
+              {
+                itemId: "rice", name: "Рис & крупа <b data-inventory-test>лазер</b>", category: "Крупы", unit: "кг", book: 12, actual: 10, unitCost: 3.5,
+                movementSummary: summary({ opening: 10, incoming: 8, outgoing: 3, writtenOff: 2, writtenOffCost: 7, adjustments: -1, entries: [
+                  entry("incoming", 8, 28, "ПРИХОД-РИС", "supplier_receipt"),
+                  { ...entry("outgoing", 3, 10.5, "КУХНЯ-РИС", "production_consumption"), dishName: "Плов & овощи" },
+                  entry("writeoff", 2, 7, "СПИСАНИЕ-РИС", "writeoff"),
+                  entry("adjustment", -1, -3.5, "ПРОВЕРКА-РИС", "inventory_adjustment")
+                ] })
+              },
+              {
+                itemId: "beef", name: "Говядина охлаждённая", category: "Мясо", unit: "кг", book: 2, actual: 3, unitCost: 4,
+                movementSummary: summary({ opening: 4, incoming: 3, outgoing: 2, writtenOff: 1, writtenOffCost: 4, adjustments: -2, entries: [
+                  entry("incoming", 3, 12, "ПРИХОД-МЯСО", "supplier_receipt"),
+                  entry("outgoing", 2, 8, "РАСХОД-МЯСО", "transfer_out"),
+                  entry("writeoff", 1, 4, "СПИСАНИЕ-МЯСО", "writeoff"),
+                  entry("adjustment", -2, -8, "ПРОВЕРКА-МЯСО", "inventory_adjustment")
+                ] })
+              },
+              {
+                itemId: "inventory-smoke-uncounted", name: "Сахар — ещё не подсчитан", category: "Бакалея", unit: "кг", book: 1000, actual: null, unitCost: 100,
+                movementSummary: summary({ opening: 1000 })
+              }
+            ]
+          });
+          win.openInventoryDocument(inventory.id);
+          await nextLayout();
+
+          const params = new URLSearchParams(location.search);
+          if (params.has("preview")) {
+            document.querySelector("#results").hidden = true;
+            frame.style.cssText = "position:fixed;inset:0;width:100vw;height:100vh;border:0";
+            if (Number(params.get("width")) > 0) frame.style.width = `${Number(params.get("width"))}px`;
+            await nextLayout();
+            document.querySelector("#results").textContent = "PREVIEW READY";
+            return;
+          }
+
+          check("table-has-snapshot-columns", rows().length === 3 && doc.querySelectorAll(".inventory-count-table thead th").length === 13);
+          check("snapshot-name-is-escaped", row("rice").querySelector(".inventory-item-name strong").textContent === inventory.items[0].name && !row("rice").querySelector("[data-inventory-test]"));
+          check("last-count-date-shown", cell("rice", "Последняя проверка").textContent.includes("01.09.2026"));
+          check("movement-snapshot-values", ["Нач. остаток", "Поступления", "Расход", "Списано", "Списано, сом", "Корректировки", "Учётный остаток"].map((label) => number(cell("rice", label))).join(",") === "10,8,3,2,7,-1,12");
+          check("initial-actual-and-variance-values", number(cell("rice", "Сумма факта")) === 35 && number(cell("rice", "Разница")) === -2 && number(cell("rice", "Разница, сом")) === -7);
+          check("initial-totals-exclude-blank-count", totals() === "4,7,-3" && doc.querySelector("#inventoryCountProgress").textContent.includes("2 из 3"));
+          check("blank-is-not-zero", row("inventory-smoke-uncounted").querySelector(".inventory-actual").value === "" && ["Сумма факта", "Разница", "Разница, сом"].every((label) => cell("inventory-smoke-uncounted", label).textContent.trim() === "—"));
+
+          edit("rice", "8");
+          check("editing-updates-row-and-totals", number(cell("rice", "Сумма факта")) === 28 && number(cell("rice", "Разница")) === -4 && number(cell("rice", "Разница, сом")) === -14 && totals() === "4,14,-10");
+          edit("inventory-smoke-uncounted", "0");
+          check("explicit-zero-counts-as-shortage", number(cell("inventory-smoke-uncounted", "Сумма факта")) === 0 && number(cell("inventory-smoke-uncounted", "Разница")) === -1000 && totals() === "4,100014,-100010" && doc.querySelector("#inventoryCountProgress").textContent.includes("3 из 3"));
+          edit("inventory-smoke-uncounted", "");
+          check("clearing-count-restores-unknown", cell("inventory-smoke-uncounted", "Разница, сом").textContent.trim() === "—" && totals() === "4,14,-10");
+
+          search("  ГОВЯДИНА  ");
+          check("search-hides-other-rows", shown() === "beef" && win.getComputedStyle(row("rice")).display === "none");
+          check("search-keeps-values-and-global-totals", row("rice").querySelector(".inventory-actual").value === "8" && totals() === "4,14,-10" && doc.querySelector("#inventoryCountProgress").textContent.includes("2 из 3"));
+          search("__missing_inventory_item__");
+          check("empty-search-state", shown() === "" && visible(doc.querySelector("#inventoryCountEmpty")) && totals() === "4,14,-10");
+          search("");
+          filter("uncounted");
+          check("uncounted-filter", shown() === "inventory-smoke-uncounted" && totals() === "4,14,-10");
+          const typingInput = row("inventory-smoke-uncounted").querySelector(".inventory-actual");
+          typingInput.focus();
+          edit("inventory-smoke-uncounted", "1");
+          check("uncounted-row-stays-visible-during-input", doc.activeElement === typingInput && shown() === "inventory-smoke-uncounted");
+          edit("inventory-smoke-uncounted", "10");
+          check("uncounted-row-allows-multiple-digits", doc.activeElement === typingInput && visible(row("inventory-smoke-uncounted")) && typingInput.value === "10");
+          typingInput.dispatchEvent(new win.Event("change", { bubbles: true }));
+          check("uncounted-row-hides-after-change", shown() === "" && visible(doc.querySelector("#inventoryCountEmpty")) && typingInput.value === "10");
+          typingInput.blur();
+          filter("all");
+          edit("inventory-smoke-uncounted", "");
+          filter("counted");
+          check("counted-filter", shown() === "rice,beef");
+          edit("beef", "2");
+          filter("different");
+          check("difference-filter-excludes-matching-and-blank", shown() === "rice");
+          edit("beef", "3");
+          check("difference-filter-updates-after-edit", shown() === "rice,beef" && totals() === "4,14,-10");
+          filter("all");
+          check("filter-restores-all-values", rows().every(visible) && row("rice").querySelector(".inventory-actual").value === "8" && !visible(doc.querySelector("#inventoryCountEmpty")));
+
+          row("rice").querySelector('[data-movement-bucket="outgoing"]').click();
+          const dialog = doc.querySelector("#inventoryMovementDialog");
+          check("movement-link-opens-selected-bucket", dialog.open && doc.querySelector("#inventoryMovementTitle").textContent === `Расход · ${inventory.items[0].name}`);
+          check("movement-drilldown-isolates-item-and-operation", doc.querySelectorAll("#inventoryMovementBody tbody tr").length === 1 && doc.querySelector("#inventoryMovementBody").textContent.includes("КУХНЯ-РИС") && doc.querySelector("#inventoryMovementBody").textContent.includes("Плов & овощи") && !doc.querySelector("#inventoryMovementBody").textContent.includes("ПРИХОД-РИС") && !doc.querySelector("#inventoryMovementBody").textContent.includes("СПИСАНИЕ-РИС") && !doc.querySelector("#inventoryMovementBody").textContent.includes("РАСХОД-МЯСО"));
+          check("movement-drilldown-values", number(doc.querySelector("#inventoryMovementBody tbody td:nth-child(3)")) === 3 && number(doc.querySelector("#inventoryMovementBody tbody td:nth-child(4)")) === 10.5 && doc.querySelector("#inventoryMovementBody tbody td:nth-child(5)").textContent === "Айгүл <кладовщик>");
+          doc.querySelector("#closeInventoryMovement").click();
+          check("movement-dialog-closes", !dialog.open);
+          row("beef").querySelector('[data-movement-bucket="writeoff"]').click();
+          check("another-item-drilldown-is-independent", dialog.open && doc.querySelector("#inventoryMovementTitle").textContent === "Списания · Говядина охлаждённая" && doc.querySelector("#inventoryMovementBody").textContent.includes("СПИСАНИЕ-МЯСО") && !doc.querySelector("#inventoryMovementBody").textContent.includes("СПИСАНИЕ-РИС"));
+          dialog.close();
+
+          search("Говядина");
+          const documentRows = win.inventoryDocumentRows(inventory);
+          check("document-rows-include-hidden-unsaved-values", documentRows.length === 3 && documentRows[0].actual === 8 && documentRows[0].differenceValue === -14 && documentRows[1].actual === 3 && documentRows[2].actual === null && documentRows[2].differenceValue === null);
+          const html = win.inventoryPrintHtml(inventory);
+          const print = new win.DOMParser().parseFromString(html, "text/html");
+          const printedRows = [...print.querySelectorAll("tbody tr")];
+          const headings = [...print.querySelectorAll("thead th")].map((element) => element.textContent);
+          const printValue = (index, heading) => printedRows[index].children[headings.indexOf(heading)];
+          check("print-escapes-item-name", html.includes("&lt;b data-inventory-test&gt;") && html.includes("Рис &amp; крупа") && !print.querySelector("[data-inventory-test]") && printedRows[0].children[0].textContent === inventory.items[0].name);
+          check("print-includes-all-current-counts", printedRows.length === 3 && number(printValue(0, "Факт")) === 8 && number(printValue(0, "Сумма факта")) === 28 && number(printValue(0, "Разница, сом")) === -14 && number(printValue(1, "Факт")) === 3 && printValue(2, "Факт").textContent === "—" && print.querySelector(".note").textContent.includes("2 из 3"));
+          check("print-includes-hidden-variance-totals", [...print.querySelectorAll("footer b")].map(number).join(",") === "4,14,-10");
+
+          const originalRunServerAction = win.runServerAction;
+          const originalServerMode = win.eval("serverMode");
+          let savedAction;
+          let savedPayload;
+          try {
+            win.runServerAction = async (action, payload) => { savedAction = action; savedPayload = payload; return null; };
+            win.eval("serverMode = true");
+            await win.saveInventoryDraft();
+          } finally {
+            win.runServerAction = originalRunServerAction;
+            win.eval(`serverMode = ${originalServerMode}`);
+          }
+          check("save-payload-includes-hidden-and-blank-counts", savedAction === "inventory.save" && savedPayload?.id === inventory.id && savedPayload.items.length === 3 && savedPayload.items[0].actual === 8 && savedPayload.items[1].actual === 3 && savedPayload.items[2].actual === null);
+          search("");
+
+          for (const [width, height] of [[1920, 1000], [390, 844], [320, 740]]) {
+            frame.style.width = `${width}px`;
+            frame.style.height = `${height}px`;
+            await nextLayout();
+            const page = doc.querySelector("#inventoryModal .admin-modal");
+            const list = doc.querySelector("#inventoryCountList");
+            const listRect = list.getBoundingClientRect();
+            check(`${width}-viewport-applied`, win.innerWidth === width);
+            check(`${width}-no-page-overflow`, doc.documentElement.scrollWidth <= width + 1 && page.scrollWidth <= page.clientWidth + 1 && listRect.left >= -1 && listRect.right <= width + 1);
+            if (width <= 390) {
+              check(`${width}-mobile-counts-fit`, list.scrollWidth <= list.clientWidth + 1 && rows().every((element) => {
+                const input = element.querySelector(".inventory-actual").getBoundingClientRect();
+                return element.scrollWidth <= element.clientWidth + 1 && input.width > 30 && input.left >= -1 && input.right <= width + 1;
+              }));
+              filter("uncounted");
+              check(`${width}-mobile-filter-hides-grid-rows`, shown() === "inventory-smoke-uncounted" && win.getComputedStyle(row("rice")).display === "none");
+              filter("all");
+            } else {
+              check("desktop-wide-table-scroll-is-contained", list.scrollWidth <= list.clientWidth + 1 || ["auto", "scroll"].includes(win.getComputedStyle(list).overflowX));
+            }
+            row("rice").querySelector('[data-movement-bucket="incoming"]').click();
+            const dialogRect = dialog.getBoundingClientRect();
+            check(`${width}-movement-dialog-fits`, dialogRect.left >= -1 && dialogRect.right <= width + 1 && dialog.scrollWidth <= dialog.clientWidth + 1);
+            dialog.close();
+          }
+
+          inventory.status = "posted";
+          win.openInventoryDocument(inventory.id);
+          check("posted-counts-readonly", rows().every((element) => element.querySelector(".inventory-actual").readOnly) && doc.querySelector("#inventoryComment").readOnly && !visible(doc.querySelector("#saveInventoryDraftButton")) && !visible(doc.querySelector("#submitInventoryButton")));
+          check("posted-preserves-counts-and-history", row("rice").querySelector(".inventory-actual").value === "8" && number(cell("rice", "Поступления")) === 8);
+
+          const legacy = addFixture({ ...inventory, id: "inventory-document-legacy", number: "ИНВ-СТАРЫЙ", items: inventory.items.map((item) => { const copy = { ...item }; delete copy.movementSummary; return copy; }) });
+          win.openInventoryDocument(legacy.id);
+          check("legacy-movement-values-are-unknown", ["Последняя проверка", "Нач. остаток", "Поступления", "Расход", "Списано", "Списано, сом", "Корректировки"].every((label) => cell("rice", label).textContent.trim() === "—") && !doc.querySelector("#inventoryCountList [data-inventory-movement]"));
+          check("legacy-keeps-count-values-and-explains-history", number(cell("rice", "Учётный остаток")) === 12 && number(cell("rice", "Сумма факта")) === 28 && doc.querySelector("#inventoryHistoryNote").textContent.includes("не сохранена"));
+          const legacyPrint = new win.DOMParser().parseFromString(win.inventoryPrintHtml(legacy), "text/html");
+          const legacyHeadings = [...legacyPrint.querySelectorAll("thead th")].map((element) => element.textContent);
+          check("legacy-print-keeps-movements-unknown", ["Нач. остаток", "Приход", "Расход", "Списано", "Корректировки"].every((heading) => legacyPrint.querySelector("tbody tr").children[legacyHeadings.indexOf(heading)].textContent === "—"));
+
+          const serving = addFixture({ ...inventory, id: "inventory-document-serving", number: "ИНВ-РАЗДАЧА", scope: "serving", status: "counting", items: [{ itemId: "lot:smoke", lotId: "smoke", name: "Плов на раздаче", unit: "кг", book: 5, actual: 4, unitCost: 20, movementSummary: { available: false, reason: "serving_custody" } }] });
+          win.openInventoryDocument(serving.id);
+          check("serving-uses-compact-count-table", doc.querySelectorAll(".inventory-serving-table thead th").length === 6 && rows()[0].querySelectorAll("td").length === 5 && !doc.querySelector("#inventoryCountList [data-inventory-movement]") && !doc.querySelector('#inventoryCountList [data-label="Поступления"]'));
+          check("serving-counts-without-ingredient-movements", number(cell("lot:smoke", "Сумма факта")) === 80 && number(cell("lot:smoke", "Разница, сом")) === -20 && totals() === "0,20,-20" && doc.querySelector("#inventoryHistoryNote").textContent.includes("повторно не учитываются"));
+          const servingPrint = new win.DOMParser().parseFromString(win.inventoryPrintHtml(serving), "text/html");
+          check("serving-print-omits-ingredient-movements", servingPrint.querySelectorAll("thead th").length === 7 && !servingPrint.querySelector("thead").textContent.includes("Приход") && servingPrint.querySelector("tbody").textContent.includes("Плов на раздаче"));
+        } catch (error) {
+          checks.push(`FAIL:runtime:${error.stack || error.message}`);
+        }
+        document.querySelector("#results").textContent = checks.join("|");
+      }, { once: true });
+    </script>
+  </body>
+</html>

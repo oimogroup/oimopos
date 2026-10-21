@@ -1,0 +1,34 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Offline POS core checks</title><pre id="results">RUNNING</pre><script src="/company-settings.js"></script><script src="/offline-pos-core.js"></script><script>
+(()=>{
+ const out=[],check=(n,v)=>out.push(`${v?'PASS':'FAIL'}:${n}`),reject=(n,fn)=>{try{fn();check(n,false)}catch(e){check(n,true)}},copy=v=>JSON.parse(JSON.stringify(v));
+ try{
+  const now=Date.now(),operator={id:2,name:'Анна'},lease={token:'test',id:'grant1',issuedAt:new Date(now-1000).toISOString(),expiresAt:new Date(now+3600000).toISOString()};
+  const actor={operator,shift:{id:20},lease};
+  const base={session:{branchId:'b1',registerId:10},operators:{2:actor},receipts:[],workspace:{version:1,state:{serviceMode:'canteen',companySettings:{general:{currency:'KGS',servicePercent:0,serviceDefault:false}},branches:[{id:'b1',name:'Демо'}],products:[{id:'water',name:'Вода',price:40,unit:'шт'}],ingredients:[],recipes:[{id:'rice',name:'Рис',price:100,availableLots:[{id:'lot1',available:5}]}],sales:[],logisticsState:{branchStocks:{b1:{water:10}},branchCosts:{b1:{water:20}},inventories:[]}}}};
+  const payload={requestId:'test-receipt-0001',orderType:'dine-in',items:[{id:'water',quantity:2}],payments:[{method:'cash',amount:100}]};
+  const entry=OfflinePosCore.create(base,actor,payload,now);check('cash-total-change',entry.total===80&&entry.sale.change===20&&entry.sale.payments[0].amount===80);
+  check('actor-register-shift-frozen',entry.sale.cashierId===2&&entry.sale.registerId===10&&entry.sale.shiftId===20);
+  check('unique-local-receipt-number',entry.sale.number==='Л-test-receipt-0001'&&entry.sale.offline);
+  const device=copy(base);device.receipts.push(entry);let projected=OfflinePosCore.project(device);
+  check('pending-receipt-visible-and-stock-reserved',projected.state.sales[0].offlineStatus==='pending'&&projected.state.logisticsState.branchStocks.b1.water===8);
+  check('projection-does-not-mutate-cloud-snapshot',device.workspace.state.logisticsState.branchStocks.b1.water===10&&device.workspace.state.sales.length===0);
+  reject('pending-sales-cannot-oversell-same-device',()=>OfflinePosCore.create(device,actor,{...payload,items:[{id:'water',quantity:9}],payments:[{method:'cash',amount:1000}]},now));
+  const synced=copy(device);synced.receipts[0].status='synced';synced.workspace.state.sales=[{...entry.sale,id:'cloud',requestId:payload.requestId}];synced.workspace.state.logisticsState.branchStocks.b1.water=8;
+  check('confirmed-sale-not-counted-twice',OfflinePosCore.project(synced).state.sales.length===1&&OfflinePosCore.project(synced).state.logisticsState.branchStocks.b1.water===8);
+  const lost=copy(device);lost.workspace.state.sales=[{...entry.sale,id:'cloud'}];lost.workspace.state.logisticsState.branchStocks.b1.water=8;check('lost-confirmation-still-not-double-deducted',OfflinePosCore.project(lost).state.logisticsState.branchStocks.b1.water===8);
+  reject('card-requires-online-confirmation',()=>OfflinePosCore.create(base,actor,{...payload,payments:[{method:'card',amount:80}]},now));
+  reject('saved-orders-not-forked-offline',()=>OfflinePosCore.create(base,actor,{...payload,openOrderId:'order'},now));
+  reject('customer-pricing-requires-server',()=>OfflinePosCore.create(base,actor,{...payload,customerId:'guest'},now));
+  reject('expired-grant-blocks-new-sales',()=>OfflinePosCore.create(base,actor,payload,now+86400000));
+  reject('clock-before-grant-blocked',()=>OfflinePosCore.create(base,actor,payload,now-86400000));
+  reject('insufficient-cash-blocked',()=>OfflinePosCore.create(base,actor,{...payload,payments:[{method:'cash',amount:10}]},now));
+  const lotPayload={...payload,items:[{id:'rice',lotId:'lot1',quantity:2}],payments:[{method:'cash',amount:200}]};const food=OfflinePosCore.create(base,actor,lotPayload,now);const serving=copy(base);serving.receipts=[food];check('canteen-reserves-accepted-lot',OfflinePosCore.project(serving).state.recipes[0].availableLots[0].available===3);
+  reject('canteen-wrong-lot-blocked',()=>OfflinePosCore.create(base,actor,{...lotPayload,items:[{id:'rice',lotId:'other',quantity:1}]},now));
+  const restaurant=copy(base);restaurant.workspace.state.serviceMode='restaurant';restaurant.workspace.state.recipes=[{id:'rice',name:'Рис',price:100,availableToOrder:5,components:[{ingredientId:'raw',gross:200}]}];restaurant.workspace.state.logisticsState.branchStocks.b1.raw=1;
+  const meal=OfflinePosCore.create(restaurant,actor,{...lotPayload,items:[{id:'rice',quantity:2}]},now);restaurant.receipts=[meal];const rp=OfflinePosCore.project(restaurant);check('restaurant-reserves-raw-ingredients',Math.abs(rp.state.logisticsState.branchStocks.b1.raw-.6)<1e-9&&rp.state.recipes[0].availableToOrder===3);
+  restaurant.workspace.state.companySettings.general={servicePercent:5,serviceDefault:true,roundTotal:true};restaurant.workspace.state.recipes[0].price=101;restaurant.receipts=[];const fee=OfflinePosCore.create(restaurant,actor,{...lotPayload,items:[{id:'rice',quantity:1}],payments:[{method:'cash',amount:110}]},now);check('service-and-rounding-match-order',fee.total===106&&fee.sale.change===4&&fee.sale.serviceAmount===5.05);
+  const locked=copy(base);locked.workspace.state.logisticsState.inventories=[{branchId:'b1',status:'counting'}];reject('inventory-lock-applies-offline',()=>OfflinePosCore.create(locked,actor,payload,now));
+  const revoked=copy(base);revoked.blocked=true;reject('revoked-device-cannot-sell',()=>OfflinePosCore.create(revoked,actor,payload,now));
+ }catch(e){check('runtime:'+e.stack,false)}document.querySelector('#results').textContent=out.join('|');document.body.dataset.done='true';
+})();
+</script></html>

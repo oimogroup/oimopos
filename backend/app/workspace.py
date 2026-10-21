@@ -5,7 +5,7 @@ import re
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
 from math import floor, isfinite
-from decimal import Decimal, InvalidOperation
+from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 from uuid import uuid4
 
@@ -88,6 +88,36 @@ def _number(value: Any, *, minimum: float = 0) -> float:
     return max(minimum, number)
 
 
+def _money(value: Any) -> float:
+    return float(Decimal(str(value)).quantize(Decimal("0.01"), rounding=ROUND_HALF_UP))
+
+
+def _receipt_time(value: Any) -> str:
+    if not value:
+        return _now()
+    try:
+        date = datetime.fromisoformat(str(value).replace("Z", "+00:00"))
+        _require(date.tzinfo is not None and date <= datetime.now(timezone.utc), "Проверьте дату и время приёмки")
+        return date.isoformat()
+    except (ValueError, TypeError):
+        raise WorkspaceError("Проверьте дату и время приёмки")
+
+
+def _supply_cash_payment(state: dict, user: dict, account: dict, payment: dict, supply: dict) -> None:
+    """Link drawer expenses to the actual register shift without duplicating finance entries."""
+    if account.get("type") != "cash":
+        return
+    _require(user.get("register_id") and user.get("shift_id") and str(account.get("branchId")) == str(user.get("branch_id")),
+             "Оплату из кассы оформите в терминале на открытой смене. В админке выберите сейф или банковский счёт", 409)
+    _ensure_pos(state)["cashMovements"].insert(0, {
+        "id": f"supply-cash-{payment['id']}", "branchId": supply["branchId"],
+        "registerId": user["register_id"], "shiftId": user["shift_id"],
+        "type": "expense", "amount": payment["amount"],
+        "comment": f"Оплата поставки {supply['number']}", "documentId": supply["id"], "paymentId": payment["id"],
+        "createdAt": _now(), "createdBy": user["display_name"],
+    })
+
+
 def _next_number(prefix: str, collection: list[dict[str, Any]]) -> str:
     return f"{prefix}-{len(collection) + 1:04d}"
 
@@ -144,6 +174,13 @@ def _ensure_finance(state: dict[str, Any]) -> dict[str, Any]:
         {"id": "finance-expense-tax", "name": "Налоги и комиссии", "kind": "expense", "status": "active"},
         {"id": "finance-expense-other", "name": "Прочие расходы", "kind": "expense", "status": "active"},
     ])
+    for category in (
+        {"id": "finance-expense-utilities", "name": "Коммунальные услуги", "kind": "expense", "status": "active"},
+        {"id": "finance-expense-taxes", "name": "Налоги", "kind": "expense", "status": "active"},
+        {"id": "finance-expense-fees", "name": "Банковские комиссии", "kind": "expense", "status": "active"},
+    ):
+        if not _find(finance["categories"], category["id"]):
+            finance["categories"].append(category)
     accounts = finance["accounts"]
     for branch in state.get("branches", []):
         account_id = f"finance-cash-{branch['id']}"
@@ -421,8 +458,17 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     _ensure_finance(output)
     _ensure_supplies(output)
     pos = _ensure_pos(output)
+    for records in (output["logisticsState"].get("batches", []), output["logisticsState"].get("supplies", []), pos["cashMovements"]):
+        for record in records:
+            for key in ("requestId", "requestPayload", "requestActorId", "requestRegisterId"):
+                record.pop(key, None)
+    output.pop("offlinePos", None)
     if user["role"] == "owner":
         return output
+    output.pop("payrollState", None)
+    output.pop("pnlState", None)
+    for sale in output.get("sales", []):
+        sale.pop("payrollAccruals", None)
     branch_id = str(user["branch_id"])
     output["branches"] = [
         branch if branch.get("id") == branch_id else {key: branch.get(key) for key in ("id", "number", "short", "name", "address", "status")}
@@ -432,6 +478,7 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
         {**supplier, "prices": {branch_id: supplier.get("prices", {}).get(branch_id, {})}}
         for supplier in output["suppliers"]
     ]
+    output["externalSalesImports"] = []
     logistics = output["logisticsState"]
     logistics["custodyDocuments"] = [doc for doc in logistics.get("custodyDocuments", []) if doc.get("branchId") == branch_id]
     logistics["directOrders"] = [order for order in logistics["directOrders"] if order.get("branchId") == branch_id]
@@ -440,6 +487,7 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     logistics["inventories"] = [inventory for inventory in logistics["inventories"] if inventory.get("branchId") == branch_id]
     logistics["batches"] = [batch for batch in logistics["batches"] if batch.get("branchId") == branch_id]
     logistics["productionShifts"] = [shift for shift in logistics.get("productionShifts", []) if shift.get("branchId") == branch_id]
+    logistics["cashShiftCounts"] = [count for count in logistics.get("cashShiftCounts", []) if count.get("branchId") == branch_id]
     logistics["servingRequests"] = [entry for entry in logistics.get("servingRequests", []) if entry.get("branchId") == branch_id]
     logistics["branchStocks"] = {branch_id: logistics["branchStocks"].get(branch_id, {})}
     logistics["branchCosts"] = {branch_id: logistics["branchCosts"].get(branch_id, {})}
@@ -495,6 +543,17 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
             output["products"] = []
             output["ingredientCategories"] = []
             output["menuCategories"] = []
+        if not (can_menu or can_inventory or can_production or permissions.get("finance")):
+            logistics["branchCosts"] = {branch_id: {}}
+            logistics["custodyDocuments"] = []
+            for sale in output["sales"]:
+                for item in sale.get("items", []):
+                    item.pop("unitCost", None)
+                    for allocation in item.get("ingredientAllocations", []):
+                        allocation.pop("unitCost", None)
+                    for allocation in item.get("batchAllocations", []):
+                        for ingredient in allocation.get("productionIngredients", []):
+                            ingredient.pop("unitCost", None)
         return output
     if staff_role in {"cashier", "waiter", "hall_admin", "pos_terminal"}:
         output.pop("financeState", None)
@@ -596,6 +655,41 @@ def sale_replay(state, user, payload):
     return previous
 
 
+def operation_replay(state, user, action, payload):
+    """Find a committed stock/cash operation before checking mutable balances."""
+    if "requestId" not in payload:
+        return None
+    request_id = payload.get("requestId")
+    _require(isinstance(request_id, str) and 0 < len(request_id.strip()) <= 80,
+             "Не указан корректный идентификатор операции", 422)
+    request_id = request_id.strip()
+    collections = {
+        "batch.create": (state.get("logisticsState", {}).get("batches", []), "production_batch"),
+        "supply.create": (state.get("logisticsState", {}).get("supplies", []), "supplier_receipt"),
+        "pos.cash.movement": (state.get("posState", {}).get("cashMovements", []), "pos_cash_movement"),
+    }
+    if action not in collections:
+        return None
+    entries, entity_type = collections[action]
+    previous = next((entry for entry in entries if entry.get("requestId") == request_id), None)
+    if previous is None:
+        return None
+    branch_id = str(payload.get("branchId") or "") if action == "supply.create" and user.get("role") == "owner" else _branch_user(user)
+    _require(previous.get("branchId") == branch_id
+             and str(previous.get("requestActorId")) == str(user.get("id"))
+             and previous.get("requestRegisterId") == user.get("register_id"),
+             "Операция принадлежит другой кассе, сотруднику или заведению", 403)
+    _require(previous.get("requestPayload") == payload,
+             "Идентификатор операции уже использован с другими данными", 409)
+    return entity_type, previous["id"]
+
+
+def _record_operation_request(entry, user, payload):
+    if "requestId" in payload:
+        entry.update(requestId=payload["requestId"].strip(), requestPayload=deepcopy(payload),
+                     requestActorId=user.get("id"), requestRegisterId=user.get("register_id"))
+
+
 def freeze_batch_portions(state):
     for batch in state.get("logisticsState", {}).get("batches", []):
         if batch.get("portionWeight"):
@@ -607,6 +701,16 @@ def freeze_batch_portions(state):
 
 
 def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, payload: dict[str, Any]) -> tuple[str, str | None]:
+    if action.startswith("pnl."):
+        from .pnl import apply as apply_pnl
+        return apply_pnl(state, user, action, payload)
+    if action.startswith("payroll.") or action.startswith("work.shift."):
+        from .payroll import apply as apply_payroll
+        return apply_payroll(state, user, action, payload)
+    if action in {"batch.create", "supply.create", "pos.cash.movement"}:
+        previous = operation_replay(state, user, action, payload)
+        if previous:
+            return previous
     freeze_batch_portions(state)
     if action == "sale.create":
         previous = sale_replay(state, user, payload)
@@ -626,6 +730,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             values = validate_settings_section(payload.get("section"), payload.get("values", {}))
         except ValueError as error:
             raise WorkspaceError(str(error)) from error
+        if payload["section"] == "general" and (state.get("payrollState") or state.get("pnlState") or state.get("offlinePos")):
+            _require(all(values.get(k) == settings["general"].get(k) for k in ("currency", "timezone")), "После начала учёта зарплаты, расходов или автономной кассы валюту и часовой пояс меняют только с переносом учёта", 409)
         state.setdefault("companySettings", {})[payload["section"]] = values
         return "settings", payload["section"]
 
@@ -710,6 +816,13 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         _require(amount > 0, "Сумма должна быть больше нуля")
         occurred_at = str(payload.get("occurredAt", "")).strip()
         _require(occurred_at, "Укажите дату операции")
+        from .pnl import local_day
+        local_day(state, occurred_at)
+        recognition_date = str(payload.get("recognitionDate") or "").strip()
+        if recognition_date:
+            from .payroll import day
+            day(recognition_date)
+        _require(isinstance(payload.get("affectsProfit", True), bool), "Проверьте участие операции в прибыли")
         account = _find(finance["accounts"], payload.get("accountId"))
         _require(account and account.get("status") == "active", "Выберите активный счёт")
         requested_branch_id = str(payload.get("branchId") or "") or None
@@ -733,6 +846,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             "type": transaction_type,
             "amount": amount,
             "occurredAt": occurred_at,
+            "recognitionDate": recognition_date or None,
+            "affectsProfit": payload.get("affectsProfit", True),
             "accountId": str(account["id"]),
             "destinationAccountId": str(destination["id"]) if destination else None,
             "categoryId": str(category["id"]) if category else None,
@@ -749,6 +864,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         _owner(user)
         transaction = _find(finance["transactions"], payload.get("id"))
         _require(transaction is not None, "Операция не найдена", 404)
+        _require(not transaction.get("automatic") and not transaction.get("documentId"), "Операция связана с документом и не может быть удалена отдельно", 409)
         finance["transactions"].remove(transaction)
         return "finance_transaction", str(transaction["id"])
 
@@ -950,7 +1066,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 if _number(costs.get(ingredient_id)) > 0
             ]
             unit_cost = sum(branch_costs) / len(branch_costs) if branch_costs else _number(ingredient.get("averageCost"))
-            calculated_cost += unit_cost * net / 1000
+            calculated_cost += unit_cost * gross / 1000
         _require(components, "Добавьте хотя бы один ингредиент")
         if preparation is None:
             preparation = {"id": str(payload.get("id") or f"pf-{uuid4().hex[:10]}")}
@@ -1053,9 +1169,11 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 components.append({**raw, "ingredientId": ingredient_id, "gross": gross, "net": net})
                 calculated_yield += net
             _require(components and calculated_yield > 0, "Проверьте состав техкарты")
+            output_yield = _number(payload.get("yield")) if "yield" in payload else calculated_yield
+            _require(output_yield > 0, "Укажите выход готового блюда")
             station = str(payload.get("station", "")).strip()
             _require(station, "Укажите цех приготовления")
-            entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "station": station, "price": _number(payload.get("price")), "yield": calculated_yield, "color": str(payload.get("color", entry.get("color", "#6549d5"))), "components": components})
+            entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "station": station, "price": _number(payload.get("price")), "yield": output_yield, "color": str(payload.get("color", entry.get("color", "#6549d5"))), "components": components})
         entry.update(_appearance(payload, entry))
         return collection_name[:-1], str(entry["id"])
 
@@ -1179,24 +1297,29 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             rows.append({"itemId": item_id, "quantity": quantity, "price": price, "received": quantity, "receivedPrice": price})
             total += quantity * price
         _require(rows, "Добавьте хотя бы одну позицию")
+        total = _money(total)
         number = _next_number("ПСТ", supplies)
-        received_at = str(payload.get("receivedAt") or _now())
+        received_at = _receipt_time(payload.get("receivedAt"))
         payments: list[dict[str, Any]] = []
         paid_total = 0.0
         for raw in payload.get("payments", []):
-            amount = _number(raw.get("amount"))
+            amount = _money(_number(raw.get("amount")))
             if amount <= 0:
                 continue
             account = _find(finance["accounts"], raw.get("accountId"))
             _require(account and account.get("status") == "active", "Выберите активный финансовый счёт")
             _require(not account.get("branchId") or str(account.get("branchId")) == branch_id, "Счёт относится к другому заведению", 403)
+            if account.get("type") == "cash":
+                _require(user.get("register_id") and user.get("shift_id") and str(account.get("branchId")) == branch_id,
+                         "Оплату из кассы оформите в терминале на открытой смене. В админке выберите сейф или банковский счёт", 409)
             payment = {
                 "id": f"supply-payment-{uuid4()}", "accountId": str(account["id"]), "amount": amount,
                 "occurredAt": str(raw.get("occurredAt") or received_at),
             }
             payments.append(payment)
             paid_total += amount
-        _require(paid_total <= total + 0.0001, "Сумма оплаты не может быть больше суммы поставки")
+        paid_total = _money(paid_total)
+        _require(paid_total <= total, "Сумма оплаты не может быть больше суммы поставки")
         supply_category = _find(finance["categories"], "finance-expense-purchases")
         if supply_category is None:
             supply_category = {"id": "finance-expense-purchases", "name": "Поставки", "kind": "expense", "status": "active"}
@@ -1207,7 +1330,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             next_cost = (old_quantity * old_cost + row["quantity"] * row["price"]) / (old_quantity + row["quantity"])
             _set_stock(state, branch_id, row["itemId"], old_quantity + row["quantity"], next_cost)
             supplier.setdefault("prices", {}).setdefault(branch_id, {})[row["itemId"]] = row["price"]
-        debt = max(0.0, total - paid_total)
+        debt = max(0.0, _money(total - paid_total))
         supply = {
             "id": f"supply-{uuid4()}", "number": number, "documentType": "supply",
             "branchId": branch_id, "supplierId": supplier["id"], "supplier": supplier["name"],
@@ -1217,18 +1340,53 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             "paymentStatus": "paid" if debt <= 0.0001 else "partial" if paid_total > 0 else "unpaid",
             "status": "received",
         }
+        _record_operation_request(supply, user, payload)
         supplies.insert(0, supply)
         for row in rows:
             _ledger(state, branch_id=branch_id, item_id=row["itemId"], quantity=row["quantity"], unit_cost=row["price"], movement_type="supplier_receipt", document_number=number, actor=actor)
+            logistics["stockLedger"][0]["effectiveAt"] = received_at
         for payment in payments:
+            _supply_cash_payment(state, user, _find(finance["accounts"], payment["accountId"]), payment, supply)
             finance["transactions"].insert(0, {
                 "id": f"finance-transaction-{uuid4()}", "number": _next_number("ФО", finance["transactions"]),
                 "type": "expense", "amount": payment["amount"], "occurredAt": payment["occurredAt"],
                 "accountId": payment["accountId"], "destinationAccountId": None,
                 "categoryId": supply_category["id"], "branchId": branch_id,
                 "counterparty": supplier["name"], "comment": f"Поставка {number}",
-                "documentId": supply["id"], "automatic": True, "createdAt": _now(), "createdBy": actor,
+                "documentId": supply["id"], "paymentId": payment["id"], "automatic": True, "createdAt": _now(), "createdBy": actor,
             })
+        return "supplier_receipt", supply["id"]
+
+    if action == "supply.payment.reverse":
+        from .supplier_payments import reverse
+        return reverse(state, user, payload)
+
+    if action == "supply.pay":
+        _owner(user)
+        supply = _find(logistics["supplies"], payload.get("id"))
+        _require(supply is not None, "Поставка не найдена", 404)
+        request_id = str(payload.get("requestId") or "").strip()
+        _require(request_id, "Не указан идентификатор платежа")
+        previous_payment = next((p for p in supply.get("payments", []) if p.get("requestId") == request_id), None)
+        if previous_payment:
+            _require(previous_payment["amount"] == _money(_number(payload.get("amount"))) and previous_payment["accountId"] == payload.get("accountId"), "Идентификатор уже использован для другого платежа", 409)
+            return "supplier_receipt", supply["id"]
+        amount = _money(_number(payload.get("amount")))
+        debt = _money(supply["total"]) - _money(supply.get("paidTotal", 0))
+        debt = _money(debt)
+        _require(0 < amount <= debt, "Укажите сумму не больше остатка долга")
+        account = _find(finance["accounts"], payload.get("accountId"))
+        _require(account and account.get("status") == "active", "Выберите активный счёт")
+        _require(not account.get("branchId") or account["branchId"] == supply["branchId"], "Счёт другого заведения", 403)
+        payment = {"id": f"supply-payment-{uuid4()}", "requestId": request_id, "amount": amount, "accountId": account["id"], "occurredAt": _now()}
+        _supply_cash_payment(state, user, account, payment, supply)
+        supply.setdefault("payments", []).append(payment)
+        supply["paidTotal"] = round(float(supply.get("paidTotal", 0)) + amount, 2)
+        supply["debt"] = round(debt - amount, 2)
+        supply["paymentStatus"] = "paid" if supply["debt"] == 0 else "partial"
+        if not _find(finance["categories"], "finance-expense-purchases"):
+            finance["categories"].append({"id": "finance-expense-purchases", "name": "Поставки", "kind": "expense", "status": "active"})
+        finance["transactions"].insert(0, {"id": f"finance-transaction-{uuid4()}", "number": _next_number("ФО", finance["transactions"]), "type": "expense", "amount": amount, "occurredAt": payment["occurredAt"], "accountId": account["id"], "destinationAccountId": None, "categoryId": "finance-expense-purchases", "branchId": supply["branchId"], "counterparty": supply["supplier"], "comment": f"Оплата поставки {supply['number']}", "documentId": supply["id"], "paymentId": payment["id"], "automatic": True, "createdAt": _now(), "createdBy": actor})
         return "supplier_receipt", supply["id"]
 
     if action == "order.create":
@@ -1271,6 +1429,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
     if action == "order.receive":
         branch_id = _branch_user(user)
         _require_unlocked(state, branch_id)
+        received_at = _receipt_time(payload.get("receivedAt"))
         order = _find(logistics["directOrders"], payload.get("id"))
         _require(order and order.get("branchId") == branch_id and order.get("status") == "ordered", "Поставка недоступна для приёмки", 409)
         invoice = str(payload.get("invoiceNumber", "")).strip()
@@ -1294,11 +1453,12 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 _set_stock(state, branch_id, item["itemId"], old_quantity + actual, next_cost)
                 supplier.setdefault("prices", {}).setdefault(branch_id, {})[str(item["itemId"])] = price
                 _ledger(state, branch_id=branch_id, item_id=item["itemId"], quantity=actual, unit_cost=price, movement_type="supplier_receipt", document_number=order["number"], actor=actor)
+                logistics["stockLedger"][0]["effectiveAt"] = received_at
                 accepted += 1
             total += actual * price
             variance += actual - _number(item.get("requested"))
         _require(accepted > 0, "Укажите фактически принятое количество")
-        order.update({"status": "received", "receivedAt": payload.get("receivedAt") or _now(), "receivedBy": actor, "invoiceNumber": invoice, "receivingComment": str(payload.get("comment", "")).strip(), "total": total, "variance": variance})
+        order.update({"status": "received", "receivedAt": received_at, "receivedBy": actor, "invoiceNumber": invoice, "receivingComment": str(payload.get("comment", "")).strip(), "total": _money(total), "variance": variance})
         return "supplier_receipt", order["id"]
 
     if action == "transfer.create":
@@ -1381,7 +1541,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         return "point_transfer", transfer["id"]
 
     if action == "inventory.start":
-        branch_id = _branch_user(user)
+        branch_id = str(payload.get("branchId") or "") if user["role"] == "owner" else _branch_user(user)
+        _require(_find(state["branches"], branch_id), "Выберите заведение")
         _require(not _locked(state, branch_id), "На точке уже идёт инвентаризация", 409)
         scope = payload.get("scope", "full")
         category = str(payload.get("category", ""))
@@ -1389,19 +1550,27 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         if scope == "category":
             entities = [entry for entry in entities if entry.get("category") == category]
         _require(entities, "В выбранной категории нет продуктов")
-        inventory = {"id": f"inventory-{uuid4()}", "number": _next_number("ИНВ", logistics["inventories"]), "branchId": branch_id, "scope": scope, "category": category, "responsible": str(payload.get("responsible") or actor), "status": "counting", "items": [{"itemId": str(entry["id"]), "book": _stock(state, branch_id, entry["id"]), "actual": None, "unitCost": _cost(state, branch_id, entry["id"])} for entry in entities], "comment": "", "createdAt": _now(), "createdBy": actor}
+        from .inventory_count import build
+        count_items, counted_at = build(state, branch_id, payload, entities)
+        _require(count_items, "Нет позиций для подсчёта")
+        inventory = {"id": f"inventory-{uuid4()}", "number": _next_number("ИНВ", logistics["inventories"]), "branchId": branch_id, "scope": scope, "category": category, "responsible": str(payload.get("responsible") or actor), "status": "counting", "items": count_items, "countedAt": counted_at, "comment": "", "createdAt": _now(), "createdBy": actor}
         logistics["inventories"].insert(0, inventory)
         return "inventory", inventory["id"]
 
     if action in {"inventory.save", "inventory.submit", "inventory.cancel"}:
-        branch_id = _branch_user(user)
         inventory = _find(logistics["inventories"], payload.get("id"))
+        branch_id = inventory.get("branchId") if user["role"] == "owner" and inventory else _branch_user(user)
         _require(inventory and inventory.get("branchId") == branch_id and inventory.get("status") in {"counting", "returned"}, "Инвентаризация недоступна", 409)
         if action != "inventory.cancel":
             actual_by_id = {str(item.get("itemId")): item.get("actual") for item in payload.get("items", [])}
             for item in inventory["items"]:
                 if str(item["itemId"]) in actual_by_id:
                     raw = actual_by_id[str(item["itemId"])]
+                    if raw not in {None, ""}:
+                        try:
+                            _require(isfinite(float(raw)) and float(raw) >= 0, "Фактический остаток должен быть числом не меньше нуля")
+                        except (ValueError, TypeError):
+                            raise WorkspaceError("Фактический остаток должен быть числом не меньше нуля")
                     item["actual"] = None if raw in {None, ""} else _number(raw)
             inventory["comment"] = str(payload.get("comment", "")).strip()
         if action == "inventory.save":
@@ -1414,7 +1583,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         return "inventory", inventory["id"]
 
     if action in {"inventory.return", "inventory.post"}:
-        _owner(user)
+        _require(user.get("role") == "owner", "Инвентаризацию проводит владелец компании", 403)
         inventory = _find(logistics["inventories"], payload.get("id"))
         _require(inventory and inventory.get("status") == "submitted", "Инвентаризация уже обработана", 409)
         if action == "inventory.return":
@@ -1422,14 +1591,17 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _require(comment, "Укажите причину возврата на пересчёт")
             inventory.update({"status": "returned", "reviewComment": comment, "returnedAt": _now(), "returnedBy": actor})
         else:
+            from .inventory_count import current, adjust, variance
             for item in inventory["items"]:
-                _require(abs(_stock(state, inventory["branchId"], item["itemId"]) - _number(item["book"])) < 0.0001, "Остаток изменился после начала — нужен новый подсчёт", 409)
+                _require(abs(current(state, inventory["branchId"], item) - _number(item.get("currentBook", item["book"]))) < 0.0001, "Остаток изменился после начала — нужен новый подсчёт", 409)
+                _require(current(state, inventory["branchId"], item) + variance(item.get("actual"), item["book"]) >= -0.000001, "Корректировка создаёт отрицательный текущий остаток")
             for item in inventory["items"]:
                 actual = _number(item.get("actual"))
-                difference = actual - _number(item["book"])
-                _set_stock(state, inventory["branchId"], item["itemId"], actual)
+                difference = variance(actual, item["book"])
+                adjust(state, inventory["branchId"], item, difference)
                 if difference:
                     _ledger(state, branch_id=inventory["branchId"], item_id=item["itemId"], quantity=difference, unit_cost=_number(item["unitCost"]), movement_type="inventory_adjustment", document_number=inventory["number"], actor=actor)
+                    logistics["stockLedger"][0]["effectiveAt"] = inventory.get("countedAt", inventory["createdAt"])
             inventory.update({"status": "posted", "postedAt": _now(), "postedBy": actor, "reviewComment": str(payload.get("comment", "")).strip()})
         return "inventory", inventory["id"]
 
@@ -1444,6 +1616,10 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         state.clear()
         state.update(draft)
         return result
+
+    if action == "sale.import":
+        from .sales_import import commit
+        return commit(state, user, payload)
 
     if action == "pos.serving.surplus":
         _require(user.get("shift_id") and user.get("staff_role") in {"cashier", "branch_manager", "hall_admin"}, "Излишек оформляет кассир на открытой смене", 403)
@@ -1462,6 +1638,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             raise WorkspaceError(str(error), error.status_code) from error
 
     if action in {"pos.receiving.accept", "pos.receiving.reject"}:
+        _require_unlocked(state, _branch_user(user))
         _require(user.get("shift_id") and user.get("staff_role") in {"cashier", "branch_manager", "hall_admin"}, "Приёмка доступна кассиру на открытой смене", 403)
         if str(payload.get("documentId", "")).startswith("legacy:"):
             _require(action == "pos.receiving.accept", "Для старого остатка укажите фактический вес; отсутствующий остаток — 0 с причиной")
@@ -1597,6 +1774,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             ingredient = _find(state["ingredients"], item_id) or {}
             ingredient_snapshot.append({"itemId": item_id, "name": ingredient.get("name", str(item_id)), "unit": ingredient.get("unit", "кг"), "quantity": required, "unitCost": unit_cost})
         batch = {"id": f"batch-{uuid4()}", "number": number, "branchId": branch_id, "recipeId": recipe["id"], "actualWeight": weight, "portionWeight": recipe["yield"], "portionWeightSource": "production", "transferredWeight": 0, "soldPortions": 0, "servedPortions": 0, "status": "kitchen", "createdAt": _now(), "createdBy": actor, "createdById": user.get("id"), "cost": total_cost, "ingredientSnapshot": ingredient_snapshot, "custodyVersion": 1, "servingLots": [], "dispatchedWeight": 0}
+        _record_operation_request(batch, user, payload)
         logistics["batches"].insert(0, batch)
         return "production_batch", batch["id"]
 
@@ -1662,7 +1840,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             order = {
                 "id": f"open-order-{uuid4()}",
                 "number": _next_number("З", pos["openOrders"]),
-                "createdAt": _now(), "createdBy": actor,
+                "createdAt": _now(), "createdBy": actor, "openedById": user.get("id"),
             }
             pos["openOrders"].insert(0, order)
         _require(order.get("branchId") in {None, branch_id}, "Заказ относится к другой точке", 403)
@@ -1716,6 +1894,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             "comment": str(payload.get("comment", "")).strip(),
             "createdAt": _now(), "createdBy": actor,
         }
+        _record_operation_request(movement, user, payload)
         pos["cashMovements"].insert(0, movement)
         cash_account_id = f"finance-cash-{branch_id}"
         finance_transaction = {
@@ -1736,9 +1915,11 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
 
     if action == "sale.refund":
         branch_id = _branch_user(user)
+        _require_unlocked(state, branch_id)
         _require(user.get("staff_role") in {"branch_manager", "hall_admin"}, "Возврат подтверждает руководитель или администратор зала", 403)
         sale = _find(state["sales"], payload.get("id"))
         _require(sale and sale.get("branchId") == branch_id, "Чек не найден", 404)
+        _require(sale.get("paymentMethod") != "external", "Возврат импортированного реестра оформляется во внешней кассе", 409)
         _require(not sale.get("refundedAt"), "По этому чеку возврат уже оформлен", 409)
         for item in sale.get("items", []):
             for allocation in item.get("batchAllocations", []):
@@ -1750,7 +1931,12 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             product = _find(state["products"], item.get("id"))
             if product:
                 quantity = _number(item.get("quantity"))
-                _set_stock(state, branch_id, product["id"], _stock(state, branch_id, product["id"]) + quantity)
+                current_quantity = _stock(state, branch_id, product["id"])
+                current_cost = _cost(state, branch_id, product["id"])
+                returned_cost = _number(item.get("unitCost"))
+                next_quantity = current_quantity + quantity
+                next_cost = (current_quantity * current_cost + quantity * returned_cost) / next_quantity if next_quantity else current_cost
+                _set_stock(state, branch_id, product["id"], next_quantity, next_cost)
                 _ledger(state, branch_id=branch_id, item_id=product["id"], quantity=quantity, unit_cost=_number(item.get("unitCost")), movement_type="sale_refund", document_number=f"ВОЗВРАТ-{sale.get('number')}", actor=actor)
                 continue
             if item.get("ingredientAllocations"):
@@ -1789,9 +1975,15 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             "refundedAt": _now(), "refundedBy": actor, "refundReason": reason,
             "refundShiftId": user.get("shift_id"), "refundRegisterId": user.get("register_id"),
         })
+        from .payroll import record_refund
+        record_refund(state, sale)
         return "sale_refund", str(sale["id"])
 
     if action == "sale.create":
+        _require_unlocked(state, _branch_user(user))
+        open_order = _find(pos["openOrders"], payload.get("openOrderId")) if payload.get("openOrderId") else None
+        if payload.get("openOrderId"):
+            _require(open_order and open_order.get("branchId") == user.get("branch_id"), "Заказ уже закрыт или недоступен", 409)
         order_details = _order_details(state, payload)
         branch_id = _branch_user(user)
         raw_items = payload.get("items", [])
@@ -1842,7 +2034,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 for batch in candidates:
                     capacity = sum(max(0, custody.lot_available(lot) - sum(weight for planned, weight in serving_allocations if planned["id"] == lot["id"])) for lot in batch["servingLots"] if lot["id"] == selected_lot_id) * 1000 / custody.portion_weight(batch, recipe)
                     if not settings["general"]["fractional"]:
-                        capacity = floor(capacity)
+                        capacity = floor(capacity + 1e-8)
                     allocated = min(max(0, capacity), remaining_to_allocate)
                     if allocated:
                         allocations.append((batch, allocated))
@@ -1913,10 +2105,15 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _set_stock(state, branch_id, product["id"], _stock(state, branch_id, product["id"]) - quantity)
             _ledger(state, branch_id=branch_id, item_id=product["id"], quantity=-quantity, unit_cost=_cost(state, branch_id, product["id"]), movement_type="sale", document_number="POS", actor=actor)
         branch_sales = [sale for sale in state["sales"] if sale.get("branchId") == branch_id]
-        sale = {**order_details, "serviceAmount": service_amount, "deliveryAmount": delivery_amount, "rounding": rounding, "currency": settings["general"]["currency"], "id": f"sale-{uuid4()}", "number": max([int(row.get("number", 0)) for row in branch_sales] or [0]) + 1, "branchId": branch_id, "branch": _find(state["branches"], branch_id)["name"], "cashier": actor, "cashierId": user.get("id"), "registerId": user.get("register_id"), "shiftId": user.get("shift_id"), "createdAt": _now(), "paymentMethod": payment_method, "payments": payments, "subtotal": subtotal, "discountPercent": discount_percent, "discountAmount": discount_amount, "total": total, "received": received, "change": change, "customerId": customer.get("id") if customer else None, "customerName": customer.get("name") if customer else "", "comment": str(payload.get("comment", "")).strip(), "items": sale_items}
+        sale = {**order_details, "serviceAmount": service_amount, "deliveryAmount": delivery_amount, "rounding": rounding, "currency": settings["general"]["currency"], "id": f"sale-{uuid4()}", "number": max([int(row.get("number", 0)) for row in branch_sales] or [0]) + 1, "branchId": branch_id, "branch": _find(state["branches"], branch_id)["name"], "cashier": actor, "cashierId": user.get("id"), "registerId": user.get("register_id"), "shiftId": user.get("shift_id"), "createdAt": user.get('_offline_created_at') or _now(), "paymentMethod": payment_method, "payments": payments, "subtotal": subtotal, "discountPercent": discount_percent, "discountAmount": discount_amount, "total": total, "received": received, "change": change, "customerId": customer.get("id") if customer else None, "customerName": customer.get("name") if customer else "", "comment": str(payload.get("comment", "")).strip(), "items": sale_items}
         if payload.get("requestId"):
             sale.update(requestId=str(payload["requestId"]).strip(), requestPayload=deepcopy(payload))
+        sale["orderOwnerId"] = open_order.get("openedById", user.get("id")) if open_order else user.get("id")
+        from .payroll import record_sale
+        record_sale(state, sale, sale["orderOwnerId"])
         state["sales"].insert(0, sale)
+        if open_order:
+            pos["openOrders"].remove(open_order)
         if customer:
             customer["visits"] = int(_number(customer.get("visits"))) + 1
             customer["revenue"] = _number(customer.get("revenue")) + total

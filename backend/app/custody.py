@@ -59,6 +59,12 @@ def lot_available(lot):
     return 0 if lot.get('handoverId') else lot_balance(lot)
 
 
+def has_pending_surplus(state, lot_id):
+    return any(document.get('kind') == 'surplus' and document.get('lotId') == lot_id
+               and document.get('status') == 'pending'
+               for document in state['logisticsState'].get('custodyDocuments', []))
+
+
 def kitchen_balance(batch):
     pending = sum(number(t.get('weight')) for t in batch.get('transfers', []) if t.get('status') == 'pending')
     return max(0, round(number(batch.get('actualWeight')) + float(batch.get('kitchenAdjustment', 0)) - number(batch.get('dispatchedWeight', batch.get('transferredWeight'))) - pending - number(batch.get('kitchenWriteoffWeight')) - number(batch.get('kitchenReservedWeight')), 6))
@@ -119,9 +125,17 @@ def send(state, user, batch, payload):
     target = recipient(user, batch)
     weight = number(payload.get('weight'))
     require(0 < weight <= kitchen_balance(batch)+1e-6, 'На кухне недостаточно готового блюда')
-    entry = document(state, user, batch, 'transfer', payload, weight=weight, line=line, recipient=target, responsible={'id':batch.get('kitchenResponsibleId',batch.get('createdById')),'name':batch.get('kitchenResponsibleName',batch.get('createdBy'))}, status='pending')
+    production_shift_id = user.get('production_shift_id')
+    if production_shift_id is None:
+        own_shifts = [shift for shift in state['logisticsState'].get('productionShifts', [])
+                      if str(shift.get('branchId')) == str(batch['branchId']) and shift.get('status') == 'open'
+                      and str(shift.get('employeeId')) == str(user.get('id'))]
+        if len(own_shifts) == 1:
+            production_shift_id = own_shifts[0]['id']
+    entry = document(state, user, batch, 'transfer', payload, weight=weight, line=line, recipient=target, responsible={'id':batch.get('kitchenResponsibleId',batch.get('createdById')),'name':batch.get('kitchenResponsibleName',batch.get('createdBy'))}, status='pending', productionShiftId=production_shift_id)
     batch.setdefault('transfers', []).append({'id': entry['id'], 'weight': weight, 'line': line, 'status': 'pending',
-        'transferredAt': entry['createdAt'], 'transferredBy': user['display_name'], 'requestId': entry['requestId'], 'recipient': target})
+        'transferredAt': entry['createdAt'], 'transferredBy': user['display_name'], 'requestId': entry['requestId'], 'recipient': target,
+        'productionShiftId': entry['productionShiftId']})
     return entry
 
 
@@ -182,6 +196,8 @@ def apply(state, user, action, payload):
         batch, recipe = find_batch(state, user, source['batchId'])
     else:
         batch, recipe = find_batch(state, user, payload.get('batchId', payload.get('id')))
+    from .workspace import _locked
+    require(not _locked(state, batch['branchId']), 'На точке идёт инвентаризация — движения временно заблокированы', 409)
     lot = next((l for l in batch['servingLots'] if l['id'] == payload.get('lotId')), None)
     if payload.get('lotId'):
         require(lot, 'Остаток витрины не найден', 404)
@@ -205,13 +221,14 @@ def apply(state, user, action, payload):
         require(bool(user.get('_receiving_cashier')) if source['recipient'].get('kind') == 'branch_cashiers' else str(source['recipient']['id']) == str(user.get('id')), 'Приёмку подтверждает кассир на смене или назначенный получатель', 403)
         require('actualWeight' in payload, 'Укажите фактический вес', 422)
         actual = number(payload.get('actualWeight'))
-        require(actual <= max(number(batch['actualWeight'])*2, 1), 'Проверьте фактический вес')
         expected = number(source['weight'])
+        require(actual <= max(number(batch['actualWeight'])*2, expected, 1), 'Проверьте фактический вес')
         delta = round(actual-expected, 6)
         note = reason(payload) if abs(delta) > 1e-6 else str(payload.get('reason', '')).strip()
         if source['kind'] == 'transfer':
             transfer = next(t for t in batch['transfers'] if t.get('id') == source['id'])
-            transfer.update(status='accepted', acceptedAt=now(), acceptedBy=snapshot_actor(user), actualWeight=actual)
+            transfer.update(status='accepted', acceptedAt=now(), acceptedBy=snapshot_actor(user), actualWeight=actual,
+                            receivingShiftId=user.get('shift_id'), receivingRegisterId=user.get('register_id'))
             batch['dispatchedWeight'] = number(batch.get('dispatchedWeight'))+expected
             batch['transferredWeight'] = number(batch.get('transferredWeight'))+actual
             lot = {'id': 'lot-'+str(uuid4()), 'acceptedWeight': actual, 'soldWeight': 0, 'writeoffWeight': 0, 'reservedWeight': 0,
@@ -221,19 +238,25 @@ def apply(state, user, action, payload):
         else:
             lot = next(l for l in batch['servingLots'] if l['id'] == source['lotId'])
             require(lot.get('handoverId') == source['id'], 'Остаток уже передан')
+            require(not has_pending_surplus(state, lot['id']), 'Сначала рассмотрите заявку на излишек этой партии')
             lot['adjustmentWeight'] = float(lot.get('adjustmentWeight', 0))+delta
             lot.update(responsibleId=user['id'], responsibleName=user['display_name'], handoverId=None, legacy=False, acceptedAt=now())
         lot.update(registerId=user.get('register_id'), acceptedShiftId=user.get('shift_id'))
-        source.update(status='accepted', acceptedAt=now(), actualWeight=actual, acceptedBy=snapshot_actor(user))
+        source.update(status='accepted', acceptedAt=now(), actualWeight=actual, acceptedBy=snapshot_actor(user),
+                      receivingShiftId=user.get('shift_id'), receivingRegisterId=user.get('register_id'))
         result = document(state,user,batch,'acceptance',payload,sourceId=source['id'],lotId=lot['id'],expectedWeight=expected,actualWeight=actual,
-            variance=delta,reason=note,responsible=source.get('previousResponsible') or source.get('responsible'),sender=source['actor'],recipient=snapshot_actor(user),line=lot['line'],status='review' if abs(delta)>1e-6 else 'recorded')
+            variance=delta,reason=note,responsible=source.get('previousResponsible') or source.get('responsible'),sender=source['actor'],recipient=snapshot_actor(user),line=lot['line'],status='review' if abs(delta)>1e-6 else 'recorded',
+            shiftId=user.get('shift_id'), registerId=user.get('register_id'))
     elif action == 'custody.reject':
         require(user.get('_receiving_cashier') and source.get('recipient', {}).get('kind') == 'branch_cashiers', 'Отклонить передачу может кассир на смене', 403)
         require(source['status'] == 'pending' and source['kind'] == 'transfer', 'Передача уже обработана')
         note = reason(payload)
-        next(t for t in batch['transfers'] if t.get('id') == source['id'])['status'] = 'rejected'
-        source.update(status='rejected', rejectedAt=now(), rejectedBy=snapshot_actor(user), rejectReason=note)
-        result = document(state, user, batch, 'rejection', payload, sourceId=source['id'], reason=note)
+        next(t for t in batch['transfers'] if t.get('id') == source['id']).update(
+            status='rejected', receivingShiftId=user.get('shift_id'), receivingRegisterId=user.get('register_id'))
+        source.update(status='rejected', rejectedAt=now(), rejectedBy=snapshot_actor(user), rejectReason=note,
+                      receivingShiftId=user.get('shift_id'), receivingRegisterId=user.get('register_id'))
+        result = document(state, user, batch, 'rejection', payload, sourceId=source['id'], reason=note,
+                          shiftId=user.get('shift_id'), registerId=user.get('register_id'))
     elif action == 'custody.cancel':
         require(source['status']=='pending' and source['kind'] in {'transfer','handover'}, 'Передача уже обработана')
         require(manager(user) or source['actor']['id']==user.get('id'), 'Отмена доступна отправителю или руководителю',403)
@@ -274,6 +297,7 @@ def apply(state, user, action, payload):
             target = next((entry for entry in batch['servingLots'] if entry['id'] == source.get('lotId')), None)
             require(target and not target.get('legacy') and target.get('acceptedAt'), 'Принятая партия не найдена')
             if decision == 'approve':
+                require(not target.get('handoverId'), 'Сначала отмените передачу ответственности этой партии')
                 target['adjustmentWeight'] = round(float(target.get('adjustmentWeight', 0)) + source['weight'], 6)
         elif source['kind'] == 'writeoff':
             target = next((l for l in batch['servingLots'] if l['id']==source.get('lotId')), None)
@@ -294,6 +318,8 @@ def apply(state, user, action, payload):
         if terminal_writeoff:
             require(lot and lot_available(lot) > 0, 'Нет принятого остатка для списания')
         require(not lot or not lot.get('handoverId'),'Остаток ожидает приёмки новым сотрудником')
+        if lot and action in {'custody.count', 'custody.handover'}:
+            require(not has_pending_surplus(state, lot['id']), 'Сначала рассмотрите заявку на излишек этой партии')
         balance=lot_balance(lot) if lot else kitchen_balance(batch)
         if action=='custody.writeoff':
             weight=number(payload.get('weight'))
@@ -309,7 +335,7 @@ def apply(state, user, action, payload):
             require(not (number(lot.get('reservedWeight')) if lot else number(batch.get('kitchenReservedWeight'))),'Сначала рассмотрите заявки на списание')
             require('actualWeight' in payload, 'Укажите фактический остаток', 422)
             actual=number(payload.get('actualWeight'))
-            require(actual<=max(number(batch['actualWeight'])*2,1),'Проверьте фактический остаток')
+            require(actual<=max(number(batch['actualWeight'])*2,balance,1),'Проверьте фактический остаток')
             delta=round(actual-balance,6)
             note=reason(payload) if abs(delta)>1e-6 else str(payload.get('reason','')).strip()
             result=document(state,user,batch,'count',payload,lotId=lot['id'] if lot else None,expectedWeight=balance,actualWeight=actual,variance=delta,reason=note,

@@ -81,7 +81,9 @@
             win.routeRoleWorkspace("inventory/point-transfers");
             check("owner-point-transfer-control", doc.querySelector("#stockPageTitle").textContent === "Перемещения между точками" && doc.querySelector("#documentActionButton").classList.contains("hidden"));
             win.routeRoleWorkspace("inventory/inventories");
-            check("owner-inventory-control", doc.querySelector("#stockPageTitle").textContent === "Инвентаризации точек" && doc.querySelector("#documentActionButton").classList.contains("hidden"));
+            check("owner-inventory-control", doc.querySelector("#stockPageTitle").textContent === "Инвентаризации" && !doc.querySelector("#documentActionButton").classList.contains("hidden") && doc.querySelector("#documentActionButton").textContent.includes("Добавить инвентаризацию"));
+            doc.querySelector("#documentActionButton").click();
+            check("owner-inventory-setup", !doc.querySelector("#inventoryModal").classList.contains("hidden") && !doc.querySelector("#inventorySetup").classList.contains("hidden") && doc.querySelector("#inventoryWarehouse").value === "b1");
           }
         } catch (error) {
           results.push(`FAIL:${session.role}-runtime:${error.message}`);

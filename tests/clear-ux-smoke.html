@@ -1,0 +1,39 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Clear UX checks</title>
+<pre id="results">RUNNING</pre>
+<iframe id="app" src="/admin?test=1#menu/ingredients" style="width:100%;height:900px;border:0"></iframe>
+<script>
+const requestedWidth=Number(new URLSearchParams(location.search).get('width'));
+if(requestedWidth>=320 && requestedWidth<=1440) document.querySelector('#app').style.width=requestedWidth+'px';
+document.querySelector('#results').style.whiteSpace='pre-wrap';
+document.querySelector('#app').addEventListener('load', () => {
+  const checks=[];
+  const check=(name,ok)=>checks.push(`${ok?'PASS':'FAIL'}:${name}`);
+  try {
+    const w=document.querySelector('#app').contentWindow,d=w.document;
+    const q=s=>d.querySelector(s),visible=e=>e.getClientRects().length>0;
+    check('test-mode',w.eval('testMode && !serverMode'));
+    const tools=q('.ux-tools'),filters=q('.ux-advanced-filters');
+    check('tools-start-collapsed',!tools.open && !visible(q('#exportIngredientsButton')));
+    check('extra-filters-start-collapsed',!filters.open && !visible(q('#ingredientStockFilter')));
+    tools.querySelector('summary').click();
+    check('tools-available',tools.open && visible(q('#exportIngredientsButton')) && visible(q('#importIngredientsButton')));
+    q('#ingredientSearch').click();
+    check('outside-click-closes-tools',!tools.open);
+    filters.querySelector('summary').click();
+    const stock=q('#ingredientStockFilter');stock.value='positive';stock.dispatchEvent(new w.Event('change',{bubbles:true}));
+    check('active-filter-count',!q('#ingredientExtraFilterCount').hidden && q('#ingredientExtraFilterCount').textContent==='1');
+    d.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));
+    check('escape-closes-and-restores-focus',!filters.open && d.activeElement===filters.querySelector('summary'));
+    check('collapsed-filter-retains-selection',stock.value==='positive' && !q('#ingredientExtraFilterCount').hidden);
+    filters.querySelector('summary').click();q('#resetIngredientFilters').click();
+    check('reset-clears-filter-count',stock.value==='' && q('#ingredientExtraFilterCount').hidden);
+    const pane=q('#menu-pane-ingredients');
+    check('tools-not-clipped-by-panel',getComputedStyle(pane.querySelector('.panel')).overflow!=='hidden');
+    if(w.innerWidth>1100)check('duplicate-stock-navigation-hidden',getComputedStyle(q('#stockTabs')).display==='none');
+    check('filters-fit-viewport',filters.getBoundingClientRect().right<=w.innerWidth);
+    check('search-retained',visible(q('#ingredientSearch')));
+    check('primary-action-retained',visible(q('#menuPageActionButton')));
+  } catch(error) {checks.push('FAIL:runtime:'+error.message);}
+  document.querySelector('#results').textContent=checks.join('|');
+});
+</script></html>

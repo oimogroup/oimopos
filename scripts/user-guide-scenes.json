@@ -1,0 +1,482 @@
+[
+  {
+    "id": "01-login",
+    "title": "Вход в систему",
+    "url": "/login",
+    "script": "",
+    "markers": [
+      {
+        "selector": "#loginInput",
+        "text": "Логин"
+      },
+      {
+        "selector": "#passwordInput",
+        "text": "Пароль"
+      },
+      {
+        "selector": "#loginForm button[type=submit]",
+        "text": "Войти"
+      }
+    ]
+  },
+  {
+    "id": "02-home",
+    "title": "Рабочее пространство",
+    "url": "/admin?test=1",
+    "script": "switchView('dashboard')",
+    "markers": [
+      {
+        "selector": "#mainNav",
+        "text": "Разделы системы"
+      },
+      {
+        "selector": "#sessionName",
+        "text": "Текущий пользователь"
+      }
+    ]
+  },
+  {
+    "id": "03-settings",
+    "title": "Настройки компании",
+    "url": "/admin?test=1",
+    "script": "switchView('settings');CompanySettings.open('general')",
+    "markers": [
+      {
+        "selector": "#view-settings",
+        "text": "Параметры компании"
+      }
+    ]
+  },
+  {
+    "id": "04-branches",
+    "title": "Заведения",
+    "url": "/admin?test=1",
+    "script": "switchView('branches')",
+    "markers": [
+      {
+        "selector": "#view-branches",
+        "text": "Список заведений"
+      }
+    ]
+  },
+  {
+    "id": "05-registers",
+    "title": "Кассы",
+    "url": "/admin?test=1",
+    "script": "switchView('registers')",
+    "markers": [
+      {
+        "selector": "#registersTable",
+        "text": "Кассы и устройства"
+      }
+    ]
+  },
+  {
+    "id": "06-employees",
+    "title": "Сотрудники и права",
+    "url": "/admin?test=1",
+    "script": "switchView('employees');openEmployeeForm(2)",
+    "markers": [
+      {
+        "selector": "#employeeNameInput",
+        "text": "Имя сотрудника"
+      },
+      {
+        "selector": "#employeeRoleInput",
+        "text": "Должность"
+      },
+      {
+        "selector": "#employeePermissions",
+        "text": "Разрешённые действия"
+      }
+    ]
+  },
+  {
+    "id": "07-ingredients",
+    "title": "Ингредиенты",
+    "url": "/admin?test=1",
+    "script": "switchMenuPage('ingredients')",
+    "markers": [
+      {
+        "selector": "#menuPageActionButton",
+        "text": "Добавить ингредиент"
+      },
+      {
+        "selector": "#menu-pane-ingredients",
+        "text": "Сырьё и единицы учёта"
+      }
+    ]
+  },
+  {
+    "id": "08-products",
+    "title": "Готовые товары",
+    "url": "/admin?test=1",
+    "script": "switchMenuPage('products')",
+    "markers": [
+      {
+        "selector": "#menuPageActionButton",
+        "text": "Добавить товар"
+      },
+      {
+        "selector": "#menu-pane-products",
+        "text": "Продажа без приготовления"
+      }
+    ]
+  },
+  {
+    "id": "09-recipe",
+    "title": "Технологическая карта",
+    "url": "/admin?test=1",
+    "script": "switchMenuPage('recipes');openRecipeForm(201)",
+    "markers": [
+      {
+        "selector": "#recipeNameInput",
+        "text": "Название блюда"
+      },
+      {
+        "selector": "#recipeYieldInput",
+        "text": "Выход порции"
+      },
+      {
+        "selector": "#recipeComponentsEditor",
+        "text": "Состав и нормы сырья"
+      }
+    ]
+  },
+  {
+    "id": "10-preparations",
+    "title": "Полуфабрикаты и цеха",
+    "url": "/admin?test=1",
+    "script": "switchMenuPage('preparations')",
+    "markers": [
+      {
+        "selector": "#menuPageActionButton",
+        "text": "Создать полуфабрикат"
+      }
+    ]
+  },
+  {
+    "id": "11-suppliers",
+    "title": "Поставщики",
+    "url": "/admin?test=1",
+    "script": "switchView('inventory');switchStockTab('suppliers')",
+    "markers": [
+      {
+        "selector": "#view-inventory",
+        "text": "Справочник поставщиков"
+      }
+    ]
+  },
+  {
+    "id": "12-supply",
+    "title": "Приёмка поставки",
+    "url": "/admin?test=1",
+    "script": "switchView('inventory');switchStockTab('supplies');openSupplyForm()",
+    "markers": [
+      {
+        "selector": "#supplySupplier",
+        "text": "Поставщик"
+      },
+      {
+        "selector": "#supplyWarehouse",
+        "text": "Склад заведения"
+      },
+      {
+        "selector": "#supplyItemsEditor",
+        "text": "Позиции, количество и цена"
+      },
+      {
+        "selector": "#saveSupplyButton",
+        "text": "Сохранить поставку"
+      }
+    ]
+  },
+  {
+    "id": "13-stock",
+    "title": "Остатки и движения",
+    "url": "/admin?test=1",
+    "script": "switchView('inventory');switchStockTab('overview')",
+    "markers": [
+      {
+        "selector": "#view-inventory",
+        "text": "Остатки выбранного заведения"
+      }
+    ]
+  },
+  {
+    "id": "14-production",
+    "title": "Производство",
+    "url": "/admin?test=1",
+    "script": "switchView('logistics');switchProductionTab('record')",
+    "markers": [
+      {
+        "selector": "#productionTabs",
+        "text": "Ведомость и журнал"
+      },
+      {
+        "selector": "#productionBranchSelect",
+        "text": "Заведение"
+      }
+    ]
+  },
+  {
+    "id": "15-batch",
+    "title": "Выпуск партии",
+    "url": "/admin?test=1",
+    "script": "switchView('logistics');openBatchForm(201,'b1')",
+    "markers": [
+      {
+        "selector": "#batchRecipe",
+        "text": "Технологическая карта"
+      },
+      {
+        "selector": "#batchWeight",
+        "text": "Фактический вес"
+      },
+      {
+        "selector": "#saveBatchButton",
+        "text": "Подтвердить выпуск"
+      }
+    ]
+  },
+  {
+    "id": "16-transfer",
+    "title": "Перемещение между точками",
+    "url": "/admin?test=1",
+    "script": "switchView('inventory');switchStockTab('point-transfers');openPointTransferForm()",
+    "markers": [
+      {
+        "selector": "#pointTransferModal",
+        "text": "Отправитель, получатель и позиции"
+      }
+    ]
+  },
+  {
+    "id": "17-inventory",
+    "title": "Инвентаризация",
+    "url": "/admin?test=1",
+    "script": "switchView('inventory');switchStockTab('inventories');openInventoryForm()",
+    "markers": [
+      {
+        "selector": "#inventorySetup",
+        "text": "Заведение, список позиций и ответственный"
+      }
+    ]
+  },
+  {
+    "id": "18-reports",
+    "title": "Статистика продаж",
+    "url": "/admin?test=1",
+    "script": "switchView('reports');switchAnalyticsTab('sales')",
+    "markers": [
+      {
+        "selector": "#view-reports",
+        "text": "Период, выручка и себестоимость"
+      }
+    ]
+  },
+  {
+    "id": "19-payroll",
+    "title": "Расчёт зарплаты",
+    "url": "/admin?test=1",
+    "script": "switchView('finance');switchFinanceTab('payroll');await OimoPayroll.open()",
+    "markers": [
+      {
+        "selector": "#payrollFrom",
+        "text": "Начало периода"
+      },
+      {
+        "selector": "#payrollPolicies",
+        "text": "Ставки сотрудников"
+      },
+      {
+        "selector": "#payrollRuns",
+        "text": "Начисленные ведомости"
+      }
+    ]
+  },
+  {
+    "id": "20-salary-policy",
+    "title": "Настройка ставки",
+    "url": "/admin?test=1",
+    "script": "switchView('finance');switchFinanceTab('payroll');await OimoPayroll.open();document.querySelector('[data-payroll-policy]').click()",
+    "markers": [
+      {
+        "selector": "[name=fixedMode]",
+        "text": "Способ начисления ставки"
+      },
+      {
+        "selector": "[name=fixedAmount]",
+        "text": "Размер ставки"
+      },
+      {
+        "selector": "[name=personalPercent]",
+        "text": "Процент от личных продаж"
+      }
+    ]
+  },
+  {
+    "id": "21-pnl",
+    "title": "Прибыли и убытки",
+    "url": "/admin?test=1",
+    "script": "switchView('finance');document.querySelector('#financeDateFrom').value='2026-10-01';document.querySelector('#financeDateTo').value='2026-10-21';switchFinanceTab('pnl');OimoPnl.enableForTest();await new Promise(r=>setTimeout(r,200))",
+    "markers": [
+      {
+        "selector": "#financeNetProfit",
+        "text": "Чистая прибыль"
+      },
+      {
+        "selector": "#pnlAddExpense",
+        "text": "Расход за период"
+      },
+      {
+        "selector": "#exportFinanceButton",
+        "text": "Скачать P&L"
+      }
+    ]
+  },
+  {
+    "id": "22-expense",
+    "title": "Аренда и коммуналка",
+    "url": "/admin?test=1",
+    "script": "switchView('finance');switchFinanceTab('pnl');OimoPnl.enableForTest();await new Promise(r=>setTimeout(r,200));document.querySelector('#pnlAddExpense').click();document.querySelector('#pnlForm').elements.amount.value=31000;document.querySelector('#pnlForm').elements.reason.value='Аренда помещения за октябрь'",
+    "markers": [
+      {
+        "selector": "#pnlFields [name=categoryId]",
+        "text": "Статья расхода"
+      },
+      {
+        "selector": "#pnlFields [name=amount]",
+        "text": "Сумма за весь период"
+      },
+      {
+        "selector": "#pnlFields [name=start]",
+        "text": "Начало периода"
+      },
+      {
+        "selector": "#pnlFields [name=end]",
+        "text": "Конец периода"
+      }
+    ]
+  },
+  {
+    "id": "23-money",
+    "title": "Движение денег",
+    "url": "/admin?test=1",
+    "script": "switchView('finance');switchFinanceTab('transactions');openFinanceTransactionForm()",
+    "markers": [
+      {
+        "selector": "#financeTransactionModal .admin-modal",
+        "text": "Оплата, счёт, статья и влияние на прибыль"
+      }
+    ]
+  },
+  {
+    "id": "24-pos",
+    "title": "Касса и заказ",
+    "url": "/pos",
+    "script": "document.querySelector('[data-category]').click();chooseProduct('201');chooseProduct('p-1')",
+    "markers": [
+      {
+        "selector": "#productGrid",
+        "text": "Каталог выбранной категории"
+      },
+      {
+        "selector": "#orderItems",
+        "text": "Состав заказа"
+      },
+      {
+        "selector": "#payButton",
+        "text": "Перейти к оплате"
+      }
+    ]
+  },
+  {
+    "id": "25-payment",
+    "title": "Оплата заказа",
+    "url": "/pos",
+    "script": "document.querySelector('[data-category]').click();chooseProduct('201');openPayment()",
+    "markers": [
+      {
+        "selector": "#paymentModal",
+        "text": "Способ оплаты и подтверждение"
+      }
+    ]
+  },
+  {
+    "id": "26-functions",
+    "title": "Функции кассы",
+    "url": "/pos",
+    "script": "openTerminalFunctions()",
+    "markers": [
+      {
+        "selector": "#functionOperations",
+        "text": "Рабочее время, смена, поставки и возвраты"
+      }
+    ]
+  },
+  {
+    "id": "27-worktime",
+    "title": "Рабочее время",
+    "url": "/pos",
+    "script": "document.querySelector('#workShiftButton').click()",
+    "markers": [
+      {
+        "selector": "#workTimeEmployee",
+        "text": "Текущий сотрудник"
+      },
+      {
+        "selector": "#workTimeState",
+        "text": "Состояние рабочего дня"
+      },
+      {
+        "selector": "#workTimeAction",
+        "text": "Начать или закончить рабочий день"
+      }
+    ]
+  },
+  {
+    "id": "28-printer",
+    "title": "Настройка термопринтера",
+    "url": "/pos",
+    "script": "openTerminalSettings()",
+    "markers": [
+      {
+        "selector": "#receiptPrinterMode",
+        "text": "Способ печати"
+      },
+      {
+        "selector": "#receiptPaperWidth",
+        "text": "Ширина бумаги"
+      },
+      {
+        "selector": "#testPrinterButton",
+        "text": "Пробный чек"
+      },
+      {
+        "selector": "#saveTerminalSettingsButton",
+        "text": "Сохранить настройки"
+      }
+    ]
+  },
+  {
+    "id": "29-offline",
+    "title": "Автономная касса и очередь чеков",
+    "url": "/pos",
+    "script": "const auth=await AshkanaApi.unlockPos('4321');activateOperator(auth.operator,auth.shift);await OfflinePos.prepare();terminalDeviceSettings.receiptPrinterMode='none';window.dispatchEvent(new Event('offline'));chooseProduct('p-1');openPayment();selectPaymentMethod('cash',true);await completePayment();document.querySelector('#offlineStatusButton').click()",
+    "markers": [
+      {
+        "selector": "#offlineQueue",
+        "text": "Неотправленные чеки хранятся на устройстве"
+      },
+      {
+        "selector": "#offlineSyncButton",
+        "text": "Проверить связь и отправить"
+      },
+      {
+        "selector": "#offlineExportButton",
+        "text": "Скачать копию очереди"
+      }
+    ]
+  }
+]

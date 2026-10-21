@@ -3,7 +3,8 @@
   <head><meta charset="utf-8"><title>Finance smoke test</title></head>
   <body>
     <div id="results">RUNNING</div>
-    <iframe id="app" src="../admin.html?test=1#finance/pnl" style="display:none"></iframe>
+    <iframe id="app" src="../admin?test=1#finance/pnl" style="position:fixed;left:-10000px;width:1440px;height:1000px"></iframe>
+    <script src="finance-period-unit.js"></script>
     <script>
       document.querySelector("#app").addEventListener("load", async () => {
         const frame = document.querySelector("#app");
@@ -24,7 +25,7 @@
           win.switchView("finance");
           check("real-sales-revenue", /1\s*000/.test(doc.querySelector("#financeRevenue").textContent));
           check("calculated-profit", doc.querySelector("#financeNetProfit").textContent.includes("600"));
-          check("five-working-tabs", doc.querySelectorAll("[data-finance-tab]").length === 5);
+          check("six-working-tabs-including-payroll", doc.querySelectorAll("[data-finance-tab]").length === 6 && !!doc.querySelector('[data-finance-tab="payroll"]'));
 
           win.openFinanceTransactionForm();
           doc.querySelector("#financeTransactionType").value = "expense";
@@ -68,6 +69,26 @@
           check("shift-register", doc.querySelector("#financeShiftsTable").textContent.includes("кассовых смен нет"));
           win.switchFinanceTab("pnl");
           check("pnl-lines", doc.querySelector("#financePnlRows").textContent.includes("Себестоимость") && doc.querySelector("#financePnlRows").textContent.includes("Аренда и коммунальные"));
+
+          for (const name of runFinancePeriodTests(await (await fetch('../admin.js')).text())) check(name, true);
+          win.eval('companyGeneralSettings.timezone = "UTC"; companyGeneralSettings.shiftEnd = "00:00"; financeState.transactions = [];');
+          win.localStorage.setItem(salesKey, JSON.stringify([{
+            id: 'audit-return', number: 42, branchId: 'b1', cashier: 'Тест',
+            createdAt: '2026-10-05T12:00:00Z', refundedAt: '2026-10-06T12:00:00Z',
+            paymentMethod: 'card', payments: [{method:'card',amount:100}], total:100,
+            items: [{id:'p-1',name:'Вода',price:100,quantity:1,unitCost:40}]
+          }]));
+          for (const prefix of ['finance', 'report']) {
+            doc.querySelector(`#${prefix}DateFrom`).value = '2026-10-06';
+            doc.querySelector(`#${prefix}DateTo`).value = '2026-10-06';
+            doc.querySelector(`#${prefix}BranchFilter`).value = 'all';
+          }
+          win.renderFinance();
+          win.renderAnalyticsSales();
+          check('refund-visible-in-finance-and-analytics', /-100/.test(doc.querySelector('#financeRevenue').textContent.replace(/\s/g,'')) && /-100/.test(doc.querySelector('#reportRevenue').textContent.replace(/\s/g,'')));
+          check('refund-visible-in-transaction-register', doc.querySelector('#financeTransactionsTable').textContent.includes('Возврат чека №42'));
+          check('refund-only-period-has-no-fake-receipts', doc.querySelector('#reportReceiptCount').textContent === '0');
+          check('refund-chart-has-valid-coordinates', !doc.querySelector('#reportSalesChart').innerHTML.includes('NaN'));
         } catch (error) {
           checks.push(`FAIL:runtime:${error.message}`);
         } finally {

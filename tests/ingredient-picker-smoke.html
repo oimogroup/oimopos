@@ -1,11 +1,13 @@
 <!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre><iframe id="app" src="../admin.html?test=1#menu/preparations" style="width:1440px;height:1000px;border:0"></iframe><script>
 app.onload=()=>{const w=app.contentWindow,d=w.document,out=[];const check=(n,v)=>out.push(`${v?'PASS':'FAIL'}:${n}`);try{
 for(const kind of ['Recipe','Preparation']){
-w['open'+kind+'Form']();const root=d.querySelector('#'+kind.toLowerCase()+'ComponentsEditor'),input=root.querySelector('.ingredient-picker input'),select=root.querySelector('select');
+w['open'+kind+'Form']();const root=d.querySelector('#'+kind.toLowerCase()+'ComponentsEditor');let input=root.querySelector('.ingredient-picker input'),select=root.querySelector('select');
 input.focus();input.value='му';input.dispatchEvent(new w.Event('input',{bubbles:true}));
 const options=root.querySelectorAll('[role=option]');check(kind+'-search',options.length>0&&[...options].every(o=>o.textContent.toLowerCase().includes('му')));
 const expected=[...select.options].find(o=>o.textContent.toLowerCase().includes('му')).value;
-input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));check(kind+'-keyboard-selection',select.value===expected);
+input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowDown',bubbles:true}));input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true}));
+// Choosing an ingredient rerenders the editor; subsequent events need its live controls.
+input=root.querySelector('.ingredient-picker input');select=root.querySelector('select');check(kind+'-keyboard-selection',select.value===expected);
 input.value='не существует 123';input.dispatchEvent(new w.Event('input',{bubbles:true}));check(kind+'-empty',root.querySelector('.ingredient-picker-options').textContent.includes('не найдены'));
 input.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Escape',bubbles:true}));check(kind+'-escape-keeps-selection',select.value===expected&&input.value===select.selectedOptions[0].textContent);
 }

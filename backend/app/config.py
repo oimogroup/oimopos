@@ -13,6 +13,8 @@ class Settings(BaseSettings):
     employee_pin_key: str = ""
     session_days: int = 7
     session_cookie_secure: bool = False
+    openai_api_key: str = ""
+    invoice_photo_model: str = "gpt-4.1"
 
     @property
     def allowed_origins(self) -> list[str]:

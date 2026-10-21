@@ -477,7 +477,7 @@ def test_owner_can_delete_unused_catalog_entries() -> None:
         "name": "Ошибочная техкарта", "category": "Горячее", "station": "Кухня", "price": 10, "yield": 999,
         "components": [{"ingredientId": "salt", "gross": 1, "net": 1}],
     })
-    assert next(recipe for recipe in state["recipes"] if str(recipe["id"]) == recipe_id)["yield"] == 1
+    assert next(recipe for recipe in state["recipes"] if str(recipe["id"]) == recipe_id)["yield"] == 999
     apply_action(state, OWNER, "catalog.delete", {"kind": "recipe", "id": recipe_id})
     assert all(str(recipe["id"]) != recipe_id for recipe in state["recipes"])
 
@@ -520,3 +520,50 @@ def test_catalog_delete_protects_links_stock_history_and_permissions() -> None:
     with pytest.raises(WorkspaceError) as error:
         apply_action(state, BRANCH, "catalog.delete", {"kind": "preparation", "id": "missing"})
     assert error.value.status_code == 403
+
+
+def test_recipe_keeps_finished_output_separate_from_raw_weights() -> None:
+    state = default_state()
+    _, recipe_id = apply_action(state, OWNER, "recipe.upsert", {
+        "name": "Cooked rice", "station": "Kitchen", "yield": 300, "price": 70,
+        "components": [{"ingredientId": "rice", "gross": 100, "net": 100}],
+    })
+    recipe = next(r for r in state["recipes"] if str(r["id"]) == recipe_id)
+    assert recipe["yield"] == 300
+    assert recipe["components"][0]["net"] == 100
+    with pytest.raises(WorkspaceError):
+        apply_action(state, OWNER, "recipe.upsert", {
+            **recipe, "yield": 0,
+        })
+
+
+def test_saved_order_removed_only_after_successful_payment():
+    state = default_state()
+    order = {'id': 'saved-test', 'branchId': 'b1', 'items': [{'id': 'p-1', 'quantity': 2}]}
+    state['posState']['openOrders'].append(order)
+    payload = {'openOrderId': order['id'], 'paymentMethod': 'cash', 'received': 1, 'items': order['items']}
+    with pytest.raises(WorkspaceError):
+        apply_action(state, POS_MANAGER, 'sale.create', payload)
+    assert order in state['posState']['openOrders']
+    apply_action(state, POS_MANAGER, 'sale.create', {**payload, 'received': 100})
+    assert not any(o['id'] == order['id'] for o in state['posState']['openOrders'])
+    with pytest.raises(WorkspaceError):
+        apply_action(state, POS_MANAGER, 'sale.create', {**payload, 'received': 100})
+
+
+def test_supply_debt_payment_partial_full_and_retry():
+    from copy import deepcopy
+    s=default_state()
+    account={'id':'test-account','status':'active','branchId':'b1'}
+    s['financeState']={'accounts':[account],'categories':[],'transactions':[]}
+    s['logisticsState']['supplies'].append({'id':'test-debt','number':'TEST','supplier':'Test','branchId':'b1','total':100,'paidTotal':0,'debt':100,'payments':[]})
+    stocks=deepcopy(s['logisticsState']['branchStocks'])
+    payload={'id':'test-debt','accountId':account['id'],'amount':40,'requestId':'one'}
+    apply_action(s,OWNER,'supply.pay',payload)
+    apply_action(s,OWNER,'supply.pay',payload)
+    doc=s['logisticsState']['supplies'][-1]
+    assert doc['debt']==60 and len(doc['payments'])==1
+    with pytest.raises(WorkspaceError):apply_action(s,OWNER,'supply.pay',{**payload,'requestId':'two','amount':61})
+    apply_action(s,OWNER,'supply.pay',{**payload,'requestId':'two','amount':60})
+    assert doc['paymentStatus']=='paid' and doc['debt']==0
+    assert s['logisticsState']['branchStocks']==stocks

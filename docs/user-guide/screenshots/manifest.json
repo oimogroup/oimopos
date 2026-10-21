@@ -1,0 +1,602 @@
+[
+  {
+    "id": "01-login",
+    "title": "Вход в систему",
+    "url": "/login",
+    "image": "screenshots/01-login.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#loginInput",
+        "text": "Логин"
+      },
+      {
+        "number": 2,
+        "selector": "#passwordInput",
+        "text": "Пароль"
+      },
+      {
+        "number": 3,
+        "selector": "#loginForm button[type=submit]",
+        "text": "Войти"
+      }
+    ],
+    "sha256": "f31ba262bfcd03a2ff1d1de0059b8e159c816c56ae08e148790d31ca10a402ce",
+    "demo": true
+  },
+  {
+    "id": "02-home",
+    "title": "Рабочее пространство",
+    "url": "/admin?test=1",
+    "image": "screenshots/02-home.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#mainNav",
+        "text": "Разделы системы"
+      },
+      {
+        "number": 2,
+        "selector": "#sessionName",
+        "text": "Текущий пользователь"
+      }
+    ],
+    "sha256": "3007970eaaab9421da92e4a3f0ab361db78d8672732d75af26905e78c66ad61e",
+    "demo": true
+  },
+  {
+    "id": "03-settings",
+    "title": "Настройки компании",
+    "url": "/admin?test=1",
+    "image": "screenshots/03-settings.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#view-settings",
+        "text": "Параметры компании"
+      }
+    ],
+    "sha256": "8ea8f9dd1545ec489472c71742084ffddbb11e5375aa9af47a97cb6053307fdc",
+    "demo": true
+  },
+  {
+    "id": "04-branches",
+    "title": "Заведения",
+    "url": "/admin?test=1",
+    "image": "screenshots/04-branches.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#view-branches",
+        "text": "Список заведений"
+      }
+    ],
+    "sha256": "558b7a463eff7e73d6178bba44181b4c4f0e2a04df4d939096577eec48c67ed1",
+    "demo": true
+  },
+  {
+    "id": "05-registers",
+    "title": "Кассы",
+    "url": "/admin?test=1",
+    "image": "screenshots/05-registers.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#registersTable",
+        "text": "Кассы и устройства"
+      }
+    ],
+    "sha256": "6fd08b33c4dbfd92fbfb94d6714143f78e74a9ac49d28ea88014f8d275280f26",
+    "demo": true
+  },
+  {
+    "id": "06-employees",
+    "title": "Сотрудники и права",
+    "url": "/admin?test=1",
+    "image": "screenshots/06-employees.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#employeeNameInput",
+        "text": "Имя сотрудника"
+      },
+      {
+        "number": 2,
+        "selector": "#employeeRoleInput",
+        "text": "Должность"
+      },
+      {
+        "number": 3,
+        "selector": "#employeePermissions",
+        "text": "Разрешённые действия"
+      }
+    ],
+    "sha256": "b4a3daca88927093332f995a3749fe77b19dd6ddee548f1a1fed72adf2ef60f5",
+    "demo": true
+  },
+  {
+    "id": "07-ingredients",
+    "title": "Ингредиенты",
+    "url": "/admin?test=1",
+    "image": "screenshots/07-ingredients.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#menuPageActionButton",
+        "text": "Добавить ингредиент"
+      },
+      {
+        "number": 2,
+        "selector": "#menu-pane-ingredients",
+        "text": "Сырьё и единицы учёта"
+      }
+    ],
+    "sha256": "4deff53d29799390014269eb0866988dd364d29fc13b289ff19716a2b3603b59",
+    "demo": true
+  },
+  {
+    "id": "08-products",
+    "title": "Готовые товары",
+    "url": "/admin?test=1",
+    "image": "screenshots/08-products.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#menuPageActionButton",
+        "text": "Добавить товар"
+      },
+      {
+        "number": 2,
+        "selector": "#menu-pane-products",
+        "text": "Продажа без приготовления"
+      }
+    ],
+    "sha256": "a709f16d49e86e0ec749bd88302f1d015e9f4a0fc8de43acc7a92bce91398222",
+    "demo": true
+  },
+  {
+    "id": "09-recipe",
+    "title": "Технологическая карта",
+    "url": "/admin?test=1",
+    "image": "screenshots/09-recipe.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#recipeNameInput",
+        "text": "Название блюда"
+      },
+      {
+        "number": 2,
+        "selector": "#recipeYieldInput",
+        "text": "Выход порции"
+      },
+      {
+        "number": 3,
+        "selector": "#recipeComponentsEditor",
+        "text": "Состав и нормы сырья"
+      }
+    ],
+    "sha256": "bb22b747ac827af081505ef5ccf7bd48a1c0c62c1c0ff74650a68f7d193f6e90",
+    "demo": true
+  },
+  {
+    "id": "10-preparations",
+    "title": "Полуфабрикаты и цеха",
+    "url": "/admin?test=1",
+    "image": "screenshots/10-preparations.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#menuPageActionButton",
+        "text": "Создать полуфабрикат"
+      }
+    ],
+    "sha256": "877be8aa7208d4d16bb0198d99a68c698419c2b95027039778d840580e6a341e",
+    "demo": true
+  },
+  {
+    "id": "11-suppliers",
+    "title": "Поставщики",
+    "url": "/admin?test=1",
+    "image": "screenshots/11-suppliers.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#view-inventory",
+        "text": "Справочник поставщиков"
+      }
+    ],
+    "sha256": "0a4b48ff740d2b2df3782700b06c364c2d140ff34c42c2c5220d2b0b08dba0c5",
+    "demo": true
+  },
+  {
+    "id": "12-supply",
+    "title": "Приёмка поставки",
+    "url": "/admin?test=1",
+    "image": "screenshots/12-supply.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#supplySupplier",
+        "text": "Поставщик"
+      },
+      {
+        "number": 2,
+        "selector": "#supplyWarehouse",
+        "text": "Склад заведения"
+      },
+      {
+        "number": 3,
+        "selector": "#supplyItemsEditor",
+        "text": "Позиции, количество и цена"
+      },
+      {
+        "number": 4,
+        "selector": "#saveSupplyButton",
+        "text": "Сохранить поставку"
+      }
+    ],
+    "sha256": "009de2dd7110027243a4cf1d5df5ccb2872b65ae8f87a751f714729f8c9add7a",
+    "demo": true
+  },
+  {
+    "id": "13-stock",
+    "title": "Остатки и движения",
+    "url": "/admin?test=1",
+    "image": "screenshots/13-stock.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#view-inventory",
+        "text": "Остатки выбранного заведения"
+      }
+    ],
+    "sha256": "89e07abefb13e5f316e111bbf7000d935a2ba6ec4dcd38a1745370d3faec5429",
+    "demo": true
+  },
+  {
+    "id": "14-production",
+    "title": "Производство",
+    "url": "/admin?test=1",
+    "image": "screenshots/14-production.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#productionTabs",
+        "text": "Ведомость и журнал"
+      },
+      {
+        "number": 2,
+        "selector": "#productionBranchSelect",
+        "text": "Заведение"
+      }
+    ],
+    "sha256": "0da3e4a0873950bc0e711bafba2ddce50aa89353d261814ea03a665897ac7bf3",
+    "demo": true
+  },
+  {
+    "id": "15-batch",
+    "title": "Выпуск партии",
+    "url": "/admin?test=1",
+    "image": "screenshots/15-batch.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#batchRecipe",
+        "text": "Технологическая карта"
+      },
+      {
+        "number": 2,
+        "selector": "#batchWeight",
+        "text": "Фактический вес"
+      },
+      {
+        "number": 3,
+        "selector": "#saveBatchButton",
+        "text": "Подтвердить выпуск"
+      }
+    ],
+    "sha256": "c4a8749cea434519aa104dd9567b17e489b1385672fdb0bebed80c8c901ea41e",
+    "demo": true
+  },
+  {
+    "id": "16-transfer",
+    "title": "Перемещение между точками",
+    "url": "/admin?test=1",
+    "image": "screenshots/16-transfer.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#pointTransferModal",
+        "text": "Отправитель, получатель и позиции"
+      }
+    ],
+    "sha256": "d19cf14869aa311cf26aa8fdb6950a5aff807a65b90331e7cc40261f303f3aaf",
+    "demo": true
+  },
+  {
+    "id": "17-inventory",
+    "title": "Инвентаризация",
+    "url": "/admin?test=1",
+    "image": "screenshots/17-inventory.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#inventorySetup",
+        "text": "Заведение, список позиций и ответственный"
+      }
+    ],
+    "sha256": "f83e4bf610e14bac3019c42bbae07232c5c0820a307e6ebb1afe4c21d17431ff",
+    "demo": true
+  },
+  {
+    "id": "18-reports",
+    "title": "Статистика продаж",
+    "url": "/admin?test=1",
+    "image": "screenshots/18-reports.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#view-reports",
+        "text": "Период, выручка и себестоимость"
+      }
+    ],
+    "sha256": "cff0a8419f88249af10d359adfd441003853b74974c95338284e93bddfb06f21",
+    "demo": true
+  },
+  {
+    "id": "19-payroll",
+    "title": "Расчёт зарплаты",
+    "url": "/admin?test=1",
+    "image": "screenshots/19-payroll.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#payrollFrom",
+        "text": "Начало периода"
+      },
+      {
+        "number": 2,
+        "selector": "#payrollPolicies",
+        "text": "Ставки сотрудников"
+      },
+      {
+        "number": 3,
+        "selector": "#payrollRuns",
+        "text": "Начисленные ведомости"
+      }
+    ],
+    "sha256": "592ae89b2876367da7f464820d965e3fff1992e1d57bf6356a197c4a04d5a514",
+    "demo": true
+  },
+  {
+    "id": "20-salary-policy",
+    "title": "Настройка ставки",
+    "url": "/admin?test=1",
+    "image": "screenshots/20-salary-policy.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "[name=fixedMode]",
+        "text": "Способ начисления ставки"
+      },
+      {
+        "number": 2,
+        "selector": "[name=fixedAmount]",
+        "text": "Размер ставки"
+      },
+      {
+        "number": 3,
+        "selector": "[name=personalPercent]",
+        "text": "Процент от личных продаж"
+      }
+    ],
+    "sha256": "ccebf739c1ea6ad09185c6ef290ca60c41e6f55d7d2d5e30a9b18bd34be6ee47",
+    "demo": true
+  },
+  {
+    "id": "21-pnl",
+    "title": "Прибыли и убытки",
+    "url": "/admin?test=1",
+    "image": "screenshots/21-pnl.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#financeNetProfit",
+        "text": "Чистая прибыль"
+      },
+      {
+        "number": 2,
+        "selector": "#pnlAddExpense",
+        "text": "Расход за период"
+      },
+      {
+        "number": 3,
+        "selector": "#exportFinanceButton",
+        "text": "Скачать P&L"
+      }
+    ],
+    "sha256": "fe355c583b8c842bf4d77541923fa8ea32fe8db4ceec0f3655241536a3f6db5c",
+    "demo": true
+  },
+  {
+    "id": "22-expense",
+    "title": "Аренда и коммуналка",
+    "url": "/admin?test=1",
+    "image": "screenshots/22-expense.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#pnlFields [name=categoryId]",
+        "text": "Статья расхода"
+      },
+      {
+        "number": 2,
+        "selector": "#pnlFields [name=amount]",
+        "text": "Сумма за весь период"
+      },
+      {
+        "number": 3,
+        "selector": "#pnlFields [name=start]",
+        "text": "Начало периода"
+      },
+      {
+        "number": 4,
+        "selector": "#pnlFields [name=end]",
+        "text": "Конец периода"
+      }
+    ],
+    "sha256": "ec327735ed22391eb0804aac3d8dc9ebbb8c2c1b7ce1129704e4ab347caaf1a5",
+    "demo": true
+  },
+  {
+    "id": "23-money",
+    "title": "Движение денег",
+    "url": "/admin?test=1",
+    "image": "screenshots/23-money.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#financeTransactionModal .admin-modal",
+        "text": "Оплата, счёт, статья и влияние на прибыль"
+      }
+    ],
+    "sha256": "e9b5935bee00da9bc8778f1c89497e753e2e70147da933dc1b9674ee0b3f4bc5",
+    "demo": true
+  },
+  {
+    "id": "24-pos",
+    "title": "Касса и заказ",
+    "url": "/pos",
+    "image": "screenshots/24-pos.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#productGrid",
+        "text": "Каталог выбранной категории"
+      },
+      {
+        "number": 2,
+        "selector": "#orderItems",
+        "text": "Состав заказа"
+      },
+      {
+        "number": 3,
+        "selector": "#payButton",
+        "text": "Перейти к оплате"
+      }
+    ],
+    "sha256": "833e15b4e781ed36082317fc2e75201c7f5a84640487a7ac950c9e4db8d71354",
+    "demo": true
+  },
+  {
+    "id": "25-payment",
+    "title": "Оплата заказа",
+    "url": "/pos",
+    "image": "screenshots/25-payment.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#paymentModal",
+        "text": "Способ оплаты и подтверждение"
+      }
+    ],
+    "sha256": "c5abdd332d02d4152d0a9d08922c51614ed7211d284e008a4eda50f7f59b9a33",
+    "demo": true
+  },
+  {
+    "id": "26-functions",
+    "title": "Функции кассы",
+    "url": "/pos",
+    "image": "screenshots/26-functions.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#functionOperations",
+        "text": "Рабочее время, смена, поставки и возвраты"
+      }
+    ],
+    "sha256": "3af38bfa88b9dd238d1c74b48e8af946dafd89d03ca320d4d27ccc8d97968ffc",
+    "demo": true
+  },
+  {
+    "id": "27-worktime",
+    "title": "Рабочее время",
+    "url": "/pos",
+    "image": "screenshots/27-worktime.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#workTimeEmployee",
+        "text": "Текущий сотрудник"
+      },
+      {
+        "number": 2,
+        "selector": "#workTimeState",
+        "text": "Состояние рабочего дня"
+      },
+      {
+        "number": 3,
+        "selector": "#workTimeAction",
+        "text": "Начать или закончить рабочий день"
+      }
+    ],
+    "sha256": "f2a0ceeb6599f6506607c4cdbaa31b4b39c81fd94d2f4afa0b23ff49fd611dc7",
+    "demo": true
+  },
+  {
+    "id": "28-printer",
+    "title": "Настройка термопринтера",
+    "url": "/pos",
+    "image": "screenshots/28-printer.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#receiptPrinterMode",
+        "text": "Способ печати"
+      },
+      {
+        "number": 2,
+        "selector": "#receiptPaperWidth",
+        "text": "Ширина бумаги"
+      },
+      {
+        "number": 3,
+        "selector": "#testPrinterButton",
+        "text": "Пробный чек"
+      },
+      {
+        "number": 4,
+        "selector": "#saveTerminalSettingsButton",
+        "text": "Сохранить настройки"
+      }
+    ],
+    "sha256": "49fbf06cb7ee648b88bb64e7b440ea91f23a95528421caef81d3c06234f54b81",
+    "demo": true
+  },
+  {
+    "id": "29-offline",
+    "title": "Автономная касса и очередь чеков",
+    "url": "/pos",
+    "image": "screenshots/29-offline.png",
+    "markers": [
+      {
+        "number": 1,
+        "selector": "#offlineQueue",
+        "text": "Неотправленные чеки хранятся на устройстве"
+      },
+      {
+        "number": 2,
+        "selector": "#offlineSyncButton",
+        "text": "Проверить связь и отправить"
+      },
+      {
+        "number": 3,
+        "selector": "#offlineExportButton",
+        "text": "Скачать копию очереди"
+      }
+    ],
+    "sha256": "7ba32770736cfa573bef261da98df3a0f25dfb19881d5292ed0725985e0fce86",
+    "demo": true
+  }
+]

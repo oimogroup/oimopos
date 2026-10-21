@@ -3,7 +3,7 @@
   <head><meta charset="utf-8"><title>Full-page workspaces smoke test</title></head>
   <body>
     <pre id="results">RUNNING</pre>
-    <iframe id="app" src="../admin.html?test=1#menu/ingredients" style="position:fixed;left:-10000px;width:1900px;height:950px;border:0"></iframe>
+    <iframe id="app" src="../admin?test=1#menu/ingredients" style="position:fixed;left:-10000px;width:1900px;height:950px;border:0"></iframe>
     <script>
       document.querySelector("#app").addEventListener("load", () => {
         const frame = document.querySelector("#app");
@@ -22,6 +22,20 @@
         const checks = [];
         const check = (name, condition) => checks.push(`${condition ? "PASS" : "FAIL"}:${name}`);
         try {
+          const workspaceLeft = doc.querySelector('.admin-main').getBoundingClientRect().left;
+          const workspaceWidth = win.innerWidth - workspaceLeft;
+          const sidebar = doc.querySelector('.sidebar');
+          const sidebarBefore = sidebar.getBoundingClientRect();
+          const content = doc.querySelector('.admin-content');
+          const spacer = doc.createElement('div');
+          spacer.style.height = `${win.innerHeight * 2}px`;
+          content.append(spacer);
+          content.scrollTop = win.innerHeight;
+          const sidebarAfter = sidebar.getBoundingClientRect();
+          check('sidebar-static-during-content-scroll', content.scrollTop > 0 && sidebarBefore.top === sidebarAfter.top && sidebarBefore.bottom === sidebarAfter.bottom);
+          check('content-does-not-overlap-sidebar', workspaceLeft >= sidebarAfter.right);
+          content.scrollTop = 0;
+          spacer.remove();
           const workspaces = [...doc.querySelectorAll(".modal-backdrop:not(.supply-page-backdrop):not(.catalog-delete-backdrop), .side-drawer-backdrop")];
           check("all-workspaces-covered", workspaces.length >= 28);
           check("all-workspaces-have-back", workspaces.every((workspace) => workspace.querySelector(".workspace-back")));
@@ -31,13 +45,13 @@
           const ingredientPage = ingredientBackdrop.querySelector(".admin-modal");
           const backdropStyle = win.getComputedStyle(ingredientBackdrop);
           const pageStyle = win.getComputedStyle(ingredientPage);
-          check("ingredient-opens-as-page", !ingredientBackdrop.classList.contains("hidden") && backdropStyle.left === "216px" && backdropStyle.backgroundColor === "rgb(255, 255, 255)");
-          check("ingredient-no-popup-card", pageStyle.width === "1684px" && pageStyle.height === "950px" && pageStyle.borderRadius === "0px" && pageStyle.boxShadow === "none");
+          check("ingredient-opens-as-page", !ingredientBackdrop.classList.contains("hidden") && parseFloat(backdropStyle.left) === workspaceLeft && pageStyle.backgroundColor === "rgb(255, 255, 255)");
+          check("ingredient-no-popup-card", parseFloat(pageStyle.width) === workspaceWidth && parseFloat(pageStyle.height) === win.innerHeight && pageStyle.borderRadius === "0px" && pageStyle.boxShadow === "none");
           ingredientBackdrop.classList.add("hidden");
 
           win.openSupplierForm();
           const supplierBackdrop = doc.querySelector("#supplierModal");
-          check("supplier-opens-as-page", !supplierBackdrop.classList.contains("hidden") && win.getComputedStyle(supplierBackdrop).left === "216px");
+          check("supplier-opens-as-page", !supplierBackdrop.classList.contains("hidden") && parseFloat(win.getComputedStyle(supplierBackdrop).left) === workspaceLeft);
           supplierBackdrop.classList.add("hidden");
 
           win.openEmployeeForm();
@@ -47,12 +61,12 @@
 
           win.openRecipe(201);
           const drawer = doc.querySelector("#recipeDrawer .detail-drawer");
-          check("details-open-as-page", !doc.querySelector("#recipeDrawer").classList.contains("hidden") && win.getComputedStyle(drawer).width === "1684px" && win.getComputedStyle(drawer).boxShadow === "none");
+          check("details-open-as-page", !doc.querySelector("#recipeDrawer").classList.contains("hidden") && parseFloat(win.getComputedStyle(drawer).width) === workspaceWidth && win.getComputedStyle(drawer).boxShadow === "none");
           doc.querySelector("#recipeDrawer").classList.add("hidden");
 
           doc.querySelector("#catalogDeleteModal").classList.remove("hidden");
           const deleteStyle = win.getComputedStyle(doc.querySelector("#catalogDeleteModal .admin-modal"));
-          check("delete-keeps-safe-confirmation", deleteStyle.width !== "1684px" && deleteStyle.borderRadius !== "0px");
+          check("delete-keeps-safe-confirmation", parseFloat(deleteStyle.width) < workspaceWidth && deleteStyle.borderRadius !== "0px");
         } catch (error) {
           checks.push(`FAIL:runtime:${error.message}`);
         }

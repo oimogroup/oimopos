@@ -1,0 +1,235 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Production shift acceptance checks</title>
+  <style>
+    body {margin:0;background:#f5f1f4;font:13px system-ui,sans-serif}
+    #results {margin:16px;white-space:pre-wrap}
+    iframe {border:0;background:white}
+  </style>
+</head>
+<body>
+  <pre id="results">RUNNING</pre>
+  <script>
+    const checks = [];
+    const check = (name, condition) => {
+      checks.push(`${condition ? 'PASS' : 'FAIL'}:${name}`);
+      document.querySelector('#results').textContent = checks.join('|');
+    };
+    const pause = (ms = 25) => new Promise(resolve => setTimeout(resolve, ms));
+    async function until(predicate, label) {
+      for (let attempt = 0; attempt < 160; attempt++) {
+        if (predicate()) return;
+        await pause();
+      }
+      throw new Error(`Timed out: ${label}`);
+    }
+
+    async function run() {
+      try {
+        const params = new URLSearchParams(location.search);
+        const preview = params.has('preview');
+        const width = Math.min(1920, Math.max(320, Number(params.get('width')) || 1280));
+        const height = Math.min(1200, Math.max(320, Number(params.get('height')) || 900));
+        const source = await fetch('../pos').then(response => {
+          if (!response.ok) throw new Error(`POS shell: ${response.status}`);
+          return response.text();
+        });
+        const names = [
+          'Говядина охлаждённая', 'Морковь свежая', 'Картофель очищенный', 'Лук репчатый',
+          'Масло подсолнечное рафинированное', 'Мука пшеничная высшего сорта', 'Томатная паста',
+          'Яйцо куриное', 'Сметана 20%', 'Соль пищевая йодированная', 'Перец чёрный молотый',
+          'Гречневая крупа', 'Капуста белокочанная', 'Огурцы свежие', 'Чеснок', 'Сахар',
+          'Куриное филе', 'Сливочное масло 82,5%', 'Укроп свежий', 'Сыр полутвёрдый',
+          'Фасоль красная', 'Чечевица', 'Сливки 20%', 'Лапша домашняя', 'Кориандр молотый',
+          'Зира', 'Лавровый лист', 'Кукуруза консервированная', 'Горошек зелёный', 'Свёкла',
+        ];
+        const units = ['кг', 'л', 'шт', 'г'];
+        const ingredients = Array.from({length: 84}, (_, index) => ({
+          id: `i-${String(index + 1).padStart(3, '0')}`,
+          name: names[index % names.length] + (index >= names.length ? ` · запас ${Math.floor(index / names.length) + 1}` : ''),
+          unit: units[index % units.length],
+          quantity: index % units.length === 2 ? 20 + index : Number((4.25 + index * 1.375).toFixed(3)),
+        }));
+        ingredients[0] = {...ingredients[0], name: 'Рис длиннозёрный шлифованный высшего сорта', unit: 'кг', quantity: 117.90079365};
+        ingredients[1] = {...ingredients[1], name: 'Молоко пастеризованное 3,2%', unit: 'л', quantity: 18.5};
+        ingredients[83] = {...ingredients[83], name: 'Шафран натуральный — приправа для праздничного плова и национальных блюд', unit: 'г', quantity: 120};
+        const counts = [
+          {batchId: 'batch-1', number: 'АП-000041', name: 'Плов праздничный с говядиной', expectedWeight: 12.3456789},
+          {batchId: 'batch-2', number: 'АП-000042', name: 'Лагман домашний с овощами', expectedWeight: 4.75},
+        ];
+        const actor = {id: 21, name: 'Айбек Повар', staffRole: 'production', roleLabel: 'Производство', initials: 'АП', permissions: {production: true, posSupply: true}};
+        const fixture = JSON.stringify({ingredients, counts, actor}).replace(/</g, '\\u003c');
+        const frame = document.createElement('iframe');
+        frame.id = 'productionShiftFixture';
+        frame.style.cssText = `position:fixed;top:0;left:${preview ? 0 : -10000}px;width:${width}px;height:${height}px;${preview ? 'z-index:10' : ''}`;
+        document.body.append(frame);
+        const shell = source.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '')
+          .replace('<head>', '<head><base href="/">')
+          .replace('</body>', `
+            <script>
+              window.__fixture = ${fixture};
+              window.__runtimeErrors = [];
+              window.addEventListener('error', event => window.__runtimeErrors.push(event.message));
+              window.addEventListener('unhandledrejection', event => window.__runtimeErrors.push(String(event.reason)));
+              window.__mock = {writes: [], network: [], shift: null};
+              window.fetch = async (...args) => {
+                window.__mock.network.push(String(args[0]));
+                throw new Error('Real network access is disabled in this fixture');
+              };
+              window.__mock.workspace = {version: 1, state: {
+                serviceMode: 'canteen', branches: [{id: 'b1', name: 'Oimo · Столовая', status: 'active'}],
+                menuCategories: [], recipes: [], products: [], ingredients: window.__fixture.ingredients, sales: [],
+                logisticsState: {branchStocks: {b1: {}}, batches: []},
+                posState: {customers: [], openOrders: [], cashMovements: []}
+              }};
+              window.AshkanaApi = {
+                me: async () => ({session: {role: 'branch', staffRole: 'pos_terminal', branchId: 'b1', registerId: 1, registerName: 'Основная касса', tenantSlug: 'production-shift-smoke'}}),
+                workspace: async () => window.__mock.workspace,
+                posOperator: async () => ({operator: window.__fixture.actor, shift: null}),
+                posOperators: async () => [window.__fixture.actor],
+                posProductionContext: async () => ({recipes: [], batches: [], productionShift: {
+                  shift: window.__mock.shift, counts: window.__fixture.counts, ingredientStocks: window.__fixture.ingredients
+                }}),
+                posTransferHistory: async () => ({actorId: window.__fixture.actor.id, documents: []}),
+                posReceiving: async () => ({documents: [], version: 1}),
+                action: async (name, payload) => {
+                  if (name !== 'production.shift.open') throw new Error('Unexpected fixture action: ' + name);
+                  window.__mock.writes.push({name, payload});
+                  window.__mock.shift = {id: 'shift-1', employeeId: window.__fixture.actor.id, employeeName: window.__fixture.actor.name, openedAt: '2026-10-06T08:00:00'};
+                  return window.__mock.workspace;
+                },
+                lockPos: async () => ({}), logout: async () => ({})
+              };
+            <\/script>
+            <script src="/company-settings.js"><\/script><script src="/custody.js"><\/script><script src="/receipt-printing.js"><\/script><script src="/app.js"><\/script></body>`);
+        await new Promise(resolve => {frame.addEventListener('load', resolve, {once: true}); frame.srcdoc = shell;});
+        const win = frame.contentWindow, doc = frame.contentDocument;
+        const q = selector => doc.querySelector(selector);
+        const rows = () => [...doc.querySelectorAll('#productionShiftForm [data-ingredient-count], #productionShiftForm [data-kitchen-batch]')];
+        const visibleRows = () => rows().filter(row => !row.classList.contains('hidden'));
+        const ingredient = id => rows().find(row => row.dataset.ingredientCount === id);
+        const batch = id => rows().find(row => row.dataset.kitchenBatch === id);
+        const input = (element, value) => {element.value = value; element.dispatchEvent(new win.Event('input', {bubbles: true}));};
+        const search = value => input(q('#productionShiftSearch'), value);
+        await until(() => rows().length === 86 && !q('#productionShiftDrawer').classList.contains('hidden'), 'populated shift acceptance');
+        const form = q('#productionShiftForm');
+        const scroll = q('#productionShiftScroll');
+        const footer = q('#productionShiftFooter');
+        const panel = q('#productionShiftDrawer .production-shift-panel');
+        const header = panel.querySelector('header');
+        check('acceptance-opens-with-all-stock', q('#productionShiftTitle').textContent === 'Принять смену' && rows().length === 86);
+        check('table-uses-one-shared-column-header', panel.querySelectorAll('.production-count-columns').length === 1 && q('.production-count-columns').textContent.includes('По учёту') && q('.production-count-columns').textContent.includes('Факт'));
+        check('form-has-independent-scroll-and-footer', scroll.parentElement === form && footer.parentElement === form && !scroll.contains(footer));
+        check('summary-is-populated', Boolean(q('#productionShiftSummary').textContent.trim()));
+        check('mixed-units-and-long-names-rendered', ['кг', 'л', 'шт', 'г'].every(unit => q('#productionIngredientStocks').textContent.includes(unit)) && ingredient('i-084').textContent.includes(ingredients[83].name));
+        check('rounded-display-is-valid', ingredient('i-001').querySelector('[data-actual]').value === '117.901' && ingredient('i-001').querySelector('[data-actual]').checkValidity());
+        check('reasons-start-hidden-and-optional', rows().every(row => {
+          const reason = row.querySelector('[data-reason]');
+          return reason.tagName === 'INPUT' && reason.classList.contains('hidden') && !reason.required && reason.disabled;
+        }));
+
+        search('  мОЛОКО  ');
+        check('search-is-case-insensitive-and-trimmed', visibleRows().length === 1 && visibleRows()[0] === ingredient('i-002'));
+        const enter = new win.KeyboardEvent('keydown', {key: 'Enter', bubbles: true, cancelable: true});
+        q('#productionShiftSearch').dispatchEvent(enter);
+        check('enter-in-search-does-not-accept-shift', enter.defaultPrevented && win.__mock.writes.length === 0);
+        check('search-hides-empty-prepared-section', q('#productionPreparedStocks').classList.contains('hidden'));
+        search('ЛАГМАН');
+        check('search-finds-prepared-dish', visibleRows().length === 1 && visibleRows()[0] === batch('batch-2'));
+        const ingredientSection = q('#productionIngredientStocks').closest('section');
+        check('search-hides-empty-ingredient-section', Boolean(ingredientSection?.classList.contains('hidden')));
+        search('несуществующий ингредиент');
+        check('unmatched-search-keeps-submit-and-data', visibleRows().length === 0 && rows().length === 86 && !q('#productionShiftSubmit').disabled);
+        check('unmatched-search-shows-empty-state', !q('#productionCountEmpty').classList.contains('hidden') && q('#productionCountEmpty').textContent.includes('Ничего не найдено'));
+        search('');
+        check('clearing-search-restores-both-sections', visibleRows().length === 86 && !ingredientSection.classList.contains('hidden') && !q('#productionPreparedStocks').classList.contains('hidden'));
+
+        const precision = ingredient('i-001');
+        const precisionInput = precision.querySelector('[data-actual]');
+        const precisionReason = precision.querySelector('[data-reason]');
+        input(precisionInput, '117');
+        check('changed-quantity-requires-visible-reason', !precisionReason.classList.contains('hidden') && precisionReason.required && !precisionReason.disabled);
+        input(precisionReason, 'Проверено при пересчёте');
+        input(precisionInput, precisionInput.defaultValue);
+        check('restored-display-clears-reason-without-rounding-adjustment', precisionReason.classList.contains('hidden') && !precisionReason.required && precisionReason.disabled && precisionReason.value === '');
+
+        const changed = ingredient('i-084');
+        const reason = changed.querySelector('[data-reason]');
+        input(changed.querySelector('[data-actual]'), '119');
+        search('Молоко');
+        check('invalid-changed-row-can-be-hidden-by-search', changed.classList.contains('hidden') && reason.required);
+        q('#productionShiftSubmit').click();
+        await pause(100);
+        check('invalid-hidden-row-is-revealed-and-focused', !changed.classList.contains('hidden') && !ingredientSection.classList.contains('hidden') && doc.activeElement === reason && reason.getBoundingClientRect().height > 0);
+        check('validation-blocks-action', win.__mock.writes.length === 0);
+        input(reason, 'Уточнено при пересчёте остатка');
+        search('Молоко');
+        q('#productionShiftSubmit').click();
+        await until(() => win.__mock.writes.length === 1 && !q('#productionShiftSubmit').disabled, 'complete stock submission');
+        const payload = win.__mock.writes[0].payload;
+        check('filtered-submit-includes-every-ingredient-and-batch', payload.ingredientCounts.length === 84 && payload.counts.length === 2 && new Set(payload.ingredientCounts.map(row => row.id)).size === 84);
+        check('unchanged-ingredient-keeps-original-precision', payload.ingredientCounts.find(row => row.id === 'i-001').expectedQuantity === 117.90079365 && payload.ingredientCounts.find(row => row.id === 'i-001').actualQuantity === 117.90079365);
+        check('unchanged-prepared-stock-keeps-original-precision', payload.counts.find(row => row.batchId === 'batch-1').actualWeight === 12.3456789);
+        const hiddenSubmitted = payload.ingredientCounts.find(row => row.id === 'i-084');
+        check('hidden-changed-row-keeps-count-and-reason', hiddenSubmitted.actualQuantity === 119 && hiddenSubmitted.expectedQuantity === 120 && hiddenSubmitted.reason === 'Уточнено при пересчёте остатка');
+        check('submission-uses-one-idempotent-action', win.__mock.writes.length === 1 && win.__mock.writes[0].name === 'production.shift.open' && Boolean(payload.requestId));
+
+        win.__mock.shift = null;
+        await win.openProductionShift();
+        search('');
+        const fitsHorizontally = node => {
+          const rect = node.getBoundingClientRect();
+          return rect.width > 0 && rect.left >= -1 && rect.right <= win.innerWidth + 1 && node.scrollWidth <= node.clientWidth + 1;
+        };
+        const fitsVertically = node => {
+          const rect = node.getBoundingClientRect();
+          return rect.height > 0 && rect.top >= -1 && rect.bottom <= win.innerHeight + 1;
+        };
+        const measure = doc.createElement('canvas').getContext('2d');
+        const viewports = [[320, 568], [320, 700], [320, 900], [440, 700], [440, 900], [1280, 700], [1280, 900], [844, 390]];
+        for (const [viewportWidth, viewportHeight] of viewports) {
+            frame.style.width = `${viewportWidth}px`;
+            frame.style.height = `${viewportHeight}px`;
+            scroll.scrollTop = 0;
+            await pause(80);
+            const size = `${viewportWidth}x${viewportHeight}`;
+            const headerTop = header.getBoundingClientRect().top;
+            const footerTop = footer.getBoundingClientRect().top;
+            check(`no-horizontal-overflow-${size}`, [panel, form, scroll, footer, q('#productionShiftSearch'), ...rows()].every(fitsHorizontally) && doc.documentElement.scrollWidth <= win.innerWidth + 1);
+            const precisionField = ingredient('i-001').querySelector('[data-actual]');
+            const fieldStyle = win.getComputedStyle(precisionField);
+            measure.font = fieldStyle.font || `${fieldStyle.fontWeight} ${fieldStyle.fontSize} ${fieldStyle.fontFamily}`;
+            const textWidth = measure.measureText(precisionField.value).width;
+            const horizontalPadding = parseFloat(fieldStyle.paddingLeft) + parseFloat(fieldStyle.paddingRight);
+            check(`precision-number-fits-input-${size}`, precisionField.value === '117.901' && textWidth + horizontalPadding <= precisionField.clientWidth + 1);
+            check(`header-and-submit-visible-${size}`, [header, footer, q('#productionShiftSubmit')].every(fitsVertically));
+            check(`body-owns-long-list-scroll-${size}`, scroll.scrollHeight > scroll.clientHeight + 100 && scroll.clientHeight > (viewportHeight < 500 ? 65 : 150) && panel.scrollTop === 0);
+            scroll.scrollTop = scroll.scrollHeight;
+            await pause(80);
+            const lastInput = batch('batch-2').querySelector('[data-actual]').getBoundingClientRect();
+            const scrollRect = scroll.getBoundingClientRect();
+            check(`last-row-reachable-above-footer-${size}`, scroll.scrollTop > 0 && lastInput.top >= scrollRect.top - 1 && lastInput.bottom <= scrollRect.bottom + 1 && lastInput.bottom <= footer.getBoundingClientRect().top + 1);
+            check(`header-and-footer-stay-put-${size}`, Math.abs(header.getBoundingClientRect().top - headerTop) <= 1 && Math.abs(footer.getBoundingClientRect().top - footerTop) <= 1 && fitsVertically(q('#productionShiftSubmit')));
+        }
+
+        frame.style.width = `${width}px`;
+        frame.style.height = `${height}px`;
+        scroll.scrollTop = 0;
+        search('');
+        doc.activeElement?.blur();
+        await pause(100);
+        check('fixture-never-uses-real-network', win.__mock.network.length === 0);
+        check('runtime-no-errors', win.__runtimeErrors.length === 0);
+        document.body.dataset.testComplete = 'true';
+      } catch (error) {
+        check(`runtime:${error.message}`, false);
+        document.body.dataset.testComplete = 'true';
+      }
+    }
+    run();
+  </script>
+</body>
+</html>

@@ -3,7 +3,7 @@
   <head><meta charset="utf-8"><title>Admin smoke test</title></head>
   <body>
     <div id="results">WAIT</div>
-    <iframe id="app" src="../admin.html?test=1#inventory" style="display:none"></iframe>
+    <iframe id="app" src="../admin?test=1#inventory" style="display:none"></iframe>
     <script>
       document.querySelector("#app").addEventListener("load", async () => {
         const frame = document.querySelector("#app");
@@ -22,7 +22,7 @@
           check("setup-guide", doc.querySelectorAll("#setupGuide [data-setup-route]").length === 5);
           check("owner-no-point-switcher", !doc.querySelector("#objectSwitcher") && !doc.querySelector("#applyObjectButton"));
           check("owner-access-model", doc.querySelector('[data-owner-access-view="registers"]').textContent.includes("Кассы") && doc.querySelector('[data-owner-access-view="employees"]').textContent.includes("Сотрудники"));
-          check("owner-dashboard-no-network", !doc.querySelector('[data-owner-access-view="branches"]') && !doc.querySelector("#view-dashboard").textContent.includes("Заказы точек") && !doc.querySelector("#view-dashboard").textContent.includes("Итого по сети") && !doc.querySelector("#view-dashboard").textContent.includes("Заведения"));
+          check("owner-branch-navigation", Boolean(doc.querySelector('[data-owner-access-view="branches"]')) && !doc.querySelector("#view-dashboard").textContent.includes("Заказы точек") && !doc.querySelector("#view-dashboard").textContent.includes("Итого по сети"));
           win.switchStockTab("writeoff");
           check("stock-writeoff-navigation", doc.querySelector("#stockPageTitle").textContent === "Списания" && !doc.querySelector("#documentActionButton").classList.contains("hidden"));
           win.switchStockTab("movement");
@@ -99,10 +99,11 @@
           doc.querySelector("#ingredientModal").classList.add("hidden");
           win.openRecipeForm(201);
           check("ingredient-in-recipes", [...doc.querySelectorAll("#recipeComponentsEditor option")].some((option) => option.textContent === "Тестовый ингредиент"));
+          const originalYield = Number(doc.querySelector("#recipeYieldInput").value);
           const firstRecipeNet = doc.querySelector("#recipeComponentsEditor .component-net");
           firstRecipeNet.value = "160";
           firstRecipeNet.dispatchEvent(new Event("input", { bubbles: true }));
-          check("recipe-yield-auto", Number(doc.querySelector("#recipeYieldInput").value) === 390 && doc.querySelector("#recipeYieldInput").readOnly);
+          check("recipe-yield-explicit", Number(doc.querySelector("#recipeYieldInput").value) === originalYield && !doc.querySelector("#recipeYieldInput").readOnly);
           doc.querySelector("#recipeModal").classList.add("hidden");
 
           win.switchMenuPage("preparations");
@@ -364,6 +365,7 @@
           win.openRecipeForm();
           doc.querySelector("#recipeNameInput").value = "Тестовое блюдо";
           doc.querySelector("#recipePriceInput").value = "150";
+          doc.querySelector("#recipeYieldInput").value = "100";
           win.saveRecipeForm();
           check("recipe-create", JSON.parse(win.localStorage.getItem("ashkana-admin-recipes-v1") || "[]").length === recipesBefore + 1);
           const testRecipe = JSON.parse(win.localStorage.getItem("ashkana-admin-recipes-v1") || "[]").find((recipe) => recipe.name === "Тестовое блюдо");

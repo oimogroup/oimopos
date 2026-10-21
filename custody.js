@@ -7,7 +7,7 @@
     if (!root) return;
     root.classList.add('custody-panel');
     let data = {}, items = [], busy = false, pending = null, generation = 0, ready = false;
-    root.innerHTML = `<header><h3>Приёмка, остатки и списание</h3><button type="button" data-refresh>Обновить</button></header>
+    root.innerHTML = `<header><h3>Приёмка, остатки и списание</h3><button class="secondary-button" type="button" data-refresh>Обновить</button></header>
       <p class="custody-note">Приёмку подтверждает получатель под своей учётной записью. Списание исключает блюдо из продажи до решения руководителя.</p>
       <form data-form><fieldset disabled><label>Операция<select data-operation><option value="accept">Принять передачу</option><option value="writeoff">Заявка на списание</option><option value="count">Пересчитать остаток</option><option value="handover">Передать другому сотруднику</option><option value="review">Рассмотреть документ</option><option value="cancel">Отменить передачу</option><option value="close">Закрыть партию</option></select></label>
       <label>Документ / остаток<select data-target required></select></label><p data-balance class="custody-note"></p>
@@ -15,8 +15,8 @@
       <label data-recipient-label>Новый ответственный<select data-recipient></select></label>
       <label data-decision-label>Решение<select data-decision><option value="approve">Подтвердить</option><option value="reject">Отклонить</option></select></label>
       <label>Причина / комментарий<textarea data-reason rows="2" maxlength="500" placeholder="Причина списания, расхождения или результат проверки"></textarea></label>
-      <button type="submit" data-submit>Зафиксировать</button></fieldset></form><p data-message role="status"></p>
-      <h3>Остатки под ответственностью</h3><div class="custody-table"><table><thead><tr><th>Партия / витрина</th><th>Ответственный</th><th>Принято</th><th>Продано</th><th>Списано</th><th>На списании</th><th>Остаток</th></tr></thead><tbody data-lots></tbody></table></div><header><h3>Журнал операций</h3><button type="button" data-export>Скачать CSV</button></header>
+      <button class="primary-button" type="submit" data-submit>Зафиксировать</button></fieldset></form><p data-message role="status"></p>
+      <h3>Остатки под ответственностью</h3><div class="custody-table"><table><thead><tr><th>Партия / витрина</th><th>Ответственный</th><th>Принято</th><th>Продано</th><th>Списано</th><th>На списании</th><th>Остаток</th></tr></thead><tbody data-lots></tbody></table></div><header><h3>Журнал операций</h3><button class="secondary-button" type="button" data-export>Скачать CSV</button></header>
       <input data-search type="search" placeholder="Номер, сотрудник, причина" aria-label="Поиск в журнале">
       <div class="custody-table"><table><thead><tr><th>Документ</th><th>Количество / расхождение</th><th>Сотрудники</th><th>Состояние</th></tr></thead><tbody data-journal></tbody></table></div>`;
     const $ = selector => root.querySelector(selector);

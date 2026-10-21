@@ -1,0 +1,29 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>User guide checks</title><pre id="results">RUNNING</pre><iframe id="app" src="/docs/user-guide/" style="width:1440px;height:1000px;position:fixed;left:-10000px"></iframe><script>
+(async()=>{
+ const out=[],check=(n,v)=>{out.push(`${v?'PASS':'FAIL'}:${n}`);document.querySelector('#results').textContent=out.join('|')},pause=()=>new Promise(r=>setTimeout(r,20));
+ try{
+  const f=document.querySelector('#app');await new Promise(r=>f.addEventListener('load',r,{once:true}));const w=f.contentWindow,d=f.contentDocument,q=s=>d.querySelector(s),all=[...d.querySelectorAll('.guide-section')];
+  check('42-sections-present',all.length===42);
+  check('29-distinct-real-screenshots',new Set([...d.querySelectorAll('figure img')].map(i=>i.src)).size===29);
+  check('core-workflows-covered',['login','supply','inventory','production','pos','payroll','pnl','printing','troubleshooting'].every(id=>q('#'+id)));
+  check('daily-role-checklists',['owner-day','cashier-day','cook-day'].every(id=>q('#'+id)));
+  check('every-section-has-path-and-result',all.every(s=>s.querySelector('.path')&&s.querySelector('.steps li')&&s.querySelector('.result')));
+  check('screenshots-have-alt-caption-and-markers',[...d.querySelectorAll('figure')].every(f=>f.querySelector('img').alt&&f.querySelector('figcaption')&&f.querySelector('.markers li')));
+  q('#guideSearch').value='аренда';q('#guideSearch').dispatchEvent(new w.Event('input'));
+  check('search-filters-content',all.some(s=>s.hidden)&&!q('#expense').hidden);
+  q('#guideSearch').value='xyz-unknown-987';q('#guideSearch').dispatchEvent(new w.Event('input'));check('no-results-message',!q('#noResults').hidden&&all.every(s=>s.hidden));
+  q('#guideSearch').value='';q('#guideSearch').dispatchEvent(new w.Event('input'));q('[data-role-filter=cashier]').click();
+  check('cashier-filter-hides-owner-only',q('#salary-policy').hidden&&!q('#cashier-day').hidden&&all.filter(s=>!s.hidden).every(s=>s.dataset.roles.split(',').includes('cashier')));
+  w.location.hash='#pnl';await pause();check('direct-link-reveals-hidden-section',!q('#pnl').hidden&&q('[data-role-filter=all]').getAttribute('aria-pressed')==='true');
+  q('#pnl [data-zoom]').click();check('zoom-opens-native-dialog',q('#imageDialog').open&&q('#zoomImage').src.includes('21-pnl.png'));q('#closeImage').click();check('zoom-closes',!q('#imageDialog').open);
+  q('[data-role-filter=cook]').click();w.dispatchEvent(new w.Event('beforeprint'));check('print-includes-all-roles',all.every(s=>!s.hidden));w.dispatchEvent(new w.Event('afterprint'));check('filter-restored-after-print',q('#salary-policy').hidden&&!q('#cook-day').hidden);
+  const imgs=[...d.querySelectorAll('figure img')];imgs.forEach(i=>i.loading='eager');await Promise.all(imgs.map(i=>i.complete?Promise.resolve():new Promise(r=>{i.onload=r;i.onerror=r})));
+  check('all-screenshot-files-load',imgs.every(i=>i.naturalWidth===1440&&i.naturalHeight===1000));
+  const pdf=await fetch('/docs/user-guide/Oimo-user-guide.pdf');const bytes=new Uint8Array(await pdf.arrayBuffer());check('pdf-download-is-valid',pdf.ok&&String.fromCharCode(...bytes.slice(0,5))==='%PDF-');
+  check('no-external-images-or-trackers',[...d.querySelectorAll('img[src],script[src]')].every(e=>new URL(e.getAttribute('src'),w.location.href).origin===w.location.origin));
+  const admin=await fetch('/admin').then(r=>r.text()),pos=await fetch('/pos').then(r=>r.text());check('help-linked-in-admin-and-pos',admin.includes('id="userGuideLink"')&&pos.includes('/docs/user-guide/#cashier-day'));
+  check('all-internal-anchors-resolve',[...d.querySelectorAll('a[href^="#"]')].every(a=>d.getElementById(a.hash.slice(1))));
+ }catch(error){check('runtime:'+error.stack,false)}
+ document.body.dataset.done='true';
+})();
+</script></html>

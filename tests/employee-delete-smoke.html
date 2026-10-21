@@ -1,0 +1,45 @@
+<!doctype html>
+<html lang="ru"><head><meta charset="utf-8"><title>Employee deletion checks</title><style>body{margin:0}iframe{display:block;width:100vw;height:100vh;border:0}#results{position:fixed;z-index:10;bottom:0;right:0;max-width:240px;max-height:35vh;overflow:auto;background:#fff;font:11px monospace;white-space:pre-wrap}</style></head><body>
+<pre id="results">WAIT</pre><iframe id="app" src="/admin?test=1#employees"></iframe>
+<script>
+const frame=document.querySelector('#app');if(location.search.includes('mobile'))frame.style.width='390px';
+frame.addEventListener('load',async()=>{
+ const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s),checks=[];
+ const check=(name,value)=>checks.push(`${value?'PASS':'FAIL'}:${name}`);
+ const tick=()=>new Promise(r=>setTimeout(r,30));
+ try{
+  w.eval(`employees=[{id:51,display_name:'Алия Кассир',login:'aliya',staff_role:'cashier',branch_id:'b1',is_active:true,has_pin:true},{id:52,display_name:'Бывший кассир',login:'former',staff_role:'cashier',branch_id:'b1',is_active:false,has_pin:true},{id:53,display_name:'Моя учётная запись',login:'test',staff_role:'branch_manager',branch_id:'b1',is_active:true},{id:54,display_name:'Удалённый сотрудник',login:'deleted',staff_role:'cashier',branch_id:'b1',is_active:false,deleted_at:'2026-01-01'}];`);
+  w.switchView('employees');w.renderEmployees();
+  check('trash icon accessible',q('[data-delete-employee="51"] svg use').getAttribute('href')==='#ui-trash'&&q('[data-delete-employee="51"]').getAttribute('aria-label').includes('Алия'));
+  check('cannot delete self',!q('[data-delete-employee="53"]'));
+  check('summary excludes deleted',q('#employeeTotalCount').textContent==='3');
+  q('#employeeStatusFilter').value='all';w.renderEmployees();check('inactive employee can be removed',!!q('[data-delete-employee="52"]'));check('deleted hidden in all filter',!q('#employeesTable').textContent.includes('Удалённый сотрудник'));
+  const history=w.eval('JSON.stringify({sales:serverSales,logistics:logisticsState})');
+  q('[data-delete-employee="51"]').click();const dialog=q('#employeeDeleteDialog');
+  check('confirmation names employee',dialog.open&&q('#employeeDeleteName').textContent==='Алия Кассир');
+  check('history retention explained',q('#employeeDeleteDescription').textContent.includes('история действий сохранятся'));
+  check('cancel focused',d.activeElement===q('#cancelEmployeeDelete'));
+  q('#cancelEmployeeDelete').click();await tick();check('cancel keeps employee',!dialog.open&&!!w.employeeById(51));
+  w.openEmployeeForm();check('no trash for new employee',q('#deleteEmployeeButton').classList.contains('hidden'));q('#employeeModal').classList.add('hidden');
+  w.openEmployeeForm(51);check('trash in editor',!q('#deleteEmployeeButton').classList.contains('hidden'));q('#deleteEmployeeButton').click();q('#cancelEmployeeDelete').click();await tick();check('cancel leaves editor open',!q('#employeeModal').classList.contains('hidden'));q('#employeeModal').classList.add('hidden');
+  w.eval('serverMode=true');let calls=0;w.refreshServerWorkspace=async()=>{};
+  w.AshkanaApi.deleteEmployee=async()=>{calls++;throw new Error('Сначала закройте смену сотрудника');};
+  q('[data-delete-employee="51"]').click();await w.confirmEmployeeDelete();
+  check('server guard shown inline',dialog.open&&!q('#employeeDeleteError').hidden&&q('#employeeDeleteError').textContent.includes('закройте смену'));
+  check('failed delete preserves employee',!!w.employeeById(51)&&!q('#confirmEmployeeDelete').disabled);
+  let release;w.AshkanaApi.deleteEmployee=id=>{calls++;check('requested correct employee',id===51);return new Promise(resolve=>{release=resolve;});};
+  const first=w.confirmEmployeeDelete();await w.confirmEmployeeDelete();check('one request while pending',calls===2&&q('#confirmEmployeeDelete').disabled);
+  const cancelEvent=new w.Event('cancel',{cancelable:true});dialog.dispatchEvent(cancelEvent);check('pending request cannot be dismissed',cancelEvent.defaultPrevented&&dialog.open);
+  release({ok:true,employee_id:51,version:2});await first;await tick();
+  check('successful deletion hides employee',!dialog.open&&!w.employeeById(51)&&!q('[data-delete-employee="51"]'));
+  check('history unchanged',history===w.eval('JSON.stringify({sales:serverSales,logistics:logisticsState})'));
+  check('other employees preserved',!!w.employeeById(52)&&!!w.employeeById(53));
+  check('safe focus after deletion',d.activeElement===q('#addEmployeeButton'));
+  w.AshkanaApi.deleteEmployee=async()=>{throw new Error('Сервер недоступен');};
+  w.openEmployeeForm(52);q('#deleteEmployeeButton').click();await w.confirmEmployeeDelete();
+  check('network failure retryable',dialog.open&&!q('#confirmEmployeeDelete').disabled&&!!w.employeeById(52));q('#cancelEmployeeDelete').click();await tick();
+  w.openEmployeeDelete(52);await tick();const rect=dialog.getBoundingClientRect();check('dialog fits screen',rect.left>=0&&rect.right<=w.innerWidth+1&&dialog.scrollWidth<=dialog.clientWidth+1);
+ }catch(error){checks.push('FAIL:'+error.stack);}
+ document.querySelector('#results').textContent=checks.join('\n');
+});
+</script></body></html>

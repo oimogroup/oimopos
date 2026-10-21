@@ -1,0 +1,305 @@
+<!doctype html>
+<html lang="ru">
+  <head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1"><title>Transfer history smoke test</title></head>
+  <body>
+    <pre id="results">RUNNING</pre>
+    <script>
+      const checks = [];
+      const check = (name, condition) => {
+        checks.push(`${condition ? "PASS" : "FAIL"}:${name}`);
+        document.querySelector('#results').textContent = checks.join('|');
+      };
+      const pause = (ms = 20) => new Promise(resolve => setTimeout(resolve, ms));
+      async function until(predicate, label) {
+        for (let attempt = 0; attempt < 150; attempt++) {
+          if (predicate()) return;
+          await pause();
+        }
+        throw new Error(`Timed out: ${label}`);
+      }
+      async function run() {
+        try {
+          const params = new URLSearchParams(location.search);
+          const preview = params.get('preview');
+          const width = Math.min(1920, Math.max(320, Number(params.get('width')) || 1280));
+          const htmlSource = await fetch('../pos').then(response => {
+            if (!response.ok) throw new Error(`POS shell: ${response.status}`);
+            return response.text();
+          });
+          const actor = {id: 21, name: 'Айбек Повар', staffRole: 'production', roleLabel: 'Производство', initials: 'АП', permissions: {production: true, posSupply: true}};
+          const receiver = {id: 31, name: 'Алия Кассир'};
+          const manager = {id: 41, name: 'Дастан Руководитель'};
+          const base = {actor, weight: 5, recipient: {name: 'Основная раздача'}};
+          const unsafe = '<img src=x onerror="window.__historyXss=true">';
+          const documents = [
+            {...base, id: 'pending', number: 'ПР-0008', batchNumber: 'АП-008', name: 'Плов праздничный', status: 'pending', createdAt: '2026-10-05T10:05:00'},
+            {...base, id: 'accepted', number: 'ПР-0007', batchNumber: 'АП-007', name: 'Лагман домашний', status: 'accepted', createdAt: '2026-10-05T09:20:00', actualWeight: 5, acceptedAt: '2026-10-05T09:35:00', acceptedBy: receiver},
+            {...base, id: 'difference', number: 'ПР-0006', batchNumber: 'АП-006', name: 'Борщ со сметаной', status: 'accepted', createdAt: '2026-10-04T08:10:00', actualWeight: 4.5, acceptedAt: '2026-10-04T08:25:00', acceptedBy: receiver, reason: 'Пролилось при передаче', reviewStatus: 'approved', reviewedAt: '2026-10-04T09:10:00', reviewedBy: manager, reviewNote: 'Вес проверен'},
+            {...base, id: 'rejected', number: 'ПР-0005', batchNumber: 'АП-005', name: 'Котлета с гречкой', status: 'rejected', createdAt: '2026-10-03T11:00:00', rejectedAt: '2026-10-03T11:10:00', rejectedBy: {id: 32, name: 'Эрмек Кассир'}, rejectReason: 'Блюдо остыло'},
+            {...base, id: 'canceled', number: 'ПР-0004', batchNumber: 'АП-004', name: 'Салат Оливье', status: 'canceled', createdAt: '2026-10-02T12:00:00', canceledAt: '2026-10-02T12:05:00', canceledBy: actor, cancelReason: 'Ошибка в количестве'},
+            {...base, id: 'zero', number: 'ПР-0003', batchNumber: 'АП-003', name: 'Компот', status: 'accepted', createdAt: '2026-10-01T13:00:00', actualWeight: 0, acceptedAt: '2026-10-01T13:15:00', acceptedBy: receiver, reason: 'Вся партия пролилась'},
+            {...base, id: 'unsafe" data-injected="yes', number: unsafe, batchNumber: unsafe, name: unsafe, status: 'rejected', createdAt: '2026-09-30T12:00:00', actor: {name: unsafe}, rejectedAt: '2026-09-30T12:01:00', rejectedBy: {name: unsafe}, rejectReason: unsafe},
+            {...base, id: 'oldest', number: 'ПР-0001', batchNumber: 'АП-001', name: 'Суп чечевичный', status: 'accepted', createdAt: '2026-09-29T09:00:00', actualWeight: 5, acceptedAt: '2026-09-29T09:20:00', acceptedBy: receiver},
+          ];
+          const fixture = JSON.stringify({actor, documents}).replace(/</g, '\\u003c');
+          const frame = document.createElement('iframe');
+          frame.style.cssText = `position:fixed;top:0;left:${preview ? 0 : -10000}px;width:${width}px;height:${preview ? '100vh' : '900px'};border:0;background:white;${preview ? 'z-index:10' : ''}`;
+          document.body.append(frame);
+          const shell = htmlSource.replace(/<script[^>]*>[\s\S]*?<\/script>/g, '').replace('<head>', '<head><base href="/">').replace('</body>', `
+            <script>
+              window.__fixture = ${fixture};
+              window.__runtimeErrors = [];
+              window.addEventListener('error', event => window.__runtimeErrors.push(event.message));
+              window.addEventListener('unhandledrejection', event => window.__runtimeErrors.push(String(event.reason)));
+              window.__mock = {actor: window.__fixture.actor, writes: [], reads: 0, locks: 0};
+              window.__mock.history = async () => ({actorId: window.__mock.actor.id, documents: window.__fixture.documents});
+              window.AshkanaApi = {
+                me: async () => ({session: {role: 'branch', staffRole: 'pos_terminal', branchId: 'b1', registerId: 1, registerName: 'Основная касса', tenantSlug: 'history-smoke'}}),
+                workspace: async () => ({state: {serviceMode: 'canteen', branches: [{id: 'b1', name: 'Oimo · Столовая'}], menuCategories: [], recipes: [], products: [], sales: [], logisticsState: {branchStocks: {b1: {}}, batches: []}, posState: {customers: [], openOrders: [], cashMovements: []}}}),
+                posOperator: async () => ({operator: window.__mock.actor, shift: null}),
+                posOperators: async () => [window.__mock.actor],
+                posProductionContext: async () => ({recipes: [], batches: [], productionShift: {shift: {id: 'production-1', employeeId: window.__mock.actor.id, employeeName: window.__mock.actor.name, openedAt: '2026-10-05T08:00:00'}, counts: [], ingredientStocks: []}}),
+                posTransferHistory: async () => { window.__mock.reads++; return window.__mock.history(); },
+                posReceiving: async () => ({documents: [], version: 1}),
+                lockPos: async () => { window.__mock.locks++; return {}; },
+                action: async (name, payload) => { window.__mock.writes.push({name, payload}); throw new Error('Unexpected write: ' + name); },
+                logout: async () => { throw new Error('Unexpected logout'); },
+              };
+            <\/script>
+            <script src="/company-settings.js"><\/script><script src="/custody.js"><\/script><script src="/app.js"><\/script></body>`);
+          await new Promise(resolve => {frame.addEventListener('load', resolve, {once: true}); frame.srcdoc = shell;});
+          const win = frame.contentWindow, doc = frame.contentDocument;
+          const homeRows = () => [...doc.querySelectorAll('#productionHistoryList details')];
+          const rows = () => [...doc.querySelectorAll('#transferHistoryList details')];
+          const row = id => rows().find(node => node.dataset.transferId === id);
+          const setFilter = (id, value) => {const input = doc.querySelector(id); input.value = value; input.dispatchEvent(new win.Event('input', {bubbles: true}));};
+          const clearFilters = () => ['Search', 'Status', 'From', 'To'].forEach(name => setFilter('#transferHistory' + name, ''));
+          await until(() => homeRows().length === 5 && doc.querySelector('#operatorLock').classList.contains('hidden'), 'production home ready');
+          if (preview === 'home' || preview === 'history') {
+            if (preview === 'history') {
+              await win.openTransferHistory();
+              row('accepted').open = true;
+              row('difference').open = true;
+            }
+            document.querySelector('#results').textContent = 'PREVIEW READY';
+            return;
+          }
+
+          check('production-home-ready', !doc.querySelector('#productionHome').classList.contains('hidden') && doc.querySelector('#productionShiftStatus').textContent.includes('открыта'));
+          check('home-only-latest-five', homeRows().length === 5 && homeRows()[0].dataset.transferId === 'pending' && !homeRows().some(node => node.dataset.transferId === 'oldest'));
+          check('home-more-history-visible', doc.querySelector('#productionHistoryMessage').textContent.includes('5 из 8'));
+          doc.querySelector('.transfer-history-home header button').click();
+          await until(() => !doc.querySelector('#transferHistoryDrawer').classList.contains('hidden') && rows().length === 8, 'full history');
+          check('full-history-reachable', rows().length === 8 && Boolean(row('oldest')) && doc.querySelector('#transferHistoryTitle').textContent === 'Мои передачи');
+          const timeline = id => row(id).querySelector('.transfer-timeline');
+          const eventText = (id, index) => timeline(id).children[index]?.textContent || '';
+          check('pending-sender-time-recipient', eventText('pending', 0).includes('Айбек Повар') && eventText('pending', 0).includes('05.10.2026') && eventText('pending', 0).includes('10:05') && eventText('pending', 1).includes('Основная раздача'));
+          check('accepted-recipient-time-weight', eventText('accepted', 1).includes('Алия Кассир') && eventText('accepted', 1).includes('09:35') && eventText('accepted', 1).includes('5 кг'));
+          check('difference-reason-reviewer', row('difference').querySelector('[data-status="difference"]') && row('difference').textContent.includes('Пролилось при передаче') && row('difference').textContent.includes('Дастан Руководитель') && row('difference').textContent.includes('Вес проверен'));
+          check('rejected-returned-to-kitchen', eventText('rejected', 1).includes('возвращено на кухню') && eventText('rejected', 1).includes('Эрмек Кассир') && eventText('rejected', 1).includes('11:10') && eventText('rejected', 1).includes('Блюдо остыло'));
+          check('canceled-actor-time-reason', eventText('canceled', 1).includes('Айбек Повар') && eventText('canceled', 1).includes('12:05') && eventText('canceled', 1).includes('Ошибка в количестве'));
+          check('zero-actual-is-shown', eventText('zero', 1).includes('0 кг') && row('zero').querySelector('[data-status="difference"]') && row('zero').textContent.includes('-5 кг'));
+          check('xss-text-and-attributes-escaped', row(documents[6].id)?.textContent.includes(unsafe) && !doc.querySelector('#transferHistoryList img, #transferHistoryList [data-injected]') && !win.__historyXss);
+
+          setFilter('#transferHistoryStatus', 'pending');
+          check('filter-pending', rows().length === 1 && row('pending'));
+          setFilter('#transferHistoryStatus', 'difference');
+          check('filter-difference-including-zero', rows().length === 2 && row('difference') && row('zero'));
+          setFilter('#transferHistoryStatus', 'rejected');
+          check('filter-rejected', rows().length === 2 && row('rejected'));
+          setFilter('#transferHistoryStatus', 'canceled');
+          check('filter-canceled', rows().length === 1 && row('canceled'));
+          clearFilters();
+          setFilter('#transferHistorySearch', '  лАГман  ');
+          check('filter-dish-name-case-insensitive', rows().length === 1 && row('accepted'));
+          setFilter('#transferHistorySearch', 'Алия Кассир');
+          check('filter-recipient-name', rows().length === 4 && row('accepted'));
+          setFilter('#transferHistorySearch', 'АП-008');
+          check('filter-batch-number', rows().length === 1 && row('pending'));
+          clearFilters();
+          setFilter('#transferHistoryFrom', '2026-10-03'); setFilter('#transferHistoryTo', '2026-10-04');
+          check('filter-date-inclusive', rows().length === 2 && row('difference') && row('rejected'));
+          setFilter('#transferHistoryStatus', 'difference');
+          check('filter-date-and-status-combined', rows().length === 1 && row('difference'));
+          setFilter('#transferHistoryFrom', '2026-10-05');
+          check('invalid-date-range-explained', rows().length === 0 && doc.querySelector('#transferHistoryMessage').textContent.includes('Дата начала'));
+          clearFilters();
+          setFilter('#transferHistorySearch', 'Такого блюда нет');
+          check('empty-search-state', rows().length === 0 && doc.querySelector('#transferHistoryMessage').textContent.includes('нет'));
+          check('filters-do-not-reduce-home-history', homeRows().length === 5);
+          clearFilters();
+
+          row('accepted').open = true;
+          homeRows().find(node => node.dataset.transferId === 'pending').open = true;
+          row('accepted').querySelector('summary').focus();
+          await win.refreshTransferHistory();
+          check('expanded-row-preserved-after-refresh', row('accepted').open && homeRows().find(node => node.dataset.transferId === 'pending').open);
+          check('keyboard-focus-preserved-after-refresh', doc.activeElement === row('accepted').querySelector('summary') && doc.activeElement.isConnected);
+          win.__mock.history = async () => {throw new Error('Тестовая ошибка связи');};
+          await win.refreshTransferHistory();
+          check('refresh-error-visible-existing-history-kept', rows().length === 8 && doc.querySelector('#transferHistoryMessage').textContent.includes('Тестовая ошибка связи'));
+          win.__mock.history = async () => ({actorId: win.__mock.actor.id, documents});
+          const readsBeforeRetry = win.__mock.reads;
+          doc.querySelector('#refreshTransferHistory').click();
+          await until(() => win.__mock.reads > readsBeforeRetry && !doc.querySelector('#transferHistoryMessage').textContent.includes('ошибка'), 'retry success');
+          check('retry-restores-success', rows().length === 8 && doc.querySelector('#transferHistoryMessage').textContent.includes('8'));
+          check('browsing-performs-no-writes', win.__mock.writes.length === 0 && win.__mock.locks === 0);
+
+          const sizes = [[320, 568], [390, 844], [768, 1024], [820, 900], [1024, 768], [844, 390]];
+          for (const [viewportWidth, viewportHeight] of sizes) {
+            frame.style.width = `${viewportWidth}px`;
+            frame.style.height = `${viewportHeight}px`;
+            rows().forEach(node => {node.open = false;});
+            const drawer = doc.querySelector('#transferHistoryDrawer .transfer-history-drawer');
+            const header = drawer.querySelector('.modal-header');
+            const filters = drawer.querySelector('.transfer-history-filters');
+            const list = doc.querySelector('#transferHistoryList');
+            drawer.scrollTop = 0; list.scrollTop = 0;
+            await pause(80);
+            const size = `${viewportWidth}x${viewportHeight}`;
+            const horizontalFit = node => {
+              const rect = node.getBoundingClientRect();
+              return rect.width > 0 && rect.left >= -1 && rect.right <= win.innerWidth + 1 && node.scrollWidth <= node.clientWidth + 1;
+            };
+            check(`responsive-history-no-overflow-${size}`, [drawer, header, filters, list].every(horizontalFit));
+            const controls = [...filters.querySelectorAll('input, select, button')];
+            check(`responsive-controls-visible-${size}`, controls.every(node => {
+              const rect = node.getBoundingClientRect();
+              return horizontalFit(node) && rect.height >= 40 && rect.top >= -1 && rect.bottom <= win.innerHeight + 1;
+            }));
+            const listRect = list.getBoundingClientRect();
+            const drawerRect = drawer.getBoundingClientRect();
+            const visibleListHeight = Math.min(listRect.bottom, drawerRect.bottom, win.innerHeight) - Math.max(listRect.top, drawerRect.top, 0);
+            check(`responsive-history-list-usable-${size}`, visibleListHeight >= 80 && rows().length === 8);
+            const lastSummary = row('oldest').querySelector('summary');
+            lastSummary.scrollIntoView({block: 'nearest'});
+            await pause(20);
+            const lastRect = lastSummary.getBoundingClientRect();
+            const currentDrawerRect = drawer.getBoundingClientRect();
+            check(`responsive-last-transfer-reachable-${size}`, lastRect.top >= Math.max(0, currentDrawerRect.top) - 1 && lastRect.bottom <= Math.min(win.innerHeight, currentDrawerRect.bottom) + 1);
+          }
+          frame.style.width = `${width}px`;
+          frame.style.height = '900px';
+
+          const kitchenOld = {id:'kitchen-old',kind:'production',number:1,employeeName:actor.name,openedAt:'2026-10-05T08:00:00',closedAt:'2026-10-05T19:00:00',status:'closed'};
+          const kitchenCurrent = {id:'kitchen-current',kind:'production',number:2,employeeName:actor.name,openedAt:'2026-10-05T20:00:00',status:'open'};
+          const cashOld = {id:501,kind:'cash',number:501,employeeName:receiver.name,openedAt:'2026-10-05T08:00:00',closedAt:'2026-10-05T19:00:00',status:'closed'};
+          const cashCurrent = {id:502,kind:'cash',number:502,employeeName:receiver.name,openedAt:'2026-10-05T20:00:00',status:'open'};
+          const shifted = [
+            {...documents[1],id:'current-before-midnight',createdAt:'2026-10-05T23:50:00',acceptedAt:'2026-10-05T23:55:00',productionShift:kitchenCurrent,receivingShift:cashCurrent},
+            {...documents[1],id:'current-after-midnight',createdAt:'2026-10-06T00:10:00',acceptedAt:'2026-10-06T00:15:00',productionShift:kitchenCurrent,receivingShift:cashCurrent},
+            {...documents[1],id:'old-shift',createdAt:'2026-10-05T09:00:00',acceptedAt:'2026-10-05T09:05:00',productionShift:kitchenOld,receivingShift:cashOld},
+            {...documents[1],id:'received-next-shift',createdAt:'2026-10-05T18:00:00',acceptedAt:'2026-10-05T21:00:00',productionShift:kitchenOld,receivingShift:cashCurrent},
+          ];
+          const productionHistory = {documents:shifted,shifts:[kitchenCurrent,kitchenOld],currentShiftId:kitchenCurrent.id,currentShiftKind:'production'};
+          win.__mock.history = async () => productionHistory;
+          win.resetTransferHistory();
+          await win.refreshTransferHistory();
+          await win.openTransferHistory();
+          check('production-defaults-to-current-shift', doc.querySelector('#transferHistoryShift').value==='production:kitchen-current' && rows().length===2 && homeRows().length===2);
+          check('overnight-transfer-stays-in-one-shift', row('current-before-midnight') && row('current-after-midnight') && !row('old-shift'));
+          const selectShift = value => {doc.querySelector('#transferHistoryShift').value=value;doc.querySelector('#transferHistoryShift').dispatchEvent(new win.Event('change'));};
+          selectShift('production:kitchen-old');
+          check('past-kitchen-shift-keeps-its-transfers', rows().length===2 && row('old-shift') && row('received-next-shift') && homeRows().length===2);
+          check('transfer-timeline-shows-both-shifts', row('received-next-shift').textContent.includes('Смена №1') && row('received-next-shift').textContent.includes('Смена №502'));
+          selectShift('all');
+          check('transfer-archive-grouped-not-mixed', doc.querySelectorAll('#transferHistoryList [data-history-shift]').length===2 && rows().length===4);
+          await win.refreshTransferHistory();
+          check('refresh-keeps-explicit-all-shifts-choice', doc.querySelector('#transferHistoryShift').value==='all' && rows().length===4);
+
+          const cashierActor = {...actor,id:receiver.id,name:receiver.name,staffRole:'cashier',permissions:{posAccess:true,posSales:true}};
+          win.__mock.actor = cashierActor;
+          win.__mock.history = async () => ({documents:shifted,shifts:[cashCurrent,cashOld],currentShiftId:502,currentShiftKind:'cash'});
+          win.AshkanaApi.posShiftHistory = async () => ({shifts:[cashCurrent,cashOld],currentShiftId:502});
+          win.activateOperator(cashierActor,{...cashCurrent,openedBy:receiver.name});
+          await win.openTransferHistory();
+          await until(()=>doc.querySelector('#transferHistoryShift').value==='cash:502','cashier shift history');
+          check('receiving-grouped-by-cashier-shift', rows().length===3 && row('received-next-shift') && !row('old-shift'));
+          selectShift('cash:501');
+          check('old-receiving-shift-separate', rows().length===1 && row('old-shift'));
+
+          const receiptBase = {branchId:'b1',cashier:receiver.name,total:100,paymentMethod:'cash',items:[{name:'Плов',price:100,quantity:1}]};
+          const receiptData = [
+            {...receiptBase,id:'sale-before',number:1,shiftId:502,createdAt:'2026-10-05T23:55:00'},
+            {...receiptBase,id:'sale-after',number:2,shiftId:502,createdAt:'2026-10-06T00:20:00'},
+            {...receiptBase,id:'sale-old',number:3,shiftId:501,createdAt:'2026-10-05T10:00:00'},
+            {...receiptBase,id:'sale-legacy',number:4,createdAt:'2026-09-01T10:00:00'},
+            {...receiptBase,id:'sale-import',number:5,source:'external',paymentMethod:'external',createdAt:'2026-09-25T12:00:00+06:00'},
+          ];
+          win.eval(`sales=${JSON.stringify(receiptData)}`);
+          win.renderHistory();await win.refreshReceiptShifts();
+          const receiptRows = () => [...doc.querySelectorAll('#historyList [data-receipt-id]')];
+          const selectReceiptShift = value => {doc.querySelector('#archiveShift').value=value;doc.querySelector('#archiveShift').dispatchEvent(new win.Event('change'));};
+          check('receipts-default-to-current-shift', doc.querySelector('#archiveShift').value==='cash:502' && receiptRows().length===2 && receiptRows().some(node=>node.dataset.receiptId==='sale-before') && receiptRows().some(node=>node.dataset.receiptId==='sale-after'));
+          check('receipt-detail-shows-shift', doc.querySelector('#archiveDetails').textContent.includes('Смена №502'));
+          selectReceiptShift('cash:501');
+          check('old-receipt-shift-isolated', receiptRows().length===1 && receiptRows()[0].dataset.receiptId==='sale-old');
+          selectReceiptShift('all');
+          check('receipt-history-has-distinct-shift-groups', receiptRows().length===5 && doc.querySelectorAll('#historyList [data-history-shift]').length===4);
+          selectReceiptShift('unassigned');
+          check('legacy-receipts-not-assigned-by-guess', receiptRows().length===1 && receiptRows()[0].dataset.receiptId==='sale-legacy');
+          selectReceiptShift('external');
+          check('imports-separated-from-uploading-shift', receiptRows().length===1 && receiptRows()[0].textContent.includes('25.09.2026'));
+          win.eval('workspaceState.companySettings={general:{timezone:"America/Los_Angeles"}}');
+          doc.querySelector('#archiveDate').value='2026-09-25';win.renderHistory();
+          check('import-preserves-original-report-date-across-timezones', receiptRows().length===1 && receiptRows()[0].textContent.includes('25.09.2026'));
+          check('operational-history-uses-company-timezone', win.archiveDay('2026-10-06T02:00:00Z')==='2026-10-05');
+          win.eval('workspaceState.companySettings=undefined');
+          if (preview === 'shifts' || preview === 'receipts') {
+            if (preview === 'shifts') {
+              await win.openTransferHistory();selectShift('all');
+              row('received-next-shift').open=true;
+            } else {
+              win.closeDrawer('#transferHistoryDrawer');
+              selectReceiptShift('all');
+              doc.querySelector('#historyDrawer').classList.remove('hidden');
+            }
+            document.querySelector('#results').textContent='PREVIEW READY';return;
+          }
+          let resolveCashShifts;
+          win.AshkanaApi.posShiftHistory = () => new Promise(resolve=>{resolveCashShifts=resolve;});
+          const pendingCashShifts=win.refreshReceiptShifts();
+          await until(()=>!!resolveCashShifts,'late cash shift request');
+          win.__mock.actor=actor;
+          win.__mock.history=async()=>({actorId:actor.id,documents});
+          win.activateOperator(actor,null);
+          resolveCashShifts({shifts:[cashCurrent,cashOld],currentShiftId:502});await pendingCashShifts;
+          check('operator-change-discards-late-cash-history', doc.querySelector('#archiveShift').options.length===1 && !doc.querySelector('#archiveShiftMessage').textContent);
+          await until(()=>homeRows().length===5,'restored production history');
+
+          let resolveOldActor;
+          win.__mock.history = () => new Promise(resolve => {resolveOldActor = resolve;});
+          const pendingOldActor = win.refreshTransferHistory();
+          await until(() => Boolean(resolveOldActor), 'first operator request pending');
+          const secondActor = {...actor, id: 22, name: 'Мээрим Повар', initials: 'МП'};
+          const secondDocuments = [{...documents[0], id: 'second-actor', name: 'Заказ Мээрим', actor: secondActor}];
+          win.__mock.actor = secondActor;
+          win.__mock.history = async () => ({actorId: secondActor.id, documents: secondDocuments});
+          win.activateOperator(secondActor, null);
+          check('operator-switch-clears-old-history', rows().length === 0 && homeRows().length === 0 && doc.querySelector('#transferHistoryDrawer').classList.contains('hidden'));
+          await until(() => homeRows().length === 1, 'second operator history loaded');
+          resolveOldActor({actorId: actor.id, documents});
+          await pendingOldActor;
+          check('stale-operator-response-discarded', homeRows().length === 1 && homeRows()[0].dataset.transferId === 'second-actor' && rows().every(node => node.dataset.transferId === 'second-actor'));
+
+          let resolveAfterLock;
+          win.__mock.history = () => new Promise(resolve => {resolveAfterLock = resolve;});
+          const pendingLock = win.refreshTransferHistory();
+          await until(() => Boolean(resolveAfterLock), 'request before lock pending');
+          await win.lockOperator();
+          resolveAfterLock({actorId: secondActor.id, documents: secondDocuments});
+          await pendingLock;
+          check('stale-response-after-lock-discarded', rows().length === 0 && homeRows().length === 0 && doc.querySelector('#transferHistoryDrawer').classList.contains('hidden') && !doc.querySelector('#operatorLock').classList.contains('hidden'));
+          const readsWhenLocked = win.__mock.reads;
+          await win.openTransferHistory();
+          check('locked-terminal-cannot-open-history', win.__mock.reads === readsWhenLocked && doc.querySelector('#transferHistoryDrawer').classList.contains('hidden'));
+          check('history-never-mutates-stock', win.__mock.writes.length === 0 && win.__mock.locks === 1);
+          check('runtime-no-errors', win.__runtimeErrors.length === 0);
+        } catch (error) {
+          check(`runtime:${error.message}`, false);
+        }
+      }
+      run();
+    </script>
+  </body>
+</html>

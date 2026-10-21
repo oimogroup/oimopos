@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oimo — вход</title>
-    <link rel="stylesheet" href="auth.css?v=27" />
-    <link rel="stylesheet" href="minimal.css?v=accounting-24" />
-      <link rel="stylesheet" href="oimo.css?v=11" />
+    <link rel="stylesheet" href="auth.css?v=buttons-1" />
+    <link rel="stylesheet" href="minimal.css?v=actions-15" />
+      <link rel="stylesheet" href="oimo.css?v=actions-15" />
   </head>
   <body data-ui="auth">
     <svg class="icon-sprite" aria-hidden="true">
@@ -18,7 +18,7 @@
     </svg>
     <main class="auth-shell">
       <section class="auth-intro">
-        <div class="auth-brand"><span>o</span><div><b>Oimo</b><small>Для столовых и ресторанов</small></div></div>
+        <a class="auth-brand" href="/" style="color:inherit;text-decoration:none" aria-label="Oimo — на главную"><span>o</span><div><b>Oimo</b><small>Для столовых и ресторанов</small></div></a>
         <div class="auth-copy">
           <p id="authEyebrow">Единая система управления</p>
           <h1 id="authHeroTitle">Рабочее пространство для каждой организации</h1>
@@ -40,8 +40,9 @@
           <label><span>Логин</span><input id="loginInput" name="login" type="text" autocomplete="username" required autofocus /></label>
           <label><span>Пароль</span><input id="passwordInput" name="password" type="password" autocomplete="current-password" required /></label>
           <p class="login-error hidden" id="loginError">Неверный логин или пароль</p>
-          <button class="login-submit" type="submit"><span id="loginSubmitLabel">Войти</span><svg class="icon"><use href="#icon-arrow"/></svg></button>
+          <button class="primary-button login-submit" type="submit"><span id="loginSubmitLabel">Войти</span><svg class="icon"><use href="#icon-arrow"/></svg></button>
 
+          <p style="font-size:12px;line-height:1.7;margin:18px 0;color:#827382">Ещё нет аккаунта? <a href="/#connect" style="color:#61425e;text-decoration:underline;text-underline-offset:3px">Подключить заведение</a></p>
           <div class="demo-access server-access">
             <i><svg class="icon"><use href="#icon-lock"/></svg></i><div><b id="loginSecurityTitle">Защищённый вход</b><small id="loginSecurityText">Доступ проверяется сервером, пароль в браузере не хранится.</small></div>
           </div>
@@ -49,7 +50,7 @@
       </section>
     </main>
     <script src="numeric-inputs.js?v=1"></script>
-    <script src="api-client.js?v=oimo-1"></script>
+    <script src="api-client.js?v=readiness-16"></script>
     <script src="auth.js?v=login-links-1"></script>
   </body>
 </html>

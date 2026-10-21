@@ -169,6 +169,7 @@ let logisticsState = loadLogisticsState();
 let suppliers = loadSuppliers();
 let financeState = loadFinanceState();
 let currentRecipeId = null;
+let currentPreparationId = null;
 let editingRecipeId = null;
 let editingPreparationId = null;
 let editingCategoryKind = null;
@@ -188,6 +189,9 @@ let posShifts = [];
 let editingRegisterId = null;
 let lastRegisterAccessText = "";
 let editingEmployeeId = null;
+let pendingEmployeeDeleteId = null;
+let deletingEmployee = false;
+let employeeDeleteTrigger = null;
 let employeeLoginEdited = false;
 let lastEmployeeAccessText = "";
 let recipeDraftComponents = [];
@@ -631,9 +635,10 @@ function getSales() {
 }
 
 function ingredientById(id) { return ingredients.find((ingredient) => ingredient.id === id); }
+function componentGross(component) { return Math.max(0, Number(component.gross ?? component.net ?? 0)); }
 function componentCost(component) {
   const ingredient = ingredientById(component.ingredientId);
-  return ingredient ? ingredient.averageCost * component.net / 1000 : 0;
+  return ingredient ? ingredient.averageCost * componentGross(component) / 1000 : 0;
 }
 function recipeCost(recipe) { return recipe.components.reduce((sum, component) => sum + componentCost(component), 0); }
 function foodCost(recipe) { return recipe.price ? recipeCost(recipe) / recipe.price * 100 : 0; }
@@ -660,7 +665,7 @@ function consumedQuantity(ingredientId) {
   return recipes.reduce((sum, recipe) => {
     const component = recipe.components.find((entry) => entry.ingredientId === ingredientId);
     const salesWithoutProduction = Math.max(0, soldQuantity(recipe.id) - producedQuantity(recipe.id));
-    return sum + (component ? component.net / 1000 * salesWithoutProduction : 0);
+    return sum + (component ? componentGross(component) / 1000 * salesWithoutProduction : 0);
   }, 0);
 }
 
@@ -717,7 +722,7 @@ function inventoryById(id) { return logisticsState.inventories.find((inventory) 
 function logisticsItem(itemId) { return stockEntityById(itemId); }
 function branchStock(branchId, itemId) { return Number(logisticsState.branchStocks[branchId]?.[itemId] || 0); }
 function branchUnitCost(branchId, itemId) { return Number(logisticsState.branchCosts?.[branchId]?.[itemId] ?? stockEntityById(itemId)?.averageCost ?? 0); }
-function recipeCostForBranch(recipe, branchId) { return recipe.components.reduce((sum, component) => sum + branchUnitCost(branchId, component.ingredientId) * component.net / 1000, 0); }
+function recipeCostForBranch(recipe, branchId) { return recipe.components.reduce((sum, component) => sum + branchUnitCost(branchId, component.ingredientId) * componentGross(component) / 1000, 0); }
 function requestItemQuantity(item, field = "requested") { return Number(item[field] ?? item.requested ?? 0); }
 function requestTotalQuantity(request, field = "requested") { return request.items.reduce((sum, item) => sum + requestItemQuantity(item, field), 0); }
 function requestStatusLabel(status) { return ({ submitted: "Подана", approved: "К комплектации", shipped: "В пути", received: "Принята" })[status] || status; }
@@ -725,11 +730,11 @@ function directOrderStatusLabel(status) { return ({ submitted: "На согла�
 function supplyPaymentStatusLabel(status) { return ({ paid: "Оплачена", partial: "Частично оплачена", unpaid: "Не оплачена" })[status] || status; }
 function pointTransferStatusLabel(status) { return ({ submitted: "На согласовании", approved: "К отгрузке", shipped: "В пути", received: "Принято", cancelled: "Отменено" })[status] || status; }
 function inventoryStatusLabel(status) { return ({ counting: "Идёт подсчёт", submitted: "На проверке", returned: "На пересчёте", posted: "Проведена", cancelled: "Отменена" })[status] || status; }
-function inventoryScopeLabel(inventory) { return inventory.scope === "category" ? inventory.category : "Полная"; }
+function inventoryScopeLabel(inventory) { return inventory.scope === "category" ? inventory.category : ({selected:"Выбранные позиции",serving:"Раздача"}[inventory.scope] || "Полная"); }
 function inventoryTotals(inventory) {
   return (inventory?.items || []).reduce((totals, item) => {
     if (item.actual == null) return totals;
-    const difference = Number(item.actual) - Number(item.book || 0);
+    const difference = Math.round(Number(item.actual) * 1000) === Math.round(Number(item.book || 0) * 1000) ? 0 : Number(item.actual) - Number(item.book || 0);
     const amount = difference * Number(item.unitCost || 0);
     if (amount > 0) totals.surplus += amount;
     else totals.shortage += Math.abs(amount);
@@ -890,17 +895,17 @@ function renderProductionRecord() {
     const activeBatch = batches.find((batch) => batch.status !== "closed");
     let status = "К приготовлению";
     let statusClass = "submitted";
-    let action = currentRole === "branch" || testMode ? `<button class="operation-action" data-plan-batch="${recipe.id}" type="button">Выпустить</button>` : "—";
+    let action = currentRole === "branch" || testMode ? `<button class="operation-action secondary-action" data-plan-batch="${recipe.id}" type="button">Выпустить</button>` : "—";
     if (activeBatch) {
       const remainingToTransfer = Math.max(0, activeBatch.kitchenAvailableWeight != null ? Number(activeBatch.kitchenAvailableWeight) : Number(activeBatch.actualWeight) - Number(activeBatch.transferredWeight || 0));
       if (remainingToTransfer > .001) {
         status = activeBatch.transferredWeight ? "Передаётся" : "Готово на кухне";
         statusClass = "approved";
-        action = currentRole === "branch" || testMode ? `<button class="operation-action primary" data-serving-transfer="${activeBatch.id}" type="button">На раздачу</button>` : "—";
+        action = currentRole === "branch" || testMode ? `<button class="operation-action primary primary-action" data-serving-transfer="${activeBatch.id}" type="button">На раздачу</button>` : "—";
       } else {
         status = "На раздаче";
         statusClass = "serving";
-        action = currentRole === "branch" || testMode ? `<button class="operation-action" data-serving-close="${activeBatch.id}" type="button">Закрыть</button>` : "—";
+        action = currentRole === "branch" || testMode ? `<button class="operation-action secondary-action" data-serving-close="${activeBatch.id}" type="button">Закрыть</button>` : "—";
       }
     } else if (batches.length) {
       status = made >= planWeight ? "Завершено" : "Нужен довыпуск";
@@ -1100,7 +1105,7 @@ function openRequestForm() {
 function renderRequestItemsEditor() {
   $("#requestItemsEditor").innerHTML = `<div class="request-item-head"><span>Продукт</span><span>Количество</span><span>Ед.</span><span></span></div>${requestDraftItems.map((item, index) => {
     const entity = logisticsItem(item.itemId) || ingredients[0];
-    return `<div class="request-item-row" data-request-item-index="${index}"><select class="request-item-product">${ingredients.map((ingredient) => `<option value="${ingredient.id}" ${ingredient.id === entity?.id ? "selected" : ""}>${escapeHtml(ingredient.name)}</option>`).join("")}</select><input class="request-item-quantity" type="number" min="0.001" step="0.001" value="${item.quantity}" /><b>${entity?.unit || "ед."}</b><button data-remove-request-item="${index}" type="button" aria-label="Удалить позицию">${uiIcon("close")}</button></div>`;
+    return `<div class="request-item-row" data-request-item-index="${index}"><select class="request-item-product">${ingredients.map((ingredient) => `<option value="${ingredient.id}" ${ingredient.id === entity?.id ? "selected" : ""}>${escapeHtml(ingredient.name)}</option>`).join("")}</select><input class="request-item-quantity" type="number" min="0.001" step="0.001" value="${item.quantity}" /><b>${entity?.unit || "ед."}</b><button class="icon-button danger-button" data-remove-request-item="${index}" type="button" aria-label="Удалить позицию">${uiIcon("close")}</button></div>`;
   }).join("")}`;
 }
 
@@ -1175,7 +1180,7 @@ function syncDirectOrderDraft() {
 function renderDirectOrderItemsEditor() {
   $("#directOrderItemsEditor").innerHTML = `<div class="direct-order-item-head"><span>Продукт</span><span>Количество</span><span>Ед.</span><span>Ожидаемая цена</span><span>Сумма</span><span></span></div>${directOrderDraftItems.map((item, index) => {
     const entity = logisticsItem(item.itemId) || ingredients[0];
-    return `<div class="direct-order-item-row" data-direct-order-item-index="${index}"><select class="direct-order-item-product">${directOrderItemOptions(entity?.id)}</select><input class="direct-order-item-quantity" type="number" min="0.001" step="0.001" value="${item.quantity}" /><b>${entity?.unit || "ед."}</b><input class="direct-order-item-price" type="number" min="0.01" step="0.01" value="${item.price}" /><strong class="direct-order-item-total">${money(item.quantity * item.price)}</strong><button data-remove-direct-order-item="${index}" type="button" aria-label="Удалить позицию">${uiIcon("close")}</button></div>`;
+    return `<div class="direct-order-item-row" data-direct-order-item-index="${index}"><select class="direct-order-item-product">${directOrderItemOptions(entity?.id)}</select><input class="direct-order-item-quantity" type="number" min="0.001" step="0.001" value="${item.quantity}" /><b>${entity?.unit || "ед."}</b><input class="direct-order-item-price" type="number" min="0.01" step="0.01" value="${item.price}" /><strong class="direct-order-item-total">${money(item.quantity * item.price)}</strong><button class="icon-button danger-button" data-remove-direct-order-item="${index}" type="button" aria-label="Удалить позицию">${uiIcon("close")}</button></div>`;
   }).join("")}`;
 }
 
@@ -1524,7 +1529,7 @@ function renderPointTransferItemsEditor() {
   const sourceBranchId = $("#pointTransferSource").value;
   $("#pointTransferItemsEditor").innerHTML = `<div class="point-transfer-item-head"><span>Продукт</span><span>Запросить</span><span>Ед.</span><span></span></div>${pointTransferDraftItems.map((item, index) => {
     const entity = logisticsItem(item.itemId) || ingredients[0] || products[0];
-    return `<div class="point-transfer-item-row" data-point-transfer-item="${index}"><select class="point-transfer-item-product">${pointTransferItemOptions(entity?.id, sourceBranchId)}</select><input class="point-transfer-item-quantity" type="number" min="0.001" step="0.001" value="${item.quantity}" /><b>${entity?.unit || "ед."}</b><button data-remove-point-transfer-item="${index}" type="button" aria-label="Удалить позицию">${uiIcon("close")}</button></div>`;
+    return `<div class="point-transfer-item-row" data-point-transfer-item="${index}"><select class="point-transfer-item-product">${pointTransferItemOptions(entity?.id, sourceBranchId)}</select><input class="point-transfer-item-quantity" type="number" min="0.001" step="0.001" value="${item.quantity}" /><b>${entity?.unit || "ед."}</b><button class="icon-button danger-button" data-remove-point-transfer-item="${index}" type="button" aria-label="Удалить позицию">${uiIcon("close")}</button></div>`;
   }).join("")}`;
 }
 
@@ -1802,13 +1807,14 @@ function updateBatchCalculation() {
   $("#batchCost").textContent = money(recipeCostForBranch(recipe, branchId) * equivalent);
   $("#batchRequirements").innerHTML = recipe.components.map((component) => {
     const entity = logisticsItem(component.ingredientId);
-    const required = component.net / 1000 * equivalent;
+    const required = componentGross(component) / 1000 * equivalent;
     const available = branchStock(branchId, component.ingredientId);
     return `<div><span>${escapeHtml(entity?.name || component.ingredientId)}</span><b class="${required > available + .0001 ? "low" : ""}">${decimal(required, 3)} ${entity?.unit || "ед."} <small>из ${decimal(available, 3)}</small></b></div>`;
   }).join("");
 }
 
 async function saveBatch() {
+  if ($("#saveBatchButton").disabled) return;
   if (!hasRole("owner", "branch")) return;
   const recipe = recipes.find((entry) => Number(entry.id) === Number($("#batchRecipe").value));
   const branchId = $("#batchBranch").value;
@@ -1816,10 +1822,13 @@ async function saveBatch() {
   if (!recipe || !weight) return;
   if (!ensureBranchStockUnlocked(branchId)) return;
   const equivalent = weight * 1000 / recipe.yield;
-  const shortage = recipe.components.find((component) => component.net / 1000 * equivalent > branchStock(branchId, component.ingredientId) + .0001);
+  const shortage = recipe.components.find((component) => componentGross(component) / 1000 * equivalent > branchStock(branchId, component.ingredientId) + .0001);
   if (shortage) { showToast(`На точке недостаточно «${logisticsItem(shortage.ingredientId)?.name || "сырья"}»`); return; }
   if (serverMode) {
-    const response = await runServerAction("batch.create", { recipeId: recipe.id, weight });
+    $("#saveBatchButton").disabled = true;
+    let response;
+    try { response = await runServerAction("batch.create", { recipeId: recipe.id, weight }); }
+    finally { $("#saveBatchButton").disabled = false; }
     if (!response) return;
     $("#batchModal").classList.add("hidden");
     switchView("logistics");
@@ -1828,7 +1837,7 @@ async function saveBatch() {
     return;
   }
   recipe.components.forEach((component) => {
-    const required = component.net / 1000 * equivalent;
+    const required = componentGross(component) / 1000 * equivalent;
     logisticsState.branchStocks[branchId][component.ingredientId] = Math.max(0, branchStock(branchId, component.ingredientId) - required);
   });
   const number = nextDocumentNumber("АП", logisticsState.batches);
@@ -1996,11 +2005,40 @@ function saleCost(sale) {
   return (sale.items || []).reduce((sum, item) => sum + saleUnitCost(sale, item) * Number(item.quantity || 0), 0);
 }
 
+function isExternalSale(sale) {
+  return sale.paymentMethod === "external" || sale.source === "external";
+}
+
+function analyticsUnit(value, fallback = "шт") {
+  const unit = (String(value ?? "").trim() || fallback).toLocaleLowerCase("ru").replace(/\.$/, "");
+  return ({ "пор": "порция", "порц": "порция", "порции": "порция", "порций": "порция", "штука": "шт", "штуки": "шт", "штук": "шт" })[unit] || unit;
+}
+
+function saleLineUnit(line) {
+  const recipe = recipes.find((item) => String(item.id) === String(line.id));
+  const product = products.find((item) => String(item.id) === String(line.id));
+  return analyticsUnit(line.unit, recipe ? "порция" : product?.unit || "шт");
+}
+
+function saleLineRevenue(line, fallbackPrice = 0) {
+  if (line.total != null && line.total !== "" && Number.isFinite(Number(line.total))) return Number(line.total);
+  return Number(line.price ?? fallbackPrice) * Number(line.quantity || 0);
+}
+
 function salesMetrics(sales) {
   const revenue = sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const cost = sales.reduce((sum, sale) => sum + saleCost(sale), 0);
-  const quantity = sales.reduce((sum, sale) => sum + (sale.items || []).reduce((lineSum, item) => lineSum + Number(item.quantity || 0), 0), 0);
-  return { revenue, cost, profit: revenue - cost, receipts: sales.length, quantity, average: sales.length ? revenue / sales.length : 0 };
+  const receipts = sales.filter((sale) => !sale._reportRefund && !isExternalSale(sale));
+  const receiptRevenue = receipts.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
+  const quantities = new Map();
+  sales.forEach((sale) => (sale.items || []).forEach((item) => {
+    const unit = saleLineUnit(item);
+    quantities.set(unit, (quantities.get(unit) || 0) + Number(item.quantity || 0));
+  }));
+  return { revenue, cost, profit: revenue - cost, receipts: receipts.length,
+    refunds: sales.filter((sale) => sale._reportRefund).length,
+    imports: sales.filter((sale) => !sale._reportRefund && isExternalSale(sale)).length,
+    quantities: [...quantities].map(([unit, quantity]) => ({ unit, quantity })), average: receipts.length ? receiptRevenue / receipts.length : 0 };
 }
 
 function saleReportingDate(value) {
@@ -2012,11 +2050,34 @@ function saleReportingDate(value) {
   date.setMinutes(date.getMinutes() - hours * 60 - minutes);
   return date;
 }
-function filterSalesByRange(sales, from, to, branchId = "all") {
+function filterSalesByRange(sales, from, to, branchId = "all", dateField = "createdAt") {
   return sales.filter((sale) => {
-    const date = saleReportingDate(sale.createdAt);
+    const date = saleReportingDate(sale[dateField]);
     return !Number.isNaN(date.getTime()) && date >= from && date <= to && (branchId === "all" || String(sale.branchId) === String(branchId));
   });
+}
+
+function saleRefundUnitCost(sale, item) {
+  // Match the stock restored by sale.refund; prepared food stays consumed.
+  if (products.some((product) => String(product.id) === String(item.id))) return Math.max(0, Number(item.unitCost || 0));
+  if (item.ingredientAllocations?.length || (item.batchAllocations || []).some((row) => row.lotId && !String(row.lotId).startsWith("legacy-"))) return 0;
+  return saleUnitCost(sale, item);
+}
+
+function salesPeriodEvents(sales, from, to, branchId = "all") {
+  const sold = filterSalesByRange(sales, from, to, branchId);
+  const refunds = filterSalesByRange(sales.filter((sale) => sale.refundedAt), from, to, branchId, "refundedAt");
+  // These copies are used only in aggregates. The receipt archive keeps the
+  // original records and never receives a second, invented receipt.
+  return [...sold, ...refunds.map((sale) => ({
+    ...sale, id: `refund:${sale.id}`, originalSaleId: sale.id, _reportRefund: true,
+    createdAt: sale.refundedAt, total: -Number(sale.total || 0), subtotal: -Number(sale.subtotal || 0),
+    discountAmount: -Number(sale.discountAmount || 0), serviceAmount: -Number(sale.serviceAmount || 0),
+    deliveryAmount: -Number(sale.deliveryAmount || 0), rounding: -Number(sale.rounding || 0),
+    payments: salePaymentParts(sale).map((part) => ({ ...part, amount: -Number(part.amount || 0) })),
+    items: (sale.items || []).map((item) => ({ ...item, quantity: -Number(item.quantity || 0),
+      total: -saleLineRevenue(item), unitCost: saleRefundUnitCost(sale, item) }))
+  }))];
 }
 
 function itemAnalyticsRows(sales, includeEmpty = false) {
@@ -2024,22 +2085,33 @@ function itemAnalyticsRows(sales, includeEmpty = false) {
     ...recipes.map((item) => ({ ...item, itemType: "recipe", catalogKey: `recipe:${item.id}` })),
     ...products.map((item) => ({ ...item, itemType: "product", catalogKey: `product:${item.id}` }))
   ];
-  const rows = new Map(catalog.map((item) => [item.catalogKey, { item, quantity: 0, revenue: 0, cost: 0, profit: 0 }]));
+  const rows = new Map();
+  const soldCatalogKeys = new Set();
   sales.forEach((sale) => (sale.items || []).forEach((line) => {
     const recipe = recipes.find((item) => String(item.id) === String(line.id));
     const product = products.find((item) => String(item.id) === String(line.id));
     const item = recipe || product;
     if (!item) return;
-    const key = `${recipe ? "recipe" : "product"}:${item.id}`;
+    const catalogKey = `${recipe ? "recipe" : "product"}:${item.id}`;
+    const unit = analyticsUnit(line.unit, recipe ? "порция" : item.unit || "шт");
+    const key = `${catalogKey}:${unit}`;
+    if (!rows.has(key)) rows.set(key, { item: { ...item, itemType: recipe ? "recipe" : "product", catalogKey: key }, unit, quantity: 0, revenue: 0, cost: 0, profit: 0 });
+    soldCatalogKeys.add(catalogKey);
     const row = rows.get(key);
     const quantity = Number(line.quantity || 0);
-    const revenue = Number(line.price ?? item.price ?? 0) * quantity;
+    const revenue = saleLineRevenue(line, item.price || 0);
     row.quantity += quantity;
     row.revenue += revenue;
     row.cost += saleUnitCost(sale, line) * quantity;
     row.profit = row.revenue - row.cost;
   }));
-  return [...rows.values()].filter((row) => includeEmpty || row.quantity || row.revenue).sort((left, right) => right.revenue - left.revenue);
+  if (includeEmpty) catalog.forEach((item) => {
+    if (soldCatalogKeys.has(item.catalogKey)) return;
+    const unit = analyticsUnit(item.itemType === "recipe" ? "порция" : item.unit);
+    const key = `${item.catalogKey}:${unit}`;
+    rows.set(key, { item: { ...item, catalogKey: key }, unit, quantity: 0, revenue: 0, cost: 0, profit: 0 });
+  });
+  return [...rows.values()].filter((row) => includeEmpty || row.quantity || row.revenue || row.cost).sort((left, right) => right.revenue - left.revenue);
 }
 
 function percentageDelta(current, previous) {
@@ -2099,7 +2171,7 @@ function analyticsBuckets(sales, from, to, grouping = "day") {
     const revenue = Number(sale.total || 0);
     bucket.revenue += revenue;
     bucket.profit += revenue - saleCost(sale);
-    bucket.receipts += 1;
+    if (!sale._reportRefund && !isExternalSale(sale)) bucket.receipts += 1;
   });
   return buckets;
 }
@@ -2120,16 +2192,19 @@ function renderSalesBars(axis, chart, buckets) {
 }
 
 function renderSalesLine(axis, chart, buckets) {
-  const maximum = Math.max(...buckets.flatMap((bucket) => [bucket.revenue, Math.max(0, bucket.profit)]), 0);
-  const magnitude = 10 ** Math.max(0, Math.floor(Math.log10(maximum || 1)) - 1);
-  const axisMaximum = maximum ? Math.ceil(maximum / magnitude / 4) * magnitude * 4 : 1;
-  axis.innerHTML = [axisMaximum, axisMaximum * .66, axisMaximum * .33, 0].map((value) => `<span>${compactAmount(value)}</span>`).join("");
+  const values = buckets.flatMap((bucket) => [bucket.revenue, bucket.profit]);
+  const maximum = Math.max(...values, 0), minimum = Math.min(...values, 0);
+  const magnitude = 10 ** Math.max(0, Math.floor(Math.log10(Math.max(maximum, -minimum) || 1)) - 1);
+  const axisMaximum = maximum ? Math.ceil(maximum / magnitude / 4) * magnitude * 4 : minimum ? 0 : 1;
+  const axisMinimum = minimum ? Math.floor(minimum / magnitude / 4) * magnitude * 4 : 0;
+  const axisRange = axisMaximum - axisMinimum;
+  axis.innerHTML = [axisMaximum, axisMaximum - axisRange / 3, axisMaximum - axisRange * 2 / 3, axisMinimum].map((value) => `<span>${compactAmount(value)}</span>`).join("");
   const width = Math.max(760, buckets.length * 42);
   const plotTop = 14;
   const plotBottom = 184;
   const labelY = 218;
   const xAt = (index) => buckets.length <= 1 ? width / 2 : 16 + index * (width - 32) / (buckets.length - 1);
-  const yAt = (value) => plotBottom - Math.max(0, Number(value || 0)) / axisMaximum * (plotBottom - plotTop);
+  const yAt = (value) => plotBottom - (Number(value || 0) - axisMinimum) / axisRange * (plotBottom - plotTop);
   const revenuePoints = buckets.map((bucket, index) => `${xAt(index)},${yAt(bucket.revenue)}`).join(" ");
   const profitPoints = buckets.map((bucket, index) => `${xAt(index)},${yAt(bucket.profit)}`).join(" ");
   const labelStep = Math.max(1, Math.ceil(buckets.length / 7));
@@ -2290,7 +2365,7 @@ async function saveBranch() {
     if (accessChanged) {
       $("#branchAccessEyebrow").textContent = existing ? "Доступ обновлён" : "Заведение создано";
       $("#branchAccessTitle").textContent = `Основная касса · ${savedBranch.short}`;
-      $("#branchAccessCopy").textContent = existing ? "Старый сеанс кассы завершён. Введите обновлённые данные на её устройстве." : "Введите эти данные на устройстве кассы. Затем сотрудник выбирает своё имя и вводит личный PIN.";
+      $("#branchAccessCopy").textContent = existing ? "Старый сеанс кассы завершён. Введите обновлённые данные на её устройстве." : "Введите эти данные на устройстве кассы. Затем сотрудник вводит личный PIN — терминал определит его автоматически.";
       $("#createdBranchLogin").textContent = login;
       $("#createdBranchPassword").textContent = password || "Не изменён";
       $("#branchAccessModal .branch-access-hint p").textContent = existing ? "Остатки, поставщики и документы заведения сохранены." : "Склад заведения создан с нулевыми остатками. Добавьте сотрудников и назначьте PIN тем, кто работает на кассе.";
@@ -2323,7 +2398,7 @@ async function saveBranch() {
   if (accessChanged) {
     $("#branchAccessEyebrow").textContent = existing ? "Доступ обновлён" : "Заведение создано";
     $("#branchAccessTitle").textContent = branch.name;
-    $("#branchAccessCopy").textContent = existing ? "Старый сеанс кассы завершён. Введите обновлённые данные на её устройстве." : "Введите эти данные на устройстве кассы. Затем сотрудник выбирает своё имя и вводит личный PIN.";
+    $("#branchAccessCopy").textContent = existing ? "Старый сеанс кассы завершён. Введите обновлённые данные на её устройстве." : "Введите эти данные на устройстве кассы. Затем сотрудник вводит личный PIN — терминал определит его автоматически.";
     $("#createdBranchLogin").textContent = login;
     $("#createdBranchPassword").textContent = password || "Не изменён";
     $("#branchAccessModal .branch-access-hint p").textContent = existing ? "Остатки, поставщики и документы заведения сохранены. Для следующего входа используется новый доступ." : "Склад заведения создан с нулевыми остатками. Добавьте сотрудников и назначьте PIN тем, кто работает на кассе.";
@@ -2342,7 +2417,7 @@ function renderBranches() {
     const supplierDebt = (logisticsState.supplies || []).filter((supply) => supply.branchId === branch.id).reduce((sum, supply) => sum + Number(supply.debt || 0), 0);
     const employeeCount = employees.filter((employee) => employee.branch_id === branch.id && employee.is_active).length;
     const registerCount = posRegisters.filter((register) => register.branch_id === branch.id && register.is_active).length;
-    return `<article class="branch-card"><header><span>${branch.number}</span><div><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.address || "Адрес не указан")}</small></div><i class="${branch.status === "active" ? "" : "inactive"}" title="${branch.status === "active" ? "Активно" : "Неактивно"}"></i></header><div class="branch-card-details"><div><span>Кассы</span><strong>${registerCount}</strong><small>${registerCount ? "активных касс" : "нет активных касс"}</small></div><div><span>Поставщики</span><strong>${supplierCount}</strong><small>${supplierCount ? "доступно в аккаунте" : "нужно добавить"}</small></div><div><span>Остатки</span><strong>${stockPositions}</strong><small>${stockPositions ? "позиций на складе" : "склад пуст"}</small></div></div><footer><span>${employeeCount} ${pluralRu(employeeCount, "сотрудник", "сотрудника", "сотрудников")} · ${supplierDebt ? `долг поставщикам ${money(supplierDebt)}` : "долгов поставщикам нет"}</span><div class="branch-card-actions"><button data-edit-branch="${branch.id}" type="button">Настроить заведение</button><button data-manage-branch="${branch.id}" type="button">Добавить сотрудника${uiIcon("arrow")}</button></div></footer></article>`;
+    return `<article class="branch-card"><header><span>${branch.number}</span><div><strong>${escapeHtml(branch.name)}</strong><small>${escapeHtml(branch.address || "Адрес не указан")}</small></div><i class="${branch.status === "active" ? "" : "inactive"}" title="${branch.status === "active" ? "Активно" : "Неактивно"}"></i></header><div class="branch-card-details"><div><span>Кассы</span><strong>${registerCount}</strong><small>${registerCount ? "активных касс" : "нет активных касс"}</small></div><div><span>Поставщики</span><strong>${supplierCount}</strong><small>${supplierCount ? "доступно в аккаунте" : "нужно добавить"}</small></div><div><span>Остатки</span><strong>${stockPositions}</strong><small>${stockPositions ? "позиций на складе" : "склад пуст"}</small></div></div><footer><span>${employeeCount} ${pluralRu(employeeCount, "сотрудник", "сотрудника", "сотрудников")} · ${supplierDebt ? `долг поставщикам ${money(supplierDebt)}` : "долгов поставщикам нет"}</span><div class="branch-card-actions"><button class="secondary-action" data-edit-branch="${branch.id}" type="button">Настроить заведение</button><button class="secondary-action" data-manage-branch="${branch.id}" type="button">Добавить сотрудника${uiIcon("arrow")}</button></div></footer></article>`;
   }).join("") : '<article class="branch-card"><header><span>1</span><div><strong>Добавьте первое заведение</strong><small>Укажите название, адрес, график работы и создайте основную кассу.</small></div></header><footer><span>Остатки нового склада начнутся с нуля</span></footer></article>';
 }
 
@@ -2380,7 +2455,7 @@ function renderRegisters() {
       : register.online
         ? '<span class="status-badge good">В сети</span>'
         : '<span class="status-badge">Не в сети</span>';
-    return `<tr><td><div class="register-name"><span>${uiIcon("cashier")}</span><div><strong>${escapeHtml(register.name)}</strong><small>Логин: ${escapeHtml(register.account_login)}</small></div></div></td><td><strong>${escapeHtml(registerBranch?.name || "Заведение удалено")}</strong><small>${escapeHtml(registerBranch?.address || "")}</small></td><td><strong>${escapeHtml(registerDeviceLabel(register.device_label))}</strong><small>${register.remote_address ? `IP: ${escapeHtml(register.remote_address)}` : ""}</small></td><td>${escapeHtml(lastSeen)}</td><td>${status}</td><td><div class="register-actions"><button class="register-open-action" data-open-register="${register.id}" type="button" ${register.is_active ? "" : "disabled"}>Открыть кассу</button>${register.online ? `<button data-logout-register="${register.id}" type="button">Завершить сеанс</button>` : ""}<button data-edit-register="${register.id}" type="button">Настроить</button></div></td></tr>`;
+    return `<tr><td><div class="register-name"><span>${uiIcon("cashier")}</span><div><strong>${escapeHtml(register.name)}</strong><small>Логин: ${escapeHtml(register.account_login)}</small></div></div></td><td><strong>${escapeHtml(registerBranch?.name || "Заведение удалено")}</strong><small>${escapeHtml(registerBranch?.address || "")}</small></td><td><strong>${escapeHtml(registerDeviceLabel(register.device_label))}</strong><small>${register.remote_address ? `IP: ${escapeHtml(register.remote_address)}` : ""}</small></td><td>${escapeHtml(lastSeen)}</td><td>${status}</td><td><div class="register-actions"><button class="register-open-action primary-action" data-open-register="${register.id}" type="button" ${register.is_active ? "" : "disabled"}>Открыть кассу</button>${register.online ? `<button class="danger-button" data-logout-register="${register.id}" type="button">Завершить сеанс</button>` : ""}<button class="secondary-action" data-edit-register="${register.id}" type="button">Настроить</button></div></td></tr>`;
   }).join("");
   $("#registersEmpty").classList.toggle("hidden", Boolean(pointRegisters.length));
   $("#registersTable").closest(".table-scroll").classList.toggle("hidden", !pointRegisters.length);
@@ -2528,6 +2603,63 @@ function employeeById(id) {
   return employees.find((employee) => String(employee.id) === String(id));
 }
 
+function canDeleteEmployee(employee) {
+  if (!employee || employee.deleted_at || !canAccessView('employees')) return false;
+  if (employee.login && String(employee.login).toLowerCase() === String(currentSession.login || '').toLowerCase()) return false;
+  return currentRole === 'owner' || (employee.branch_id === currentSession.branchId && employee.staff_role !== 'branch_manager');
+}
+
+function openEmployeeDelete(employeeId, trigger = document.activeElement) {
+  const employee = employeeById(employeeId);
+  if (!canDeleteEmployee(employee) || deletingEmployee) return;
+  pendingEmployeeDeleteId = employee.id;
+  employeeDeleteTrigger = trigger;
+  $('#employeeDeleteName').textContent = employee.display_name;
+  $('#employeeDeleteError').textContent = '';
+  $('#employeeDeleteError').hidden = true;
+  $('#employeeDeleteDialog').showModal();
+  $('#cancelEmployeeDelete').focus();
+}
+
+function closeEmployeeDelete() {
+  if (!deletingEmployee) $('#employeeDeleteDialog').close();
+}
+
+async function confirmEmployeeDelete() {
+  const employee = employeeById(pendingEmployeeDeleteId);
+  if (!canDeleteEmployee(employee) || deletingEmployee) return;
+  deletingEmployee = true;
+  const dialog = $('#employeeDeleteDialog');
+  dialog.setAttribute('aria-busy', 'true');
+  dialog.querySelectorAll('button').forEach(button => { button.disabled = true; });
+  $('#confirmEmployeeDelete').textContent = 'Удаление…';
+  $('#employeeDeleteError').hidden = true;
+  let deleted = false;
+  try {
+    if (serverMode) await window.AshkanaApi.deleteEmployee(employee.id);
+    employees = employees.filter(row => String(row.id) !== String(employee.id));
+    if (String(editingEmployeeId) === String(employee.id)) {
+      $('#employeeModal').classList.add('hidden');
+      editingEmployeeId = null;
+    }
+    renderAll();
+    deleted = true;
+  } catch (error) {
+    $('#employeeDeleteError').textContent = error.message || 'Не удалось удалить сотрудника. Попробуйте ещё раз.';
+    $('#employeeDeleteError').hidden = false;
+  } finally {
+    deletingEmployee = false;
+    dialog.removeAttribute('aria-busy');
+    dialog.querySelectorAll('button').forEach(button => { button.disabled = false; });
+    $('#confirmEmployeeDelete').textContent = 'Удалить сотрудника';
+  }
+  if (deleted) {
+    dialog.close();
+    showToast('Сотрудник удалён. История действий сохранена.');
+    await refreshServerWorkspace();
+  }
+}
+
 function updateEmployeePermissionNote() {
   const role = $("#employeeRoleInput").value;
   const profile = employeeRoleProfiles[role] || employeeRoleProfiles.cashier;
@@ -2539,10 +2671,10 @@ function updateEmployeePermissionNote() {
   $("#employeeLoginField").classList.toggle("hidden", !adminAccess);
   $("#employeePasswordField").classList.toggle("hidden", !adminAccess);
   $("#employeePinField").classList.toggle("hidden", !posAccess);
-  $("#employeePinLabel").textContent = posAccess ? "PIN для кассы *" : "PIN для кассы";
+  $("#employeePinLabel").textContent = posAccess ? "PIN сотрудника *" : "PIN сотрудника";
   $("#employeePinHint").textContent = editingEmployeeId
     ? "Оставьте пустым, если PIN менять не нужно."
-    : "4 цифры для входа на кассе аккаунта.";
+    : "4 цифры для входа в терминал. По PIN система определит сотрудника и его права.";
   if (posAccess && !editingEmployeeId && !/^\d{4}$/.test($("#employeePinInput").value)) $("#employeePinInput").value = generateEmployeePin();
   if (adminAccess && !editingEmployeeId && !$("#employeePasswordInput").value) $("#employeePasswordInput").value = generateTemporaryPassword();
 }
@@ -2557,8 +2689,8 @@ function renderEmployees() {
   const ownerMode = currentRole === "owner";
   const branch = branchById(currentSession.branchId);
   const pointEmployees = ownerMode
-    ? employees
-    : branch ? employees.filter((employee) => employee.branch_id === branch.id) : [];
+    ? employees.filter(employee => !employee.deleted_at)
+    : branch ? employees.filter((employee) => employee.branch_id === branch.id && !employee.deleted_at) : [];
   $("#employeesContextBar").classList.toggle("hidden", ownerMode);
   $("#employeesPageEyebrow").textContent = ownerMode ? "Команда аккаунта" : "Команда заведения";
   $("#employeesPageTitle").textContent = "Сотрудники";
@@ -2600,7 +2732,7 @@ function renderEmployees() {
     const employeeBranch = branchById(employee.branch_id);
     const scopeCell = `${employeeRoleLabel(employee.staff_role)}${ownerMode && employeeBranch ? ` · ${employeeBranch.name}` : ""}`;
     const canEdit = ownerMode || employee.staff_role !== "branch_manager";
-    return `<tr><td><div class="employee-person"><span class="employee-avatar">${escapeHtml(personInitials(employee.display_name))}</span><div><strong>${escapeHtml(employee.display_name)}</strong><small>${escapeHtml(employee.phone || "Телефон не указан")}</small></div></div></td><td><span class="employee-role-badge">${escapeHtml(scopeCell)}</span></td><td><span class="employee-login">${escapeHtml(accessLabel)}</span>${canEdit && posAccess ? `<div class="employee-pin-display"><button class="poster-action" data-employee-pin="${employee.id}" type="button">${employee.can_reveal_pin ? "Показать PIN" : employee.has_pin ? "Задать PIN заново" : "Назначить PIN"}</button><span data-employee-pin-value="${employee.id}"></span></div>` : ""}</td><td>${escapeHtml(lastSeen)}</td><td><span class="status-badge ${employee.is_active ? "good" : "warn"}">${employee.is_active ? "Активен" : "Отключён"}</span></td><td>${canEdit ? `<button class="poster-action" data-edit-employee="${employee.id}" type="button">Настроить</button>` : ""}</td></tr>`;
+    return `<tr><td><div class="employee-person"><span class="employee-avatar">${escapeHtml(personInitials(employee.display_name))}</span><div><strong>${escapeHtml(employee.display_name)}</strong><small>${escapeHtml(employee.phone || "Телефон не указан")}</small></div></div></td><td><span class="employee-role-badge">${escapeHtml(scopeCell)}</span></td><td><span class="employee-login">${escapeHtml(accessLabel)}</span>${canEdit && posAccess ? `<div class="employee-pin-display"><button class="poster-action secondary-action" data-employee-pin="${employee.id}" type="button">${employee.can_reveal_pin ? "Показать PIN" : employee.has_pin ? "Задать PIN заново" : "Назначить PIN"}</button><span data-employee-pin-value="${employee.id}"></span></div>` : ""}</td><td>${escapeHtml(lastSeen)}</td><td><span class="status-badge ${employee.is_active ? "good" : "warn"}">${employee.is_active ? "Активен" : "Отключён"}</span></td><td><div class="employee-row-actions">${canEdit ? `<button class="poster-action secondary-action" data-edit-employee="${employee.id}" type="button">Настроить</button>` : ""}${canDeleteEmployee(employee) ? `<button class="danger-button icon-button employee-delete-icon" data-delete-employee="${escapeHtml(String(employee.id))}" type="button" title="Удалить сотрудника" aria-label="Удалить сотрудника: ${escapeHtml(employee.display_name)}">${uiIcon('trash')}</button>` : ""}</div></td></tr>`;
   }).join("");
   $("#employeesEmpty").classList.toggle("hidden", Boolean(visible.length));
   $("#employeesTable").closest(".table-scroll").classList.toggle("hidden", !visible.length);
@@ -2648,6 +2780,7 @@ function openEmployeeForm(employeeId = null, preferredBranchId = null) {
   $("#employeeActiveRow").classList.toggle("hidden", !employee);
   $("#employeeActiveInput").checked = employee?.is_active !== false;
   $("#saveEmployeeButton").textContent = employee ? "Сохранить изменения" : "Создать сотрудника";
+  $('#deleteEmployeeButton').classList.toggle('hidden', !canDeleteEmployee(employee));
   updateEmployeePermissionNote();
   $("#employeeModal").classList.remove("hidden");
   setTimeout(() => $("#employeeNameInput").focus(), 20);
@@ -2708,15 +2841,20 @@ async function saveEmployee() {
       $("#employeeAccessTitle").textContent = saved.display_name;
       const savedPermissions = normalizeEmployeePermissions(saved.permissions, saved.staff_role);
       const posEmployee = savedPermissions.posAccess && !employeeHasAdminAccess(savedPermissions);
-      $("#employeeAccessCopy").textContent = posEmployee ? "Передайте PIN только этому сотруднику. На устройстве сначала выполняется вход по логину аккаунта и паролю кассы." : "Передайте данные сотруднику безопасным способом. После закрытия окна пароль больше не отображается.";
+      $("#employeeAccessCopy").textContent = posEmployee ? "Передайте сотруднику личный PIN. Он используется для входа на уже авторизованном терминале." : "Сохраните данные и передайте сотруднику. После закрытия страницы пароль больше не отображается.";
       $("#employeeAccessPrimaryLabel").textContent = posEmployee ? "PIN сотрудника" : "Логин";
       $("#employeeAccessSecondaryLabel").textContent = posEmployee ? "Способ входа" : "Временный пароль";
       $("#createdEmployeeLogin").textContent = posEmployee ? pin : login;
-      $("#createdEmployeePassword").textContent = posEmployee ? "На кассе аккаунта" : password;
-      $("#employeeAccessHint").textContent = posEmployee ? `${branch?.name || "Заведение"} · операции будут записаны на имя ${saved.display_name}.` : `${employeeRoleLabel(saved.staff_role)} · ${savedPermissions.posAccess ? `PIN кассы: ${pin}. ` : ""}Вход: ${location.origin}/login`;
+      $("#createdEmployeePassword").textContent = posEmployee ? "Личный PIN в терминале" : password;
+      $("#employeeAccessPinField").classList.toggle("hidden", posEmployee || !savedPermissions.posAccess || !pin);
+      $("#createdEmployeePin").textContent = savedPermissions.posAccess ? pin : "—";
+      const entryUrl = `${location.origin}/${posEmployee ? "pos" : "login"}`;
+      $("#createdEmployeeLink").href = entryUrl;
+      $("#createdEmployeeLink").textContent = entryUrl;
+      $("#employeeAccessHint").textContent = `${employeeRoleLabel(saved.staff_role)} · ${branch?.name || "Заведение"}`;
       lastEmployeeAccessText = posEmployee
-        ? `${saved.display_name}\n${employeeRoleLabel(saved.staff_role)} · ${branch?.name || "Заведение"}\nPIN: ${pin}\nВход: на кассе аккаунта`
-        : `${saved.display_name}\n${employeeRoleLabel(saved.staff_role)} · ${branch?.name || "Заведение"}\nВход: ${location.origin}/login\nЛогин: ${login}\nВременный пароль: ${password}${savedPermissions.posAccess ? `\nPIN кассы: ${pin}` : ""}`;
+        ? `${saved.display_name}\n${employeeRoleLabel(saved.staff_role)} · ${branch?.name || "Заведение"}\nPIN сотрудника: ${pin}\nВход: ${entryUrl}\nВведите PIN на авторизованном терминале.`
+        : `${saved.display_name}\n${employeeRoleLabel(saved.staff_role)} · ${branch?.name || "Заведение"}\nВход: ${entryUrl}\nЛогин: ${login}\nВременный пароль: ${password}${savedPermissions.posAccess ? `\nPIN сотрудника: ${pin}` : ""}`;
       $("#employeeAccessModal").classList.remove("hidden");
     } else showToast("Данные сотрудника сохранены");
   } catch (error) {
@@ -2734,7 +2872,7 @@ function renderRecipes() {
   $("#ingredientCount").textContent = ingredients.length;
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
-    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${recipe.name}</strong><small>Код ${recipe.id}</small></div></div></td><td>${recipe.category}</td><td>${recipeStation(recipe)}</td><td>${decimal(recipe.yield / 1000, 3)} кг</td><td><strong>${money(cost)}</strong></td><td><strong>${money(recipe.price)}</strong></td><td><span class="margin-value">${decimal(markup(recipe))}%</span></td><td><button class="poster-action" data-recipe-compose="${recipe.id}" type="button">Состав</button></td><td><button class="poster-action" data-recipe-edit="${recipe.id}" type="button">Ред.</button></td></tr>`;
+    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${recipe.name}</strong><small>Код ${recipe.id}</small></div></div></td><td>${recipe.category}</td><td>${recipeStation(recipe)}</td><td>${decimal(recipe.yield / 1000, 3)} кг</td><td><strong>${money(cost)}</strong></td><td><strong>${money(recipe.price)}</strong></td><td><span class="margin-value">${decimal(markup(recipe))}%</span></td><td><button class="poster-action secondary-action" data-recipe-compose="${recipe.id}" type="button">Состав</button></td><td><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button></td></tr>`;
   }).join("");
 }
 
@@ -2749,7 +2887,7 @@ function renderProducts() {
     const variants = product.variantName ? [product, ...products.filter(item => item.parentId === product.id)] : [];
     const priceLabel = variants.length ? `от ${money(Math.min(...variants.map(item => item.price)))}` : money(product.price);
     const stockTotal = variants.length ? variants.reduce((sum,item) => sum + branchStock(branchId, item.id), 0) : branchStock(branchId, product.id);
-    return `<tr><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong><small>${product.variantName ? `${1 + products.filter(row => row.parentId === product.id).length} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td><button class="poster-action" data-product-edit="${product.id}" type="button">Ред.</button></td></tr>`;
+    return `<tr><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong><small>${product.variantName ? `${1 + products.filter(row => row.parentId === product.id).length} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button></td></tr>`;
   }).join("");
 }
 
@@ -2763,7 +2901,7 @@ function preparationCost(preparation) {
   return preparation.components.reduce((total, component) => {
     const ingredient = ingredientById(component.ingredientId);
     const unitCost = ingredient ? branchUnitCost(branchId, ingredient.id) || Number(ingredient.averageCost || 0) : 0;
-    return total + unitCost * Number(component.net || 0) / 1000;
+    return total + unitCost * componentGross(component) / 1000;
   }, 0);
 }
 
@@ -2775,7 +2913,8 @@ function renderPreparations() {
   $("#preparationsTable").innerHTML = visible.length ? visible.map((preparation) => {
     const batchCost = preparationCost(preparation);
     const unitCost = Number(preparation.yield) > 0 ? batchCost / (Number(preparation.yield) / 1000) : 0;
-    return `<tr><td><div class="dish-cell">${CatalogCover.thumb(preparation)}<div><strong>${escapeHtml(preparation.name)}</strong><small>${escapeHtml(String(preparation.id).toUpperCase())}</small></div></div></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td>${escapeHtml(preparation.station || "Кухня")}</td><td>${decimal(preparation.yield / 1000, 3)} кг</td><td><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td>${escapeHtml(preparation.usedIn || "Не указано")}</td><td><button class="poster-action" data-preparation-edit="${escapeHtml(String(preparation.id))}" type="button">Ред.</button></td></tr>`;
+    const id = escapeHtml(String(preparation.id));
+    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong><small>${escapeHtml(String(preparation.id).toUpperCase())}</small></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td>${escapeHtml(preparation.station || "Кухня")}</td><td>${decimal(preparation.yield / 1000, 3)} кг</td><td><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td>${escapeHtml(preparation.usedIn || "Не указано")}</td><td><div class="preparation-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button></div></td></tr>`;
   }).join("") : `<tr class="table-empty"><td colspan="7">${preparations.length ? "По заданным условиям полуфабрикаты не найдены" : "Полуфабрикаты ещё не настроены"}</td></tr>`;
 }
 
@@ -2789,20 +2928,20 @@ function renderMenuCategories() {
     const productCount = products.filter((product) => product.category === category.name).length;
     const type = recipeCount && productCount ? "Товары и тех. карты" : recipeCount ? "Тех. карты" : "Товары";
     const resolvedType = recipeCount + productCount ? type : "Без позиций";
-    return `<tr><td><div class="menu-category-cell">${CatalogCover.thumb(category)}<strong>${escapeHtml(category.name)}</strong></div></td><td>${resolvedType}</td><td>${recipeCount + productCount}</td><td><span class="visibility-badge">Все точки</span></td><td>${category.color.toUpperCase()}</td><td><button class="poster-action" data-menu-category-edit="${index}" type="button">Ред.</button></td></tr>`;
+    return `<tr><td><div class="menu-category-cell">${CatalogCover.thumb(category)}<strong>${escapeHtml(category.name)}</strong></div></td><td>${resolvedType}</td><td>${recipeCount + productCount}</td><td><span class="visibility-badge">Все точки</span></td><td>${category.color.toUpperCase()}</td><td><button class="poster-action secondary-action" data-menu-category-edit="${index}" type="button">Изменить</button></td></tr>`;
   }).join("");
 
   $("#ingredientCategoriesTable").innerHTML = ingredientCategories.map((category, index) => {
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
     const group = ingredients.filter((ingredient) => ingredient.category === category);
     const value = group.reduce((sum, ingredient) => sum + branchStock(branchId, ingredient.id) * branchUnitCost(branchId, ingredient.id), 0);
-    return `<tr><td><div class="dish-cell">${CatalogCover.thumb(ingredientCategoryCovers[category], category)}<strong>${escapeHtml(category)}</strong></div></td><td>${group.length}</td><td>${money(value)}</td><td><button class="poster-action" data-ingredient-category-edit="${index}" type="button">Ред.</button></td></tr>`;
+    return `<tr><td><div class="dish-cell">${CatalogCover.thumb(ingredientCategoryCovers[category], category)}<strong>${escapeHtml(category)}</strong></div></td><td>${group.length}</td><td>${money(value)}</td><td><button class="poster-action secondary-action" data-ingredient-category-edit="${index}" type="button">Изменить</button></td></tr>`;
   }).join("");
 
   $("#stationsTable").innerHTML = stations.length ? stations.map((station) => {
     const linkedRecipes = recipes.filter((recipe) => recipeStation(recipe) === station.name).length;
     const linkedPreparations = preparations.filter((preparation) => preparation.station === station.name).length;
-    return `<tr><td><strong>${escapeHtml(station.name)}</strong>${linkedPreparations ? `<small>${linkedPreparations} ${pluralRu(linkedPreparations, "полуфабрикат", "полуфабриката", "полуфабрикатов")}</small>` : ""}</td><td>${escapeHtml(stationWarehouseLabel(station))}</td><td>${linkedRecipes}</td><td>${escapeHtml(station.destination || "Без печати")}</td><td><button class="poster-action" data-station-edit="${escapeHtml(station.name)}" type="button">Ред.</button></td></tr>`;
+    return `<tr><td><strong>${escapeHtml(station.name)}</strong>${linkedPreparations ? `<small>${linkedPreparations} ${pluralRu(linkedPreparations, "полуфабрикат", "полуфабриката", "полуфабрикатов")}</small>` : ""}</td><td>${escapeHtml(stationWarehouseLabel(station))}</td><td>${linkedRecipes}</td><td>${escapeHtml(station.destination || "Без печати")}</td><td><button class="poster-action secondary-action" data-station-edit="${escapeHtml(station.name)}" type="button">Изменить</button></td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="5">Цеха ещё не настроены. Добавьте первый цех.</td></tr>';
   refreshCategoryControls();
 }
@@ -3053,7 +3192,7 @@ function renderSuppliers() {
     const total = documents.reduce((sum, document) => sum + Number(document.total || 0), 0);
     const lastDelivery = documents.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
     const debt = documents.reduce((sum, document) => sum + Number(document.debt || 0), 0);
-    const action = `<button class="poster-action" data-supplier-edit="${supplier.id}" type="button">Ред.</button>`;
+    const action = `<button class="poster-action secondary-action" data-supplier-edit="${supplier.id}" type="button">Изменить</button>`;
     const contactDetails = [supplier.contact, supplier.email].filter(Boolean).join(" · ") || "Контакт не указан";
     return `<tr><td><strong>${escapeHtml(supplier.name)}</strong><small>${supplier.inn ? `ИНН ${escapeHtml(supplier.inn)}` : escapeHtml(supplier.comment || "Без комментария")}</small></td><td><div class="supplier-location-tags"><span>Весь аккаунт</span></div></td><td><strong>${escapeHtml(supplier.phone || "—")}</strong><small>${escapeHtml(contactDetails)}</small></td><td>${escapeHtml(supplier.address || "—")}</td><td><strong>${documents.length}</strong><small>${lastDelivery ? `последняя ${new Date(lastDelivery.createdAt).toLocaleDateString("ru-RU")}` : "поставок ещё нет"}</small></td><td><strong>${money(total)}</strong></td><td><strong class="${debt > 0 ? "deficit-value" : "available-value"}">${money(debt)}</strong></td><td><span class="status-badge ${supplier.status === "active" ? "good" : "warn"}">${supplier.status === "active" ? "Активный" : "Архивный"}</span></td><td>${action}</td></tr>`;
   }).join("");
@@ -3062,7 +3201,7 @@ function renderSuppliers() {
 }
 
 const stockTabConfig = {
-  inventories: { title: "Инвентаризации точек", subtitle: "Подсчёты, расхождения и подтверждение корректировок", action: "" },
+  inventories: { title: "Инвентаризации", subtitle: "Подсчёты, расхождения и подтверждение корректировок", action: "Добавить инвентаризацию" },
   suppliers: { title: "Поставщики", subtitle: "Единый справочник поставщиков и задолженность по поставкам", action: "Добавить поставщика" },
   supplies: { title: "Поставки", subtitle: "Приходные накладные, оплаты и задолженность поставщикам", action: "Добавить поставку" },
   "point-transfers": { title: "Перемещения между точками", subtitle: "Запросы, отгрузки и приёмка продуктов между столовыми", action: "Создать перемещение" },
@@ -3247,7 +3386,7 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
       const paymentStatus = supply.paymentStatus || (Number(supply.debt || 0) > 0 ? Number(supply.paidTotal || 0) > 0 ? "partial" : "unpaid" : "paid");
       const statusClass = paymentStatus === "paid" ? "good" : paymentStatus === "partial" ? "warn" : "bad";
       const date = new Date(supply.receivedAt || supply.createdAt);
-      return `<tr><td><span class="document-number">${escapeHtml(supply.number)}</span><small>${supply.invoiceNumber ? `Накладная ${escapeHtml(supply.invoiceNumber)}` : "Без номера накладной"}</small></td><td>${date.toLocaleDateString("ru-RU")}<small>${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</small></td><td><strong>${escapeHtml(supply.supplier)}</strong><small>${escapeHtml(supply.receivedBy || supply.createdBy || "—")}</small></td><td>${escapeHtml(branch?.name || "Заведение")}</td><td>${escapeHtml(itemNames || "—")}${(supply.items || []).length > 2 ? `<small>и ещё ${supply.items.length - 2}</small>` : ""}</td><td><strong>${money(supply.total || 0)}</strong></td><td><span class="status-badge ${statusClass}">${supplyPaymentStatusLabel(paymentStatus)}</span><small>${money(supply.paidTotal || 0)}</small></td><td><strong class="${Number(supply.debt || 0) > 0 ? "deficit-value" : "available-value"}">${money(supply.debt || 0)}</strong></td></tr>`;
+      return `<tr><td><button type="button" class="document-number" data-view-supply="${escapeHtml(supply.id)}">${escapeHtml(supply.number)}</button><small>${supply.invoiceNumber ? `Накладная ${escapeHtml(supply.invoiceNumber)}` : "Без номера накладной"}</small></td><td>${date.toLocaleDateString("ru-RU")}<small>${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</small></td><td><strong>${escapeHtml(supply.supplier)}</strong><small>${escapeHtml(supply.receivedBy || supply.createdBy || "—")}</small></td><td>${escapeHtml(branch?.name || "Заведение")}</td><td>${escapeHtml(itemNames || "—")}${(supply.items || []).length > 2 ? `<small>и ещё ${supply.items.length - 2}</small>` : ""}</td><td><strong>${money(supply.total || 0)}</strong></td><td><button type="button" class="status-badge ${statusClass} supply-detail-link" data-view-supply="${escapeHtml(supply.id)}" aria-label="Открыть оплату поставки ${escapeHtml(supply.number)}">${supplyPaymentStatusLabel(paymentStatus)}</button><small>${money(supply.paidTotal || 0)}</small></td><td><button type="button" class="supply-detail-link ${Number(supply.debt || 0) > 0 ? "deficit-value" : "available-value"}" data-view-supply="${escapeHtml(supply.id)}" aria-label="Долг по поставке ${escapeHtml(supply.number)}">${money(supply.debt || 0)}</button></td></tr>`;
     }).join("");
     updateDocumentFilterResult(tab, allSupplies, supplies);
     return;
@@ -3257,7 +3396,7 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
     const branchId = currentSession.branchId || branches[0]?.id;
     const allInventories = logisticsState.inventories.filter((inventory) => currentRole !== "branch" || inventory.branchId === branchId);
     const inventories = filterWarehouseDocuments(tab, allInventories);
-    $("#documentActionButton").classList.toggle("hidden", currentRole !== "branch");
+    $("#documentActionButton").classList.toggle("hidden", !["branch","owner"].includes(currentRole));
     $("#createFirstRequestButton").classList.add("hidden");
     $("#documentsEmpty strong").textContent = "Инвентаризаций пока нет";
     $("#documentsEmpty p").textContent = currentRole === "branch" ? "Начните подсчёт, чтобы сверить учётный и фактический остаток точки." : "После отправки точкой документ появится здесь на проверке.";
@@ -3267,9 +3406,9 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
       const totals = inventoryTotals(inventory);
       const differenceAmount = totals.surplus + totals.shortage;
       const net = totals.net;
-      let action = `<button class="operation-action" data-open-inventory-document="${inventory.id}" type="button">Подробнее</button>`;
-      if (currentRole === "branch" && ["counting", "returned"].includes(inventory.status)) action = `<button class="operation-action primary" data-open-inventory-document="${inventory.id}" type="button">Продолжить</button>`;
-      else if ((currentRole === "owner" || testMode) && inventory.status === "submitted") action = `<button class="operation-action primary" data-open-inventory-document="${inventory.id}" type="button">Проверить</button>`;
+      let action = `<button class="operation-action secondary-action" data-open-inventory-document="${inventory.id}" type="button">Подробнее</button>`;
+      if (["branch","owner"].includes(currentRole) && ["counting", "returned"].includes(inventory.status)) action = `<button class="operation-action primary primary-action" data-open-inventory-document="${inventory.id}" type="button">Продолжить</button>`;
+      else if ((currentRole === "owner" || testMode) && inventory.status === "submitted") action = `<button class="operation-action primary primary-action" data-open-inventory-document="${inventory.id}" type="button">Проверить</button>`;
       const statusDetails = inventory.postedBy ? `Провёл: ${escapeHtml(inventory.postedBy)}` : inventory.returnedBy && inventory.status === "returned" ? `Вернул: ${escapeHtml(inventory.returnedBy)}` : inventory.submittedBy ? `Отправил: ${escapeHtml(inventory.submittedBy)}` : `Создал: ${escapeHtml(inventory.createdBy)}`;
       return `<tr><td><span class="document-number">${escapeHtml(inventory.number)}</span><small>${escapeHtml(inventory.responsible)}</small></td><td>${new Date(inventory.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td><td><strong>${escapeHtml(branch?.name || "Точка")}</strong></td><td><strong>${escapeHtml(inventoryScopeLabel(inventory))}</strong><small>${inventory.items.length} ${pluralRu(inventory.items.length, "позиция", "позиции", "позиций")}</small></td><td><strong>${totals.counted} из ${inventory.items.length}</strong><small>${totals.counted === inventory.items.length ? "все позиции" : "подсчёт не завершён"}</small></td><td><strong class="${differenceAmount ? "deficit-value" : "available-value"}">${money(differenceAmount)}</strong><small>${net > 0 ? "+" : net < 0 ? "−" : ""}${money(Math.abs(net))} итог</small></td><td><span class="operation-status ${inventory.status}">${inventoryStatusLabel(inventory.status)}</span><small>${statusDetails}</small></td><td>${action}</td></tr>`;
     }).join("");
@@ -3291,9 +3430,9 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
       const destination = branchById(transfer.destinationBranchId);
       const itemNames = transfer.items.slice(0, 2).map((item) => logisticsItem(item.itemId)?.name).filter(Boolean).join(", ");
       let action = "";
-      if (transfer.status === "submitted" && currentRole === "owner") action = `<button class="operation-action" data-approve-point-transfer="${transfer.id}" type="button">Согласовать</button>`;
-      else if (transfer.status === "approved" && currentRole === "branch" && branchId === transfer.sourceBranchId) action = `<button class="operation-action primary" data-dispatch-point-transfer="${transfer.id}" type="button">Отгрузить</button>`;
-      else if (transfer.status === "shipped" && currentRole === "branch" && branchId === transfer.destinationBranchId) action = `<button class="operation-action receive" data-receive-point-transfer="${transfer.id}" type="button">Принять</button>`;
+      if (transfer.status === "submitted" && currentRole === "owner") action = `<button class="operation-action secondary-action" data-approve-point-transfer="${transfer.id}" type="button">Согласовать</button>`;
+      else if (transfer.status === "approved" && currentRole === "branch" && branchId === transfer.sourceBranchId) action = `<button class="operation-action primary primary-action" data-dispatch-point-transfer="${transfer.id}" type="button">Отгрузить</button>`;
+      else if (transfer.status === "shipped" && currentRole === "branch" && branchId === transfer.destinationBranchId) action = `<button class="operation-action receive primary-action" data-receive-point-transfer="${transfer.id}" type="button">Принять</button>`;
       else if (transfer.status === "received") action = '<span class="operation-status received">Завершено</span>';
       const requested = pointTransferQuantity(transfer, "requested");
       const approved = pointTransferQuantity(transfer, "approved");
@@ -3320,9 +3459,9 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
       const branch = branchById(order.branchId);
       const itemNames = order.items.slice(0, 2).map((item) => logisticsItem(item.itemId)?.name).filter(Boolean).join(", ");
       const actions = [];
-      if (order.status !== "submitted") actions.push(`<button class="operation-action" data-print-direct-order="${order.id}" type="button">PDF</button>`);
-      if (order.status === "submitted" && currentRole === "owner") actions.push(`<button class="operation-action" data-approve-direct-order="${order.id}" type="button">Согласовать</button>`);
-      else if (order.status === "approved" && currentRole === "branch") actions.push(`<button class="operation-action primary" data-open-direct-send="${order.id}" type="button">Отправить поставщику</button>`);
+      if (order.status !== "submitted") actions.push(`<button class="operation-action secondary-action" data-print-direct-order="${order.id}" type="button">PDF</button>`);
+      if (order.status === "submitted" && currentRole === "owner") actions.push(`<button class="operation-action secondary-action" data-approve-direct-order="${order.id}" type="button">Согласовать</button>`);
+      else if (order.status === "approved" && currentRole === "branch") actions.push(`<button class="operation-action primary primary-action" data-open-direct-send="${order.id}" type="button">Отправить поставщику</button>`);
       const action = actions.length ? `<div class="operation-actions">${actions.join("")}</div>` : "";
       const statusDetails = order.sentVia ? `Отправил: ${escapeHtml(order.orderedBy || "—")} · ${directOrderSendMethodLabel(order.sentVia)}` : order.approvedBy ? `Согласовал: ${escapeHtml(order.approvedBy)}` : "";
       return `<tr><td><span class="document-number">${escapeHtml(order.number)}</span><small>${new Date(order.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · ${escapeHtml(order.createdBy)}</small></td><td><strong>${new Date(order.neededAt).toLocaleDateString("ru-RU")}</strong></td><td><strong>${escapeHtml(order.supplier)}</strong><small>доставка на точку</small></td><td>${escapeHtml(branch?.name || "Точка")}</td><td>${escapeHtml(itemNames)}${order.items.length > 2 ? `<small>и ещё ${order.items.length - 2}</small>` : ""}</td><td><strong>${money(order.total || 0)}</strong></td><td><span class="operation-status ${order.status === "ordered" ? "shipped" : order.status}">${directOrderStatusLabel(order.status)}</span>${statusDetails ? `<small>${statusDetails}</small>` : ""}</td><td>${action}</td></tr>`;
@@ -3343,7 +3482,7 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
     $("#documentsTableBody").innerHTML = receipts.map((order) => {
       const branch = branchById(order.branchId);
       const isReceived = order.status === "received";
-      const action = !isReceived && currentRole === "branch" ? `<button class="operation-action receive" data-receive-direct-order="${order.id}" type="button">Принять поставку</button>` : isReceived ? '<span class="operation-status received">Принято</span>' : '<span class="operation-status shipped">Ожидается</span>';
+      const action = !isReceived && currentRole === "branch" ? `<button class="operation-action receive primary-action" data-receive-direct-order="${order.id}" type="button">Принять поставку</button>` : isReceived ? '<span class="operation-status received">Принято</span>' : '<span class="operation-status shipped">Ожидается</span>';
       return `<tr><td><span class="document-number">${escapeHtml(order.number)}</span><small>${order.invoiceNumber ? `Накладная ${escapeHtml(order.invoiceNumber)}` : "Накладная не указана"}</small></td><td>${new Date(isReceived ? order.receivedAt : order.orderedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</td><td><strong>${escapeHtml(order.supplier)}</strong><small>на точку</small></td><td>${escapeHtml(branch?.name || "Точка")}</td><td><strong>${order.items.length}</strong></td><td><strong>${money(order.total || 0)}</strong></td><td><span class="${isReceived && Number(order.variance) ? "deficit-value" : "available-value"}">${isReceived ? Number(order.variance) ? `${Number(order.variance) > 0 ? "+" : ""}${decimal(order.variance, 3)} ед.` : "без расхождений" : "ожидает приёмки"}</span>${order.receivedBy ? `<small>Принял: ${escapeHtml(order.receivedBy)}</small>` : ""}</td><td>${action}</td></tr>`;
     }).join("");
     updateDocumentFilterResult(tab, allReceipts, receipts);
@@ -3361,9 +3500,9 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
       const branch = branchById(request.branchId);
       const items = request.items.slice(0, 2).map((item) => logisticsItem(item.itemId)?.name).filter(Boolean).join(", ");
       let action = "";
-      if (request.status === "submitted" && hasRole("owner", "warehouse")) action = `<button class="operation-action" data-approve-request="${request.id}" type="button">Согласовать</button>`;
-      else if (request.status === "approved" && hasRole("owner", "warehouse")) action = `<button class="operation-action primary" data-dispatch-request="${request.id}" type="button">Отгрузить</button>`;
-      else if (request.status === "shipped" && hasRole("owner", "branch")) action = `<button class="operation-action receive" data-receive-request="${request.id}" type="button">Принять</button>`;
+      if (request.status === "submitted" && hasRole("owner", "warehouse")) action = `<button class="operation-action secondary-action" data-approve-request="${request.id}" type="button">Согласовать</button>`;
+      else if (request.status === "approved" && hasRole("owner", "warehouse")) action = `<button class="operation-action primary primary-action" data-dispatch-request="${request.id}" type="button">Отгрузить</button>`;
+      else if (request.status === "shipped" && hasRole("owner", "branch")) action = `<button class="operation-action receive primary-action" data-receive-request="${request.id}" type="button">Принять</button>`;
       return `<tr><td><span class="document-number">${request.number}</span><small>${new Date(request.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })} · ${escapeHtml(request.createdBy || "Столовая №1")}</small></td><td><strong>${new Date(request.neededAt).toLocaleDateString("ru-RU")}</strong></td><td><strong>${escapeHtml(branch?.name || "Точка")}</strong><small>${escapeHtml(branch?.route || "")}</small></td><td>${escapeHtml(items)}${request.items.length > 2 ? `<small>и ещё ${request.items.length - 2}</small>` : ""}</td><td><strong>${decimal(requestTotalQuantity(request), 2)} ед.</strong></td><td><span class="operation-status ${request.status}">${requestStatusLabel(request.status)}</span>${request.approvedBy ? `<small>Согласовал: ${escapeHtml(request.approvedBy)}</small>` : ""}</td><td>${action}</td></tr>`;
     }).join("");
     updateDocumentFilterResult(tab, allRequests, requests);
@@ -3380,7 +3519,7 @@ function renderDocuments(tab = document.querySelector("[data-stock-tab].active")
     $("#documentsTableBody").innerHTML = transfers.map((request) => {
       const branch = branchById(request.branchId);
       const variance = Number(request.variance || 0);
-      const action = request.status === "shipped" && hasRole("owner", "branch") ? `<button class="operation-action receive" data-receive-request="${request.id}" type="button">Принять</button>` : request.status === "received" ? `<span class="operation-status received">Принято</span>` : `<span class="operation-status shipped">В пути</span>`;
+      const action = request.status === "shipped" && hasRole("owner", "branch") ? `<button class="operation-action receive primary-action" data-receive-request="${request.id}" type="button">Принять</button>` : request.status === "received" ? `<span class="operation-status received">Принято</span>` : `<span class="operation-status shipped">В пути</span>`;
       return `<tr><td><span class="document-number">${request.transferNumber || request.number}</span><small>Отгрузил: ${escapeHtml(request.shippedBy || "Архивный маршрут")}</small></td><td>${request.shippedAt ? new Date(request.shippedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" }) : "—"}</td><td><strong>${escapeHtml(branch?.name || "Точка")}</strong></td><td>${request.items.length}</td><td><strong>${decimal(requestTotalQuantity(request, "shipped"), 2)} ед.</strong></td><td><span class="${request.status === "received" && variance ? "deficit-value" : "available-value"}">${request.status === "received" ? variance ? `${variance > 0 ? "+" : ""}${decimal(variance, 3)} ед.` : "без расхождений" : "ожидает приёмки"}</span>${request.receivedBy ? `<small>Принял: ${escapeHtml(request.receivedBy)}</small>` : ""}</td><td>${action}</td></tr>`;
     }).join("");
     updateDocumentFilterResult(tab, allTransfers, transfers);
@@ -3460,11 +3599,11 @@ function reportContext() {
   const to = analyticsInputDate($("#reportDateTo").value, true) || new Date();
   const branchId = $("#reportBranchFilter").value || "all";
   const allSales = filterSalesByRange(getSales(), from, to, branchId);
-  const sales = allSales.filter((sale) => !sale.refundedAt);
+  const sales = salesPeriodEvents(getSales(), from, to, branchId);
   const duration = Math.max(1, to.getTime() - from.getTime() + 1);
   const previousTo = new Date(from.getTime() - 1);
   const previousFrom = new Date(previousTo.getTime() - duration + 1);
-  const previousSales = filterSalesByRange(getSales(), previousFrom, previousTo, branchId).filter((sale) => !sale.refundedAt);
+  const previousSales = salesPeriodEvents(getSales(), previousFrom, previousTo, branchId);
   return { from, to, branchId, sales, allSales, previousSales };
 }
 
@@ -3474,15 +3613,15 @@ function formatReportPeriod(from, to) {
 }
 
 function paymentMethodLabel(method) {
-  return { cash: "Наличные", card: "Банковская карта", qr: "QR-оплата", mixed: "Смешанная оплата" }[method] || "Другой способ";
+  return { cash: "Наличные", card: "Банковская карта", qr: "QR-оплата", mixed: "Смешанная оплата", external: "Внешняя касса" }[method] || "Другой способ";
 }
 
 function renderPaymentBreakdown(sales) {
-  const labels = { cash: paymentMethodLabel("cash"), card: paymentMethodLabel("card"), qr: paymentMethodLabel("qr") };
+  const labels = { cash: paymentMethodLabel("cash"), card: paymentMethodLabel("card"), qr: paymentMethodLabel("qr"), external: paymentMethodLabel("external") };
   const totals = Object.entries(labels).map(([method, label]) => ({ method, label, value: sales.reduce((sum, sale) => sum + salePaymentAmount(sale,method), 0) }));
-  const total = totals.reduce((sum, row) => sum + row.value, 0);
+  const total = totals.reduce((sum, row) => sum + Math.abs(row.value), 0);
   $("#reportPayments").innerHTML = totals.map((row) => {
-    const share = total ? row.value / total * 100 : 0;
+    const share = total ? Math.abs(row.value) / total * 100 : 0;
     return `<div class="payment-breakdown-row"><div><span>${row.label}</span><strong>${money(row.value)}</strong></div><div class="payment-progress"><i style="width:${share}%"></i></div><small>${decimal(share)}%</small></div>`;
   }).join("");
 }
@@ -3495,7 +3634,7 @@ function renderAnalyticsSales() {
   $("#reportProfit").textContent = money(metrics.profit);
   $("#reportAverage").textContent = money(metrics.average);
   $("#reportReceiptCount").textContent = metrics.receipts;
-  $("#reportItemsSold").textContent = decimal(metrics.quantity, 3);
+  $("#reportItemsSold").textContent = metrics.quantities.map((row) => `${decimal(row.quantity, 3)} ${row.unit}`).join(" · ") || "0";
   const delta = percentageDelta(metrics.revenue, previous.revenue);
   $("#reportRevenueDelta").textContent = `${delta > 0 ? "+" : ""}${decimal(delta)}% к прошлому периоду`;
   $("#reportRevenueDelta").className = delta > 0 ? "positive" : delta < 0 ? "negative" : "";
@@ -3514,7 +3653,7 @@ function renderAnalyticsSales() {
   $("#reportChartAxis").classList.toggle("hidden", !hasData);
   renderPaymentBreakdown(context.sales);
   const items = itemAnalyticsRows(context.sales).slice(0, 5);
-  $("#reportTopItems").innerHTML = items.length ? items.map((row, index) => `<div><span class="rank">${index + 1}</span><p><strong>${escapeHtml(row.item.name)}</strong><small>${row.item.itemType === "recipe" ? "Блюдо" : "Товар"} · ${decimal(row.quantity, 3)} продано</small></p><b>${money(row.revenue)}</b></div>`).join("") : '<div class="analytics-list-empty">Нет продаж за выбранный период</div>';
+  $("#reportTopItems").innerHTML = items.length ? items.map((row, index) => `<div><span class="rank">${index + 1}</span><p><strong>${escapeHtml(row.item.name)}</strong><small>${row.item.itemType === "recipe" ? "Блюдо" : "Товар"} · ${decimal(row.quantity, 3)} ${escapeHtml(row.unit)} продано</small></p><b>${money(row.revenue)}</b></div>`).join("") : '<div class="analytics-list-empty">Нет продаж за выбранный период</div>';
 }
 
 function assignAbcGroups(rows, key) {
@@ -3553,20 +3692,22 @@ function renderABC() {
   $("#abcCategoryFilter").innerHTML = `<option value="all">Все категории</option>${categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}`;
   $("#abcCategoryFilter").value = categories.includes(currentCategory) ? currentCategory : "all";
   const rows = allRows.filter((row) => (type === "all" || row.item.itemType === type) && ($("#abcCategoryFilter").value === "all" || row.item.category === $("#abcCategoryFilter").value));
-  const quantityGroups = assignAbcGroups(rows, "quantity");
+  const units = [...new Set(rows.map((row) => row.unit))];
+  const quantityGroups = new Map(units.flatMap((unit) => [...assignAbcGroups(rows.filter((row) => row.unit === unit), "quantity")]));
   const revenueGroups = assignAbcGroups(rows, "revenue");
   const profitGroups = assignAbcGroups(rows, "profit");
-  const totalQuantity = rows.reduce((sum, row) => sum + row.quantity, 0);
+  const quantitiesByUnit = new Map(units.map((unit) => [unit, rows.filter((row) => row.unit === unit).reduce((sum, row) => sum + row.quantity, 0)]));
   const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
   const totalProfit = rows.reduce((sum, row) => sum + Math.max(0, row.profit), 0);
   const visible = rows.filter((row) => !search || row.item.name.toLowerCase().includes(search) || String(row.item.category).toLowerCase().includes(search)).sort((left, right) => right.profit - left.profit);
   $("#abcResultCount").textContent = `${visible.length} ${pluralRu(visible.length, "позиция", "позиции", "позиций")}`;
   $("#abcTable").innerHTML = visible.length ? visible.map((row) => {
     const code = `${quantityGroups.get(row.item.catalogKey)}${revenueGroups.get(row.item.catalogKey)}${profitGroups.get(row.item.catalogKey)}`;
+    const totalQuantity = quantitiesByUnit.get(row.unit);
     const quantityShare = totalQuantity ? row.quantity / totalQuantity * 100 : 0;
     const revenueShare = totalRevenue ? row.revenue / totalRevenue * 100 : 0;
     const profitShare = totalProfit ? Math.max(0, row.profit) / totalProfit * 100 : 0;
-    return `<tr><td><span class="abc-badge abc-code" data-code="${code}">${code}</span></td><td><strong>${escapeHtml(row.item.name)}</strong><small>${row.item.itemType === "recipe" ? "Блюдо" : "Товар"} · ${escapeHtml(row.item.category)}</small></td><td>${decimal(row.quantity, 3)}</td><td>${decimal(quantityShare)}%</td><td>${money(row.revenue)}</td><td>${decimal(revenueShare)}%</td><td><strong class="${row.profit < 0 ? "negative" : ""}">${money(row.profit)}</strong></td><td>${decimal(profitShare)}%</td><td><span class="abc-advice">${abcRecommendation(row, code)}</span></td></tr>`;
+    return `<tr><td><span class="abc-badge abc-code" data-code="${code}">${code}</span></td><td><strong>${escapeHtml(row.item.name)}</strong><small>${row.item.itemType === "recipe" ? "Блюдо" : "Товар"} · ${escapeHtml(row.item.category)}</small></td><td>${decimal(row.quantity, 3)} ${escapeHtml(row.unit)}</td><td title="Доля среди позиций в ${escapeHtml(row.unit)}">${decimal(quantityShare)}%</td><td>${money(row.revenue)}</td><td>${decimal(revenueShare)}%</td><td><strong class="${row.profit < 0 ? "negative" : ""}">${money(row.profit)}</strong></td><td>${decimal(profitShare)}%</td><td><span class="abc-advice">${abcRecommendation(row, code)}</span></td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="9">По выбранным условиям позиции не найдены</td></tr>';
 }
 
@@ -3582,6 +3723,8 @@ function visibleReceipts(context = reportContext()) {
     if (!search) return true;
     const searchable = [
       sale.number,
+      sale.offlineNumber,
+      sale.requestId,
       sale.id,
       sale.branch,
       branchById(sale.branchId)?.name,
@@ -3630,7 +3773,7 @@ function receiptInlineDetails(sale) {
   const events = [{at:sale.createdAt, text:"Закрыли чек", actor:sale.cashier, kind:"closed"}];
   if (sale.refundedAt) events.unshift({at:sale.refundedAt,text:"Оформили возврат" + (sale.refundReason ? ": " + sale.refundReason : ""),actor:sale.refundedBy,kind:"refund"});
   const history = `<table class="data-table"><thead><tr><th>Время</th><th>Действие</th><th>Сотрудник</th></tr></thead><tbody>${events.map(event=>`<tr class="receipt-event-${event.kind}"><td>${escapeHtml(time(event.at))}</td><td>${escapeHtml(event.text)}</td><td>${escapeHtml(event.actor || "—")}</td></tr>`).join("")}</tbody></table>`;
-  const bill = `<table class="data-table"><thead><tr><th>Наименование</th><th>Количество</th><th>Цена</th><th>Сумма</th></tr></thead><tbody>${(sale.items || []).map(item=>`<tr><td>${escapeHtml(item.name)}</td><td>${decimal(Number(item.quantity),3)} ${escapeHtml(item.unit || "ед.")}</td><td>${money(item.price)}</td><td>${money(Number(item.price)*Number(item.quantity))}</td></tr>`).join("")}</tbody></table><div class="receipt-inline-total"><span>${escapeHtml(salePaymentSummary(sale))}</span><span>Скидка: ${money(sale.discountAmount || 0)}</span><strong>Итого: ${money(sale.total)}</strong></div>`;
+  const bill = `<table class="data-table"><thead><tr><th>Наименование</th><th>Количество</th><th>Цена</th><th>Сумма</th></tr></thead><tbody>${(sale.items || []).map(item=>`<tr><td>${escapeHtml(item.name)}</td><td>${decimal(Number(item.quantity),3)} ${escapeHtml(item.unit || "ед.")}</td><td>${money(item.price)}</td><td>${money(saleLineRevenue(item))}</td></tr>`).join("")}</tbody></table><div class="receipt-inline-total"><span>${escapeHtml(salePaymentSummary(sale))}</span><span>Скидка: ${money(sale.discountAmount || 0)}</span><strong>Итого: ${money(sale.total)}</strong></div>`;
   return `<tr class="receipt-expanded"><td colspan="9"><div class="receipt-inline-tabs" role="tablist" aria-label="Детали чека"><button type="button" role="tab" data-receipt-tab="bill" aria-selected="${expandedReceiptTab==='bill'}">Счёт</button><button type="button" role="tab" data-receipt-tab="history" aria-selected="${expandedReceiptTab==='history'}">История</button><button type="button" role="tab" data-receipt-tab="consumption" aria-selected="${expandedReceiptTab==='consumption'}">Списания</button></div><div class="receipt-inline-content">${expandedReceiptTab==='consumption' ? receiptConsumption(sale) : expandedReceiptTab==='history' ? history : bill}</div></td></tr>`;
 }
 function renderReceipts() {
@@ -3645,16 +3788,18 @@ function renderReceipts() {
   const metrics = salesMetrics(paidSales);
   ["cash","card","qr"].forEach(method=>$("#receiptSummary"+({cash:"Cash",card:"Card",qr:"Qr"}[method])).textContent=money(paidSales.reduce((sum,sale)=>sum+salePaymentAmount(sale,method),0)));
   $("#receiptSummaryDiscount").textContent=money(paidSales.reduce((sum,sale)=>sum+Number(sale.discountAmount || 0),0));
-  $("#receiptSummaryCount").textContent = sales.length;
+  const receiptCount = sales.filter((sale) => !isExternalSale(sale)).length;
+  const importCount = sales.length - receiptCount;
+  $("#receiptSummaryCount").textContent = receiptCount;
   $("#receiptSummaryRevenue").textContent = money(metrics.revenue);
   $("#receiptSummaryAverage").textContent = money(metrics.average);
   $("#receiptSummaryProfit").textContent = money(metrics.profit);
-  $("#receiptResultCount").textContent = `${sales.length} ${pluralRu(sales.length, "чек", "чека", "чеков")}`;
+  $("#receiptResultCount").textContent = `${receiptCount} ${pluralRu(receiptCount, "чек", "чека", "чеков")}${importCount ? ` · ${importCount} ${pluralRu(importCount, "реестр", "реестра", "реестров")}` : ""}`;
   $("#receiptsTable").innerHTML = sales.length ? sales.map((sale) => {
     const date = new Date(sale.createdAt);
     const quantity = (sale.items || []).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
     const branchName = sale.branch || branchById(sale.branchId)?.name || "Точка не указана";
-    return `<tr class="${String(sale.id)===expandedReceiptId ? "receipt-selected" : ""}"><td><span class="document-number">№ ${escapeHtml(sale.number)}</span></td><td>${date.toLocaleDateString("ru-RU")} ${date.toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"})}</td><td>${escapeHtml(branchName)}</td><td>${escapeHtml(sale.cashier || "Не указан")}</td><td>${money(sale.discountAmount || 0)}</td><td>${escapeHtml(salePaymentSummary(sale))}</td><td><strong>${money(sale.total)}</strong><small>${sale.refundedAt ? "—" : money(Number(sale.total)-saleCost(sale))}</small></td><td>${sale.refundedAt ? "Возврат" : "Закрыт"}</td><td><button class="receipt-open-action" data-receipt-open="${escapeHtml(sale.id)}" aria-expanded="${String(sale.id)===expandedReceiptId}" type="button">${String(sale.id)===expandedReceiptId ? "Свернуть" : "Детали"}</button></td></tr>${String(sale.id)===expandedReceiptId ? receiptInlineDetails(sale) : ""}`;
+    return `<tr class="${String(sale.id)===expandedReceiptId ? "receipt-selected" : ""}"><td><span class="document-number">№ ${escapeHtml(sale.number)}</span></td><td>${date.toLocaleDateString("ru-RU")} ${date.toLocaleTimeString("ru-RU", {hour:"2-digit",minute:"2-digit"})}</td><td>${escapeHtml(branchName)}</td><td>${escapeHtml(sale.cashier || "Не указан")}</td><td>${money(sale.discountAmount || 0)}</td><td>${escapeHtml(salePaymentSummary(sale))}</td><td><strong>${money(sale.total)}</strong><small>${sale.refundedAt ? "—" : money(Number(sale.total)-saleCost(sale))}</small></td><td>${sale.refundedAt ? "Возврат" : "Закрыт"}</td><td><button class="receipt-open-action secondary-action" data-receipt-open="${escapeHtml(sale.id)}" aria-expanded="${String(sale.id)===expandedReceiptId}" type="button">${String(sale.id)===expandedReceiptId ? "Свернуть" : "Детали"}</button></td></tr>${String(sale.id)===expandedReceiptId ? receiptInlineDetails(sale) : ""}`;
   }).join("") : '<tr class="table-empty"><td colspan="9">По выбранным условиям чеки не найдены</td></tr>';
 }
 
@@ -3671,7 +3816,7 @@ function openReceiptDetails(receiptId) {
   $("#receiptDetailsMeta").innerHTML = `<div><span>Дата и время</span><strong>${date.toLocaleDateString("ru-RU")}</strong><small>${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</small></div><div><span>Точка</span><strong>${escapeHtml(branchName)}</strong><small>${escapeHtml(sale.branchId || "—")}</small></div><div><span>Кассир</span><strong>${escapeHtml(sale.cashier || "Не указан")}</strong><small>закрыл чек</small></div><div><span>Способ оплаты</span><strong>${escapeHtml(salePaymentSummary(sale))}</strong><small>чек оплачен</small></div>`;
   $("#receiptItemsTable").innerHTML = (sale.items || []).map((item) => {
     const quantity = Number(item.quantity || 0);
-    const revenue = Number(item.price || 0) * quantity;
+    const revenue = saleLineRevenue(item);
     const lineCost = saleUnitCost(sale, item) * quantity;
     return `<tr><td><strong>${escapeHtml(item.name || "Без названия")}</strong><small>${escapeHtml(item.category || "Без категории")}</small></td><td>${decimal(quantity, 3)} ${escapeHtml(item.unit || "ед.")}</td><td>${money(item.price)}</td><td><strong>${money(revenue)}</strong></td><td>${money(lineCost)}</td><td><strong class="${revenue - lineCost < 0 ? "negative" : "positive"}">${money(revenue - lineCost)}</strong></td></tr>`;
   }).join("") || '<tr class="table-empty"><td colspan="6">В чеке нет позиций</td></tr>';
@@ -3710,18 +3855,18 @@ function exportAnalyticsCsv() {
   let csvRows;
   let filePrefix = "ashkana-statistics";
   if (activeAnalyticsTab === "receipts") {
-    header = ["Чек", "Дата и время", "Точка", "Кассир", "Оплата", "Позиция", "Количество", "Цена", "Сумма", "Себестоимость", "Прибыль"];
+    header = ["Чек / реестр", "Дата и время", "Точка", "Кассир", "Оплата", "Позиция", "Количество", "Единица", "Цена", "Сумма", "Себестоимость", "Прибыль"];
     csvRows = visibleReceipts(context).flatMap((sale) => (sale.items || []).map((item) => {
       const quantity = Number(item.quantity || 0);
-      const revenue = Number(item.price || 0) * quantity;
+      const revenue = saleLineRevenue(item);
       const cost = saleUnitCost(sale, item) * quantity;
-      return [`№ ${sale.number}`, new Date(sale.createdAt).toLocaleString("ru-RU"), sale.branch || branchById(sale.branchId)?.name || "", sale.cashier || "", salePaymentSummary(sale), item.name, quantity, item.price, revenue, cost, revenue - cost];
+      return [`${isExternalSale(sale) ? "Реестр " : ""}№ ${sale.number}`, new Date(sale.createdAt).toLocaleString("ru-RU"), sale.branch || branchById(sale.branchId)?.name || "", sale.cashier || "", salePaymentSummary(sale), item.name, quantity, saleLineUnit(item), item.price, revenue, cost, revenue - cost];
     }));
     filePrefix = "ashkana-receipts";
   } else {
     const rows = itemAnalyticsRows(context.sales, true);
-    header = ["Тип", "Позиция", "Категория", "Продано", "Выручка", "Себестоимость", "Прибыль"];
-    csvRows = rows.map((row) => [row.item.itemType === "recipe" ? "Блюдо" : "Товар", row.item.name, row.item.category, row.quantity, row.revenue, row.cost, row.profit]);
+    header = ["Тип", "Позиция", "Категория", "Продано", "Единица", "Выручка", "Себестоимость", "Прибыль"];
+    csvRows = rows.map((row) => [row.item.itemType === "recipe" ? "Блюдо" : "Товар", row.item.name, row.item.category, row.quantity, row.unit, row.revenue, row.cost, row.profit]);
   }
   const csv = [header, ...csvRows].map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const link = document.createElement("a");
@@ -3777,7 +3922,7 @@ function financeContext() {
   const from = analyticsInputDate($("#financeDateFrom").value) || new Date(0);
   const to = analyticsInputDate($("#financeDateTo").value, true) || new Date();
   const branchId = $("#financeBranchFilter").value || "all";
-  const sales = filterSalesByRange(getSales(), from, to, branchId).filter((sale) => !sale.refundedAt);
+  const sales = salesPeriodEvents(getSales(), from, to, branchId);
   const transactions = financeState.transactions.filter((transaction) => {
     const date = financeDate(transaction);
     return date >= from && date <= to && (branchId === "all" || String(transaction.branchId) === String(branchId));
@@ -3787,14 +3932,16 @@ function financeContext() {
 
 function financeSaleAccountId(sale) {
   if (sale.paymentMethod === "cash") return `finance-cash-${sale.branchId}`;
-  return financeState.accounts.find((account) => account.status === "active" && ["bank", "card"].includes(account.type))?.id || "finance-bank";
+  const accounts = financeState.accounts.filter((account) => account.status === "active" && ["bank", "card"].includes(account.type));
+  return accounts.find((account) => String(account.branchId) === String(sale.branchId))?.id
+    || accounts.find((account) => !account.branchId)?.id || null;
 }
 
 function financeAccountBalance(accountId) {
   const account = financeAccount(accountId);
   if (!account) return 0;
   let balance = Number(account.openingBalance || 0);
-  getSales().filter((sale) => !sale.refundedAt).forEach((sale) => salePaymentParts(sale).forEach(part => { if (String(financeSaleAccountId({...sale,paymentMethod:part.method})) === String(accountId)) balance += Number(part.amount || 0); }));
+  getSales().filter((sale) => !sale.refundedAt && sale.paymentMethod !== "external").forEach((sale) => salePaymentParts(sale).forEach(part => { if (String(financeSaleAccountId({...sale,paymentMethod:part.method})) === String(accountId)) balance += Number(part.amount || 0); }));
   financeState.transactions.forEach((transaction) => {
     const amount = Number(transaction.amount || 0);
     if (transaction.type === "income" && String(transaction.accountId) === String(accountId)) balance += amount;
@@ -3810,25 +3957,25 @@ function financeAccountBalance(accountId) {
 function financeMetrics(context = financeContext()) {
   const revenue = context.sales.reduce((sum, sale) => sum + Number(sale.total || 0), 0);
   const cost = context.sales.reduce((sum, sale) => sum + saleCost(sale), 0);
-  const otherIncome = context.transactions.filter((transaction) => transaction.type === "income").reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
-  const expenses = context.transactions.filter((transaction) => transaction.type === "expense" && transaction.categoryId !== "finance-expense-purchases").reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
+  const otherIncome = context.transactions.filter((transaction) => transaction.type === "income" && transaction.affectsProfit !== false && transaction.categoryId !== "finance-income-supplier-refunds").reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
+  const expenses = context.transactions.filter((transaction) => transaction.type === "expense" && transaction.affectsProfit !== false && transaction.categoryId !== "finance-expense-purchases").reduce((sum, transaction) => sum + Number(transaction.amount || 0), 0);
   return { revenue, cost, gross: revenue - cost, otherIncome, expenses, net: revenue - cost + otherIncome - expenses };
 }
 
 function renderFinancePnl(context, metrics) {
   const expensesByCategory = new Map();
-  context.transactions.filter((transaction) => transaction.type === "expense" && transaction.categoryId !== "finance-expense-purchases").forEach((transaction) => expensesByCategory.set(transaction.categoryId, (expensesByCategory.get(transaction.categoryId) || 0) + Number(transaction.amount || 0)));
+  context.transactions.filter((transaction) => transaction.type === "expense" && transaction.affectsProfit !== false && transaction.categoryId !== "finance-expense-purchases").forEach((transaction) => expensesByCategory.set(transaction.categoryId, (expensesByCategory.get(transaction.categoryId) || 0) + Number(transaction.amount || 0)));
   const expenseRows = [...expensesByCategory.entries()].sort((left, right) => right[1] - left[1]).map(([categoryId, amount]) => `<div class="pnl-row"><span>${escapeHtml(financeCategory(categoryId)?.name || "Без категории")}</span><strong class="negative">−${money(amount)}</strong></div>`).join("");
-  $("#financePnlRows").innerHTML = `<div class="pnl-row main"><span>Выручка по чекам</span><strong>${money(metrics.revenue)}</strong></div><div class="pnl-row"><span>Себестоимость проданных блюд и товаров</span><strong class="${metrics.cost ? "negative" : ""}">${metrics.cost ? "−" : ""}${money(metrics.cost)}</strong></div><div class="pnl-row subtotal"><span>Валовая прибыль</span><strong>${money(metrics.gross)}</strong></div>${metrics.otherIncome ? `<div class="pnl-row"><span>Прочие поступления</span><strong class="positive">+${money(metrics.otherIncome)}</strong></div>` : ""}${expenseRows || '<div class="pnl-row"><span>Операционные расходы</span><strong>0 сом</strong></div>'}<div class="pnl-row total"><span>Чистая прибыль</span><strong class="${metrics.net < 0 ? "negative" : ""}">${money(metrics.net)}</strong></div>`;
+  $("#financePnlRows").innerHTML = `<div class="pnl-row main"><span>Выручка по чекам</span><strong>${money(metrics.revenue)}</strong></div><div class="pnl-row"><span>Себестоимость проданных блюд и товаров</span><strong class="${metrics.cost > 0 ? "negative" : metrics.cost < 0 ? "positive" : ""}">${metrics.cost > 0 ? "−" : metrics.cost < 0 ? "+" : ""}${money(Math.abs(metrics.cost))}</strong></div><div class="pnl-row subtotal"><span>Валовая прибыль</span><strong>${money(metrics.gross)}</strong></div>${metrics.otherIncome ? `<div class="pnl-row"><span>Прочие поступления</span><strong class="positive">+${money(metrics.otherIncome)}</strong></div>` : ""}${expenseRows || '<div class="pnl-row"><span>Операционные расходы</span><strong>0 сом</strong></div>'}<div class="pnl-row total"><span>Чистая прибыль</span><strong class="${metrics.net < 0 ? "negative" : ""}">${money(metrics.net)}</strong></div>`;
   $("#financePnlCaption").textContent = `${context.branchId === "all" ? "Вся сеть" : branchById(context.branchId)?.name || "Точка"} · ${formatReportPeriod(context.from, context.to)}`;
   const accounts = financeState.accounts.filter((account) => account.status === "active" && (context.branchId === "all" || !account.branchId || String(account.branchId) === String(context.branchId)));
   $("#financeBalanceList").innerHTML = accounts.length ? accounts.map((account) => `<div class="finance-balance-row"><i>${uiIcon(account.type === "cash" ? "cashier" : "wallet")}</i><div><span>${escapeHtml(account.name)}</span><small>${escapeHtml(financeAccountTypeLabel(account.type))}${account.branchId ? ` · ${escapeHtml(branchById(account.branchId)?.short || "Точка")}` : ""}</small></div><strong class="${financeAccountBalance(account.id) < 0 ? "negative" : ""}">${money(financeAccountBalance(account.id))}</strong></div>`).join("") : '<div class="analytics-list-empty">Активных счетов нет</div>';
 }
 
 function financeTransactionRows(context = financeContext()) {
-  const sales = context.sales.flatMap(sale => salePaymentParts(sale).map(part => ({
-    id: `${sale.id}-${part.method}`, number: `Чек №${sale.number}`, type: "sale", occurredAt: sale.createdAt, branchId: sale.branchId,
-    accountId: financeSaleAccountId({...sale,paymentMethod:part.method}), categoryName: "Выручка", counterparty: sale.cashier || "Касса", comment: paymentMethodLabel(part.method), amount: Number(part.amount || 0), automatic: true
+  const sales = context.sales.filter(sale => sale.paymentMethod !== 'external').flatMap(sale => salePaymentParts(sale).map(part => ({
+    id: `${sale.id}-${part.method}`, number: `${sale._reportRefund ? "Возврат чека" : "Чек"} №${sale.number}`, type: sale._reportRefund ? "expense" : "sale", occurredAt: sale.createdAt, branchId: sale.branchId,
+    accountId: financeSaleAccountId({...sale,paymentMethod:part.method}), categoryName: sale._reportRefund ? "Возврат продажи" : "Выручка", counterparty: (sale._reportRefund ? sale.refundedBy : sale.cashier) || "Касса", comment: paymentMethodLabel(part.method), amount: Math.abs(Number(part.amount || 0)), automatic: true
   })));
   return [...sales, ...context.transactions].sort((left, right) => financeDate(right) - financeDate(left));
 }
@@ -3854,7 +4001,7 @@ function renderFinanceTransactions(context) {
     const date = financeDate(row);
     const sign = row.type === "expense" ? "−" : row.type === "transfer" ? "" : "+";
     const amountClass = row.type === "expense" ? "negative" : row.type === "transfer" ? "" : "positive";
-    return `<tr><td><span class="document-number">${escapeHtml(row.number || "Операция")}</span><small><span class="finance-type-badge ${escapeHtml(row.type)}">${escapeHtml(financeTypeLabel(row.type))}</span></small></td><td>${date.toLocaleDateString("ru-RU")}<small>${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</small></td><td>${escapeHtml(branchById(row.branchId)?.name || "Вся компания")}</td><td>${escapeHtml(category)}</td><td><strong>${escapeHtml(source?.name || "Счёт не найден")}</strong>${destination ? `<small>→ ${escapeHtml(destination.name)}</small>` : ""}</td><td>${escapeHtml(row.counterparty || "—")}<small>${escapeHtml(row.comment || "")}</small></td><td><strong class="${amountClass}">${sign}${money(row.amount)}</strong></td><td>${row.automatic ? '<span title="Создано из чека">Авто</span>' : `<button class="finance-delete-action" data-delete-finance-transaction="${escapeHtml(row.id)}" type="button">Удалить</button>`}</td></tr>`;
+    return `<tr><td><span class="document-number">${escapeHtml(row.number || "Операция")}</span><small><span class="finance-type-badge ${escapeHtml(row.type)}">${escapeHtml(financeTypeLabel(row.type))}</span></small></td><td>${date.toLocaleDateString("ru-RU")}<small>${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</small></td><td>${escapeHtml(branchById(row.branchId)?.name || "Вся компания")}</td><td>${escapeHtml(category)}</td><td><strong>${escapeHtml(source?.name || "Счёт не найден")}</strong>${destination ? `<small>→ ${escapeHtml(destination.name)}</small>` : ""}</td><td>${escapeHtml(row.counterparty || "—")}<small>${escapeHtml(row.comment || "")}</small></td><td><strong class="${amountClass}">${sign}${money(row.amount)}</strong></td><td>${row.automatic ? '<span title="Создано из чека">Авто</span>' : `<button class="finance-delete-action danger-button" data-delete-finance-transaction="${escapeHtml(row.id)}" type="button">Удалить</button>`}</td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="8">По выбранным условиям операций нет</td></tr>';
 }
 
@@ -3874,14 +4021,14 @@ function renderFinanceShifts(context) {
 }
 
 function renderFinanceAccounts() {
-  $("#financeAccountsTable").innerHTML = financeState.accounts.length ? financeState.accounts.map((account) => `<tr><td><strong>${escapeHtml(account.name)}</strong></td><td>${escapeHtml(financeAccountTypeLabel(account.type))}</td><td>${escapeHtml(branchById(account.branchId)?.name || "Вся компания")}</td><td>${money(account.openingBalance)}</td><td><strong class="${financeAccountBalance(account.id) < 0 ? "negative" : ""}">${money(financeAccountBalance(account.id))}</strong></td><td><span class="status-badge ${account.status === "active" ? "good" : "neutral"}">${account.status === "active" ? "Активный" : "Архивный"}</span></td><td><button class="finance-edit-action" data-edit-finance-account="${escapeHtml(account.id)}" type="button">Изменить</button></td></tr>`).join("") : '<tr class="table-empty"><td colspan="7">Счетов пока нет</td></tr>';
+  $("#financeAccountsTable").innerHTML = financeState.accounts.length ? financeState.accounts.map((account) => `<tr><td><strong>${escapeHtml(account.name)}</strong></td><td>${escapeHtml(financeAccountTypeLabel(account.type))}</td><td>${escapeHtml(branchById(account.branchId)?.name || "Вся компания")}</td><td>${money(account.openingBalance)}</td><td><strong class="${financeAccountBalance(account.id) < 0 ? "negative" : ""}">${money(financeAccountBalance(account.id))}</strong></td><td><span class="status-badge ${account.status === "active" ? "good" : "neutral"}">${account.status === "active" ? "Активный" : "Архивный"}</span></td><td><button class="finance-edit-action secondary-action" data-edit-finance-account="${escapeHtml(account.id)}" type="button">Изменить</button></td></tr>`).join("") : '<tr class="table-empty"><td colspan="7">Счетов пока нет</td></tr>';
 }
 
 function renderFinanceCategories() {
   ["income", "expense"].forEach((kind) => {
     const target = kind === "income" ? $("#financeIncomeCategories") : $("#financeExpenseCategories");
     const categories = financeState.categories.filter((category) => category.kind === kind);
-    target.innerHTML = categories.length ? categories.map((category) => `<div class="finance-category-row"><div><strong>${escapeHtml(category.name)}</strong><small>${category.status === "active" ? "Активная" : "Архивная"}</small></div><button class="finance-edit-action" data-edit-finance-category="${escapeHtml(category.id)}" type="button">Изменить</button></div>`).join("") : '<div class="analytics-list-empty">Категорий нет</div>';
+    target.innerHTML = categories.length ? categories.map((category) => `<div class="finance-category-row"><div><strong>${escapeHtml(category.name)}</strong><small>${category.status === "active" ? "Активная" : "Архивная"}</small></div><button class="finance-edit-action secondary-action" data-edit-finance-category="${escapeHtml(category.id)}" type="button">Изменить</button></div>`).join("") : '<div class="analytics-list-empty">Категорий нет</div>';
   });
 }
 
@@ -3895,7 +4042,8 @@ function renderFinance() {
   $("#financeNetProfit").textContent = money(metrics.net);
   $("#financeNetProfit").classList.toggle("negative", metrics.net < 0);
   $("#financeRevenue").textContent = money(metrics.revenue);
-  $("#financeReceiptsCount").textContent = `${context.sales.length} ${pluralRu(context.sales.length, "чек", "чека", "чеков")}`;
+  const counts = salesMetrics(context.sales);
+  $("#financeReceiptsCount").textContent = `${counts.receipts} ${pluralRu(counts.receipts, "чек", "чека", "чеков")}${counts.refunds ? ` · ${counts.refunds} ${pluralRu(counts.refunds, "возврат", "возврата", "возвратов")}` : ""}${counts.imports ? ` · ${counts.imports} ${pluralRu(counts.imports, "реестр", "реестра", "реестров")}` : ""}`;
   $("#financeExpenses").textContent = money(metrics.expenses);
   $("#financeTotalBalance").textContent = money(activeAccounts.reduce((sum, account) => sum + financeAccountBalance(account.id), 0));
   $("#financeAccountsCount").textContent = `${activeAccounts.length} ${pluralRu(activeAccounts.length, "активный счёт", "активных счёта", "активных счетов")}`;
@@ -3905,17 +4053,22 @@ function renderFinance() {
   renderFinanceShifts(context);
   renderFinanceAccounts();
   renderFinanceCategories();
+  window.OimoPnl?.refresh();
 }
 
 function switchFinanceTab(tab) {
-  activeFinanceTab = ["pnl", "transactions", "shifts", "accounts", "categories"].includes(tab) ? tab : "pnl";
+  $("#view-finance").classList.toggle("payroll-view", tab === "payroll" && currentRole === "owner");
+  activeFinanceTab = ["pnl", "transactions", "shifts", "accounts", "categories", ...(currentRole === "owner" ? ["payroll"] : [])].includes(tab) ? tab : "pnl";
   document.querySelectorAll("[data-finance-tab]").forEach((button) => button.classList.toggle("active", button.dataset.financeTab === activeFinanceTab));
   document.querySelectorAll("[data-owner-finance-tab]").forEach((button) => button.classList.toggle("active", button.dataset.ownerFinanceTab === activeFinanceTab));
   document.querySelectorAll(".finance-pane").forEach((pane) => pane.classList.toggle("active", pane.id === `finance-pane-${activeFinanceTab}`));
   $("#openFinanceTransactionButton").classList.toggle("hidden", !["pnl", "transactions"].includes(activeFinanceTab));
-  const title = { pnl: "Прибыль и убытки", transactions: "Транзакции", shifts: "Кассовые смены", accounts: "Счета", categories: "Категории" }[activeFinanceTab];
+  const title = { pnl: "Прибыль и убытки", transactions: "Транзакции", shifts: "Кассовые смены", accounts: "Счета", categories: "Категории", payroll: "Зарплата" }[activeFinanceTab];
   if ($("#view-finance").classList.contains("active")) $("#breadcrumbTitle").textContent = `Финансы / ${title}`;
   if ($("#view-finance").classList.contains("active")) history.replaceState(null, "", `#finance/${activeFinanceTab}`);
+  if (activeFinanceTab === "payroll") window.OimoPayroll?.open();
+  if (activeFinanceTab === "transactions") window.OimoOfflineReview?.open();
+  $("#exportFinanceButton").disabled = activeFinanceTab === "pnl" && Boolean(window.OimoPnl?.enabled()) && !window.OimoPnl.ready();
 }
 
 function updateFinanceTransactionForm() {
@@ -3947,6 +4100,8 @@ function openFinanceTransactionForm() {
   $("#financeTransactionAmount").value = "";
   $("#financeTransactionCounterparty").value = "";
   $("#financeTransactionComment").value = "";
+  $("#financeRecognitionDate").value = "";
+  $("#financeAffectsProfit").value = "yes";
   $("#financeTransactionBranch").innerHTML = `<option value="">Вся компания</option>${branches.map((branch) => `<option value="${escapeHtml(branch.id)}">${escapeHtml(branch.name)}</option>`).join("")}`;
   $("#financeTransactionBranch").value = $("#financeBranchFilter").value === "all" ? "" : $("#financeBranchFilter").value;
   updateFinanceTransactionForm();
@@ -3959,6 +4114,8 @@ async function saveFinanceTransaction() {
   const type = $("#financeTransactionType").value;
   const payload = { type, occurredAt: $("#financeTransactionDate").value, accountId: $("#financeTransactionAccount").value, destinationAccountId: type === "transfer" ? $("#financeTransactionDestination").value : null, categoryId: type === "transfer" ? null : $("#financeTransactionCategory").value, branchId: $("#financeTransactionBranch").value || null, amount: Number($("#financeTransactionAmount").value), counterparty: $("#financeTransactionCounterparty").value.trim(), comment: $("#financeTransactionComment").value.trim() };
   if (!payload.occurredAt || !payload.accountId || !(payload.amount > 0) || (type !== "transfer" && !payload.categoryId) || (type === "transfer" && (!payload.destinationAccountId || payload.destinationAccountId === payload.accountId))) { showToast("Проверьте дату, счета, категорию и сумму"); return; }
+  payload.recognitionDate = $("#financeRecognitionDate").value || null;
+  payload.affectsProfit = $("#financeAffectsProfit").value !== "no";
   if (serverMode) {
     const response = await runServerAction("finance.transaction.create", payload);
     if (!response) return;
@@ -4033,6 +4190,7 @@ async function deleteFinanceTransaction(transactionId) {
 }
 
 function exportFinanceCsv() {
+  if (typeof activeFinanceTab !== "undefined" && activeFinanceTab === "pnl" && window.OimoPnl?.enabled()) { window.OimoPnl.exportCsv(); return; }
   const context = financeContext();
   const rows = financeTransactionRows(context);
   const csvRows = [["Номер", "Дата", "Тип", "Точка", "Категория", "Счёт", "Контрагент", "Комментарий", "Сумма"], ...rows.map((row) => [row.number, financeDate(row).toLocaleString("ru-RU"), financeTypeLabel(row.type), branchById(row.branchId)?.name || "Вся компания", row.categoryName || financeCategory(row.categoryId)?.name || "Перевод", financeAccount(row.accountId)?.name || "", row.counterparty || "", row.comment || "", row.type === "expense" ? -Number(row.amount || 0) : Number(row.amount || 0)])];
@@ -4049,6 +4207,7 @@ function openRecipe(recipeId) {
   currentRecipeId = recipeId;
   const cost = recipeCost(recipe);
   $("#drawerRecipeName").textContent = recipe.name;
+  renderRecipeImportNotes("#drawerRecipeImportNotes", recipe);
   $("#drawerSalePrice").textContent = money(recipe.price);
   $("#drawerCost").textContent = money(cost);
   $("#drawerFoodCost").textContent = `${decimal(foodCost(recipe))}%`;
@@ -4056,10 +4215,18 @@ function openRecipe(recipeId) {
   $("#drawerTotalCost").textContent = money(cost);
   $("#compositionTable").innerHTML = recipe.components.map((component) => {
     const ingredient = ingredientById(component.ingredientId);
-    const measure = component.measure || "г";
-    return `<tr><td><strong>${ingredient?.name || "Не найден"}</strong><small>${money(ingredient?.averageCost || 0)} / ${ingredient?.unit || "ед."}</small></td><td>${decimal(component.gross)} ${measure}</td><td>${decimal(component.net)} ${measure}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
+    const scale = ingredient?.unit === "шт" ? 1000 : 1;
+    const measure = ingredient?.unit === "шт" ? "шт" : ingredient?.unit === "л" ? "мл" : "г";
+    return `<tr><td><strong>${ingredient?.name || "Не найден"}</strong><small>${money(ingredient?.averageCost || 0)} / ${ingredient?.unit || "ед."}</small></td><td>${decimal(component.gross / scale)} ${measure}</td><td>${decimal(component.net / scale)} ${measure}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
   }).join("");
   $("#recipeDrawer").classList.remove("hidden");
+}
+
+function renderRecipeImportNotes(selector, recipe) {
+  const target = $(selector);
+  const notes = Array.isArray(recipe?.importReviewNotes) ? recipe.importReviewNotes : [];
+  target.hidden = !notes.length;
+  target.innerHTML = notes.length ? `<details class="catalog-form-section"><summary>Временная техкарта · проверить ${notes.length} замечаний</summary><ul>${notes.map((note) => `<li>${escapeHtml(String(note))}</li>`).join("")}</ul></details>` : "";
 }
 
 function ingredientOptions(selectedId) {
@@ -4067,10 +4234,12 @@ function ingredientOptions(selectedId) {
 }
 
 function renderRecipeComponentsEditor() {
-  $("#recipeComponentsEditor").innerHTML = `<div class="component-editor-head"><span>Ингредиент</span><span>Брутто, г</span><span>Нетто, г</span><span>Стоимость</span><span></span></div>${recipeDraftComponents.map((component, index) => {
+  $("#recipeComponentsEditor").innerHTML = `<div class="component-editor-head"><span>Ингредиент</span><span>Брутто</span><span>Нетто</span><span>Стоимость</span><span></span></div>${recipeDraftComponents.map((component, index) => {
     const ingredient = ingredientById(component.ingredientId) || ingredients[0];
-    const cost = ingredient ? ingredient.averageCost * Number(component.net || 0) / 1000 : 0;
-    return `<div class="component-editor-row" data-component-index="${index}"><select class="component-ingredient">${ingredientOptions(component.ingredientId)}</select><input class="component-gross" type="number" min="0" step="0.1" value="${component.gross || 0}" /><input class="component-net" type="number" min="0" step="0.1" value="${component.net || 0}" /><span class="component-cost">${money(cost)}</span><button class="remove-component" type="button" aria-label="Удалить ингредиент">${uiIcon("close")}</button></div>`;
+    const scale = ingredient?.unit === "шт" ? 1000 : 1;
+    const measure = ingredient?.unit === "шт" ? "шт" : ingredient?.unit === "л" ? "мл" : "г";
+    const cost = componentCost(component);
+    return `<div class="component-editor-row" data-component-index="${index}" data-scale="${scale}"><select class="component-ingredient">${ingredientOptions(component.ingredientId)}</select><input class="component-gross" aria-label="Брутто, ${measure}" title="Брутто, ${measure}" type="number" min="0" step="0.000001" value="${Number(component.gross || 0) / scale}" /><input class="component-net" aria-label="Нетто, ${measure}" title="Нетто, ${measure}" type="number" min="0" step="0.000001" value="${Number(component.net || 0) / scale}" /><span class="component-cost">${money(cost)}<small>${measure}</small></span><button class="remove-component icon-button danger-button" type="button" aria-label="Удалить ингредиент">${uiIcon("close")}</button></div>`;
   }).join("")}`;
   window.mountIngredientPickers($("#recipeComponentsEditor"));
   updateRecipeLiveCalculation();
@@ -4079,8 +4248,8 @@ function renderRecipeComponentsEditor() {
 function syncRecipeDraftFromEditor() {
   recipeDraftComponents = [...document.querySelectorAll("#recipeComponentsEditor .component-editor-row")].map((row) => ({
     ingredientId: row.querySelector(".component-ingredient").value,
-    gross: Math.max(0, Number(row.querySelector(".component-gross").value || 0)),
-    net: Math.max(0, Number(row.querySelector(".component-net").value || 0))
+    gross: Math.max(0, Number(row.querySelector(".component-gross").value || 0)) * Number(row.dataset.scale || 1),
+    net: Math.max(0, Number(row.querySelector(".component-net").value || 0)) * Number(row.dataset.scale || 1)
   }));
 }
 
@@ -4091,11 +4260,11 @@ function calculateRecipeYield(components = recipeDraftComponents) {
 
 function updateRecipeLiveCalculation() {
   if (document.querySelector("#recipeComponentsEditor .component-editor-row")) syncRecipeDraftFromEditor();
-  $("#recipeYieldInput").value = calculateRecipeYield();
+  // Finished output is independent of the ingredient quantities.
   const price = Math.max(0, Number($("#recipePriceInput").value || 0));
   const cost = recipeDraftComponents.reduce((sum, component) => {
     const ingredient = ingredientById(component.ingredientId);
-    return sum + (ingredient ? ingredient.averageCost * component.net / 1000 : 0);
+    return sum + (ingredient ? ingredient.averageCost * componentGross(component) / 1000 : 0);
   }, 0);
   $("#recipeLiveCost").textContent = money(cost);
   $("#recipeLiveFoodCost").textContent = `${decimal(price ? cost / price * 100 : 0)}%`;
@@ -4103,13 +4272,15 @@ function updateRecipeLiveCalculation() {
   document.querySelectorAll("#recipeComponentsEditor .component-editor-row").forEach((row, index) => {
     const component = recipeDraftComponents[index];
     const ingredient = ingredientById(component.ingredientId);
-    row.querySelector(".component-cost").textContent = money(ingredient ? ingredient.averageCost * component.net / 1000 : 0);
+    const measure = ingredient?.unit === "шт" ? "шт" : ingredient?.unit === "л" ? "мл" : "г";
+    row.querySelector(".component-cost").innerHTML = `${money(ingredient ? ingredient.averageCost * componentGross(component) / 1000 : 0)}<small>${measure}</small>`;
   });
 }
 
 function openRecipeForm(recipeId = null) {
   const recipe = recipes.find((entry) => entry.id === recipeId);
   editingRecipeId = recipe?.id || null;
+  renderRecipeImportNotes("#recipeImportNotes", recipe);
   menuCategories = normalizeMenuCategories(menuCategories);
   $("#recipeCategoryInput").innerHTML = menuCategories.map((category) => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join("");
   const stationNames = stationNamesWithLegacy();
@@ -4122,7 +4293,7 @@ function openRecipeForm(recipeId = null) {
   $("#recipeCategoryInput").value = recipe?.category || (menuCategories.some((category) => category.name === "Горячее") ? "Горячее" : menuCategories[0]?.name || "Без категории");
   $("#recipeStationInput").value = recipe ? recipeStation(recipe) : stationNames[0] || "";
   $("#recipePriceInput").value = recipe?.price || 0;
-  $("#recipeYieldInput").value = 0;
+  $("#recipeYieldInput").value = recipe?.yield || 0;
   recipeDraftComponents = recipe ? structuredClone(recipe.components) : [{ ingredientId: ingredients[0]?.id, gross: 100, net: 100 }];
   $("#deleteRecipeButton").classList.toggle("hidden", !recipe);
   renderRecipeComponentsEditor();
@@ -4135,7 +4306,7 @@ async function saveRecipeForm() {
   syncRecipeDraftFromEditor();
   const name = $("#recipeNameInput").value.trim();
   const price = Math.max(0, Number($("#recipePriceInput").value || 0));
-  const recipeYield = calculateRecipeYield();
+  const recipeYield = Math.max(0, Number($("#recipeYieldInput").value || 0));
   const station = $("#recipeStationInput").value;
   if (!name || !station || !price || !recipeDraftComponents.length || recipeYield <= 0) {
     showToast("Заполните название, цех, цену и состав блюда с ненулевым нетто");
@@ -4168,42 +4339,84 @@ async function saveRecipeForm() {
   showToast(existing ? "Техкарта обновлена, себестоимость пересчитана" : "Новая техкарта создана");
 }
 
+function openPreparationComposition(preparationId) {
+  const preparation = preparationById(preparationId);
+  if (!preparation) return;
+  currentPreparationId = preparation.id;
+  const cost = preparationCost(preparation);
+  $('#preparationCompositionName').textContent = preparation.name;
+  $('#preparationCompositionYield').textContent = `${decimal(Number(preparation.yield || 0) / 1000, 3)} кг`;
+  $('#preparationCompositionCost').textContent = money(cost);
+  $('#preparationCompositionUnitCost').textContent = money(Number(preparation.yield) > 0 ? cost / (Number(preparation.yield) / 1000) : 0);
+  const components = Array.isArray(preparation.components) ? preparation.components : [];
+  $('#preparationCompositionTable').innerHTML = components.length ? components.map(component => {
+    const ingredient = ingredientById(component.ingredientId);
+    const unit = ingredient?.unit || 'кг';
+    const scale = unit === 'шт' ? 1000 : 1;
+    const measure = unit === 'шт' ? 'шт' : unit === 'л' ? 'мл' : 'г';
+    return `<tr><td><strong>${escapeHtml(ingredient?.name || 'Ингредиент удалён')}</strong></td><td data-label="Брутто">${decimal(Number(component.gross || 0) / scale, 3)} ${measure}</td><td data-label="Нетто">${decimal(Number(component.net || 0) / scale, 3)} ${measure}</td><td data-label="Стоимость"><strong>${money(preparationIngredientCost(component))}</strong></td></tr>`;
+  }).join('') : '<tr class="table-empty"><td colspan="4">Состав пока не заполнен</td></tr>';
+  $('#preparationCompositionProcess').textContent = preparation.process || '';
+  $('#preparationCompositionProcessSection').hidden = !preparation.process;
+  $('#preparationCompositionDrawer').classList.remove('hidden');
+  $('#closePreparationComposition').focus();
+}
+
+function closePreparationComposition() {
+  $('#preparationCompositionDrawer').classList.add('hidden');
+  const trigger = Array.from(document.querySelectorAll('[data-preparation-compose]')).find(button => button.dataset.preparationCompose === String(currentPreparationId));
+  trigger?.focus({preventScroll:true});
+}
+
 function preparationIngredientCost(component) {
   const ingredient = ingredientById(component.ingredientId);
   if (!ingredient) return 0;
   const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
   const unitCost = branchUnitCost(branchId, ingredient.id) || Number(ingredient.averageCost || 0);
-  return unitCost * Number(component.net || 0) / 1000;
+  return unitCost * componentGross(component) / 1000;
 }
 
 function renderPreparationComponentsEditor() {
-  $("#preparationComponentsEditor").innerHTML = `<div class="component-editor-head"><span>Ингредиент</span><span>Брутто, г/мл</span><span>Нетто, г/мл</span><span>Стоимость</span><span></span></div>${preparationDraftComponents.map((component, index) => `<div class="component-editor-row preparation-component-row" data-preparation-component-index="${index}"><select class="preparation-component-ingredient">${ingredientOptions(component.ingredientId)}</select><input class="preparation-component-gross" type="number" min="0" step="0.1" value="${component.gross || 0}" /><input class="preparation-component-net" type="number" min="0" step="0.1" value="${component.net || 0}" /><span class="component-cost">${money(preparationIngredientCost(component))}</span><button class="remove-component" data-remove-preparation-component="${index}" type="button" aria-label="Удалить ингредиент">${uiIcon("close")}</button></div>`).join("")}`;
+  $("#preparationComponentsEditor").innerHTML = `<div class="component-editor-head"><span>Ингредиент</span><span>Брутто</span><span>Нетто</span><span>Стоимость</span><span></span></div>${preparationDraftComponents.map((component, index) => {
+    const unit = ingredientById(component.ingredientId)?.unit || "кг";
+    const scale = unit === "шт" ? 1000 : 1;
+    const measure = unit === "шт" ? "шт" : unit === "л" ? "мл" : "г";
+    return `<div class="component-editor-row preparation-component-row" data-preparation-component-index="${index}" data-scale="${scale}"><select class="preparation-component-ingredient">${ingredientOptions(component.ingredientId)}</select><input class="preparation-component-gross" aria-label="Брутто, ${measure}" title="Брутто, ${measure}" type="number" min="0" step="0.001" value="${Number(component.gross || 0) / scale}" /><input class="preparation-component-net" aria-label="Нетто, ${measure}" title="Нетто, ${measure}" type="number" min="0" step="0.001" value="${Number(component.net || 0) / scale}" /><span class="component-cost">${money(preparationIngredientCost(component))}<small>${measure}</small></span><button class="remove-component icon-button danger-button" data-remove-preparation-component="${index}" type="button" aria-label="Удалить ингредиент">${uiIcon("close")}</button></div>`;
+  }).join("")}`;
   window.mountIngredientPickers($("#preparationComponentsEditor"));
   updatePreparationCalculation();
 }
 
 function syncPreparationDraftFromEditor() {
+  // Stored quantities are thousandths of the ingredient's stock unit, including pieces.
   preparationDraftComponents = [...document.querySelectorAll(".preparation-component-row")].map((row) => ({
     ingredientId: row.querySelector(".preparation-component-ingredient").value,
-    gross: Math.max(0, Number(row.querySelector(".preparation-component-gross").value || 0)),
-    net: Math.max(0, Number(row.querySelector(".preparation-component-net").value || 0))
+    gross: Math.max(0, Number(row.querySelector(".preparation-component-gross").value || 0)) * Number(row.dataset.scale || 1),
+    net: Math.max(0, Number(row.querySelector(".preparation-component-net").value || 0)) * Number(row.dataset.scale || 1)
   }));
 }
 
 function updatePreparationCalculation() {
   if (document.querySelector(".preparation-component-row")) syncPreparationDraftFromEditor();
   const outputWeight = Math.max(0, Number($("#preparationYieldInput").value || 0));
-  const netWeight = preparationDraftComponents.reduce((total, component) => total + Number(component.net || 0), 0);
+  const totals = {};
+  preparationDraftComponents.forEach((component) => {
+    const unit = ingredientById(component.ingredientId)?.unit || "кг";
+    totals[unit] = (totals[unit] || 0) + Number(component.net || 0) / 1000;
+  });
   const batchCost = preparationDraftComponents.reduce((total, component) => total + preparationIngredientCost(component), 0);
-  $("#preparationNetWeight").textContent = `${decimal(netWeight, 2)} г`;
+  $("#preparationNetWeight").textContent = Object.entries(totals).map(([unit, value]) => `${decimal(value, 3)} ${unit}`).join(" · ") || "0";
   $("#preparationBatchCost").textContent = money(batchCost);
   $("#preparationUnitCost").textContent = money(outputWeight ? batchCost / (outputWeight / 1000) : 0);
   document.querySelectorAll(".preparation-component-row").forEach((row, index) => {
-    row.querySelector(".component-cost").textContent = money(preparationIngredientCost(preparationDraftComponents[index]));
+    const unit = ingredientById(preparationDraftComponents[index].ingredientId)?.unit || "кг";
+    const measure = unit === "шт" ? "шт" : unit === "л" ? "мл" : "г";
+    row.querySelector(".component-cost").innerHTML = `${money(preparationIngredientCost(preparationDraftComponents[index]))}<small>${measure}</small>`;
   });
 }
 
 function openPreparationForm(preparationId = null) {
+  $('#preparationCompositionDrawer').classList.add('hidden');
   if (!ingredients.length) {
     showToast("Сначала добавьте хотя бы один ингредиент");
     return;
@@ -4798,39 +5011,44 @@ function renderSupplyItemsEditor() {
     const price = Math.max(0, Number(item.price ?? currentCost));
     const oldQuantity = branchStock(branchId, entity.id);
     const nextAverage = oldQuantity + quantity ? (oldQuantity * currentCost + quantity * price) / (oldQuantity + quantity) : price;
-    return `<div class="supply-item-row" data-supply-item-index="${index}"><div class="supply-item-product-cell"><select class="supply-item-product">${supplyEntityOptions(entity.id)}</select><small class="supply-item-cost-preview">Учётная цена: ${money(currentCost)} → ${money(nextAverage)} / ${entity.unit}</small></div><span class="supply-item-unit">${entity.unit}</span><input class="supply-item-quantity" type="number" min="0.001" step="0.001" value="${quantity}" aria-label="Количество" /><input class="supply-item-price" type="number" min="0.01" step="0.01" value="${price}" aria-label="Цена за единицу" /><strong class="supply-item-total">${money(quantity * price)}</strong><button class="supply-remove-item" data-remove-supply-item="${index}" type="button" title="Удалить позицию">${uiIcon("close")}</button></div>`;
+    return `<div class="supply-item-row" data-supply-item-index="${index}"><div class="supply-item-product-cell"><select class="supply-item-product">${supplyEntityOptions(entity.id)}</select><small class="supply-item-cost-preview">Учётная цена: ${money(currentCost)} → ${money(nextAverage)} / ${entity.unit}</small></div><span class="supply-item-unit">${entity.unit}</span><input class="supply-item-quantity" type="number" min="0.001" step="0.001" value="${quantity}" aria-label="Количество" /><input class="supply-item-price" type="number" min="0.01" step="0.01" value="${price}" aria-label="Цена за единицу" /><strong class="supply-item-total">${money(quantity * price)}</strong><button class="supply-remove-item icon-button danger-button" data-remove-supply-item="${index}" type="button" title="Удалить позицию">${uiIcon("close")}</button></div>`;
   }).join("");
 }
 
+function supplyMoney(value) {
+  const [coefficient, exponent = '0'] = String(Math.abs(Number(value))).split('e');
+  return Math.sign(Number(value)) * Math.round(Number(`${coefficient}e${Number(exponent) + 2}`)) / 100;
+}
+
 function supplyDocumentAmount() {
-  return [...document.querySelectorAll(".supply-item-row")].reduce((total, row) => total + Math.max(0, Number(row.querySelector(".supply-item-quantity").value || 0)) * Math.max(0, Number(row.querySelector(".supply-item-price").value || 0)), 0);
+  return supplyMoney([...document.querySelectorAll(".supply-item-row")].reduce((total, row) => total + Math.max(0, Number(row.querySelector(".supply-item-quantity").value || 0)) * Math.max(0, Number(row.querySelector(".supply-item-price").value || 0)), 0));
 }
 
 function supplyPaymentAccounts() {
   const branchId = $("#supplyWarehouse").value || currentSession.branchId;
-  return (financeState.accounts || []).filter((account) => account.status === "active" && (!account.branchId || String(account.branchId) === String(branchId)));
+  return (financeState.accounts || []).filter((account) => account.status === "active" && account.type !== 'cash' && (!account.branchId || String(account.branchId) === String(branchId)));
 }
 
 function syncSupplyPayments() {
   supplyDraftPayments = [...document.querySelectorAll(".supply-payment-row")].map((row) => ({
     accountId: row.querySelector(".supply-payment-account").value,
     occurredAt: row.querySelector(".supply-payment-date").value,
-    amount: Math.max(0, Number(row.querySelector(".supply-payment-amount").value || 0))
+    amount: Math.max(0, supplyMoney(row.querySelector(".supply-payment-amount").value || 0))
   }));
 }
 
 function renderSupplyPayments() {
   const accounts = supplyPaymentAccounts();
-  $("#supplyPaymentEditor").innerHTML = supplyDraftPayments.length ? supplyDraftPayments.map((payment, index) => `<div class="supply-payment-row" data-supply-payment-index="${index}"><select class="supply-payment-account" aria-label="Финансовый счёт">${accounts.map((account) => `<option value="${escapeHtml(account.id)}" ${String(account.id) === String(payment.accountId) ? "selected" : ""}>${escapeHtml(account.name)}</option>`).join("")}</select><input class="supply-payment-date" type="datetime-local" value="${escapeHtml(payment.occurredAt || $("#supplyReceivedAt").value)}" aria-label="Дата оплаты" /><input class="supply-payment-amount" type="number" min="0.01" step="0.01" value="${Number(payment.amount || 0)}" aria-label="Сумма оплаты" /><button class="supply-remove-item" data-remove-supply-payment="${index}" type="button" title="Удалить платёж">${uiIcon("close")}</button></div>`).join("") : "";
+  $("#supplyPaymentEditor").innerHTML = supplyDraftPayments.length ? supplyDraftPayments.map((payment, index) => `<div class="supply-payment-row" data-supply-payment-index="${index}"><select class="supply-payment-account" aria-label="Финансовый счёт">${accounts.map((account) => `<option value="${escapeHtml(account.id)}" ${String(account.id) === String(payment.accountId) ? "selected" : ""}>${escapeHtml(account.name)}</option>`).join("")}</select><input class="supply-payment-date" type="datetime-local" value="${escapeHtml(payment.occurredAt || $("#supplyReceivedAt").value)}" aria-label="Дата оплаты" /><input class="supply-payment-amount" type="number" min="0.01" step="0.01" value="${Number(payment.amount || 0)}" aria-label="Сумма оплаты" /><button class="supply-remove-item icon-button danger-button" data-remove-supply-payment="${index}" type="button" title="Удалить платёж">${uiIcon("close")}</button></div>`).join("") : "";
   $(".supply-payment-section").classList.toggle("has-payments", supplyDraftPayments.length > 0);
   updateSupplyPaymentCalculation();
 }
 
 function updateSupplyPaymentCalculation() {
-  const paid = [...document.querySelectorAll(".supply-payment-amount")].reduce((sum, input) => sum + Math.max(0, Number(input.value || 0)), 0);
+  const paid = supplyMoney([...document.querySelectorAll(".supply-payment-amount")].reduce((sum, input) => sum + Math.max(0, supplyMoney(input.value || 0)), 0));
   const total = supplyDocumentAmount();
   $("#supplyPaidTotal").textContent = money(paid);
-  const debt = Math.max(0, total - paid);
+  const debt = Math.max(0, supplyMoney(total - paid));
   $("#supplyDebtTotal").textContent = money(debt);
   $("#supplyDebtFooter").textContent = money(debt);
 }
@@ -4853,7 +5071,7 @@ function updateSupplyCalculation() {
     total += lineTotal;
   });
   $("#supplyPositionsCount").textContent = document.querySelectorAll(".supply-item-row").length;
-  $("#supplyDocumentTotal").textContent = money(total);
+  $("#supplyDocumentTotal").textContent = money(supplyMoney(total));
   updateSupplyPaymentCalculation();
 }
 
@@ -4922,6 +5140,7 @@ function printSupplyDraft() {
 }
 
 async function saveSupply() {
+  if ($("#saveSupplyButton").disabled) return;
   if (!hasRole("owner", "branch")) return;
   syncSupplyDraft();
   syncSupplyPayments();
@@ -4935,14 +5154,17 @@ async function saveSupply() {
   const invoiceNumber = $("#supplyInvoiceNumber").value.trim();
   const receivedAt = new Date($("#supplyReceivedAt").value);
   if (Number.isNaN(receivedAt.getTime())) { showToast("Укажите дату и время приёмки"); return; }
-  const total = items.reduce((sum, item) => sum + item.quantity * item.price, 0);
+  const total = supplyMoney(items.reduce((sum, item) => sum + item.quantity * item.price, 0));
   const payments = supplyDraftPayments.filter((payment) => payment.amount > 0);
   if (payments.some((payment) => !supplyPaymentAccounts().some((account) => String(account.id) === String(payment.accountId)) || !payment.occurredAt)) { showToast("Проверьте счёт и дату каждого платежа"); return; }
-  const paidTotal = payments.reduce((sum, payment) => sum + payment.amount, 0);
-  if (paidTotal > total + .0001) { showToast("Сумма оплаты не может быть больше суммы поставки"); return; }
+  const paidTotal = supplyMoney(payments.reduce((sum, payment) => sum + payment.amount, 0));
+  if (paidTotal > total) { showToast("Сумма оплаты не может быть больше суммы поставки"); return; }
   const payload = { branchId, supplierId: supplier.id, invoiceNumber, receivedAt: receivedAt.toISOString(), comment: $("#supplyComment").value.trim(), items, payments };
   if (serverMode) {
-    const response = await runServerAction("supply.create", payload);
+    $("#saveSupplyButton").disabled = true;
+    let response;
+    try { response = await runServerAction("supply.create", payload); }
+    finally { $("#saveSupplyButton").disabled = false; }
     if (!response) return;
   } else {
     logisticsState.branchStocks[branchId] ||= {};
@@ -4956,7 +5178,7 @@ async function saveSupply() {
       supplier.prices[branchId] ||= {};
       supplier.prices[branchId][item.itemId] = item.price;
     });
-    const debt = Math.max(0, total - paidTotal);
+    const debt = Math.max(0, supplyMoney(total - paidTotal));
     const supply = { id: `supply-${Date.now()}`, number: nextDocumentNumber("ПСТ", logisticsState.supplies), documentType: "supply", branchId, supplierId: supplier.id, supplier: supplier.name, invoiceNumber, receivedAt: receivedAt.toISOString(), createdAt: new Date().toISOString(), createdBy: currentSession.name, receivedBy: currentSession.name, comment: payload.comment, items, total, paidTotal, debt, payments, paymentStatus: debt <= .0001 ? "paid" : paidTotal > 0 ? "partial" : "unpaid", status: "received" };
     logisticsState.supplies.unshift(supply);
     let category = financeState.categories.find((entry) => entry.id === "finance-expense-purchases");
@@ -5026,7 +5248,7 @@ function updateProductionPreview() {
   $("#productionCost").textContent = money(recipeCost(recipe) * quantity);
   $("#productionPreview").innerHTML = recipe.components.map((component) => {
     const ingredient = ingredientById(component.ingredientId);
-    const required = component.net / 1000 * quantity;
+    const required = componentGross(component) / 1000 * quantity;
     const available = ingredient ? availableStock(ingredient) : 0;
     return `<div><span>${ingredient?.name || "Не найден"}</span><b class="${required > available ? "low" : ""}">${decimal(required, 3)} ${ingredient?.unit || "ед."} <small>из ${decimal(available, 3)}</small></b></div>`;
   }).join("");
@@ -5039,7 +5261,7 @@ function saveProduction() {
   if (!recipe) return;
   const shortage = recipe.components.find((component) => {
     const ingredient = ingredientById(component.ingredientId);
-    return !ingredient || component.net / 1000 * quantity > availableStock(ingredient);
+    return !ingredient || componentGross(component) / 1000 * quantity > availableStock(ingredient);
   });
   if (shortage) {
     showToast(`Недостаточно «${ingredientById(shortage.ingredientId)?.name || "ингредиента"}» для производства`);
@@ -5048,7 +5270,7 @@ function saveProduction() {
   const total = recipeCost(recipe) * quantity;
   recipe.components.forEach((component) => {
     const ingredient = ingredientById(component.ingredientId);
-    ingredient.stock -= component.net / 1000 * quantity;
+    ingredient.stock -= componentGross(component) / 1000 * quantity;
   });
   saveIngredients();
   addDocument("production", {
@@ -5058,7 +5280,7 @@ function saveProduction() {
     quantity,
     total,
     description: `${recipe.name} · ${quantity} порц. · готово ${finishedStock(recipe.id) + quantity} порц.`,
-    items: recipe.components.map((component) => ({ ingredientId: component.ingredientId, quantity: component.net / 1000 * quantity }))
+    items: recipe.components.map((component) => ({ ingredientId: component.ingredientId, quantity: componentGross(component) / 1000 * quantity }))
   });
   $("#productionModal").classList.add("hidden");
   renderAll();
@@ -5077,15 +5299,20 @@ function inventorySnapshotItems(branchId, scope, category) {
 }
 
 function showInventorySetup() {
-  if (currentRole !== "branch" && !testMode) { showToast("Инвентаризацию начинает управляющий точки"); return; }
+  if (!["branch","owner"].includes(currentRole) && !testMode) { showToast("Инвентаризацию начинает управляющий точки"); return; }
   const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id;
   const activeInventory = inventoryLockForBranch(branchId);
-  if (activeInventory) { openInventoryDocument(activeInventory.id); return; }
+  if (activeInventory && currentRole !== "owner") { openInventoryDocument(activeInventory.id); return; }
   currentInventoryId = null;
   $("#inventoryModalEyebrow").textContent = "Контроль остатков точки";
   $("#inventoryModalTitle").textContent = "Новая инвентаризация";
-  $("#inventoryWarehouse").innerHTML = `<option value="${branchId}">${escapeHtml(branchById(branchId)?.name || "Точка")}</option>`;
+  $("#inventoryWarehouse").disabled = currentRole !== "owner";
+  $("#inventoryWarehouse").innerHTML = (currentRole === "owner" ? branches : branches.filter(b=>b.id===branchId)).map(b=>`<option value="${escapeHtml(b.id)}" ${b.id===branchId ? "selected" : ""}>${escapeHtml(b.name)}</option>`).join("");
   $("#inventoryScope").value = "full";
+  $("#inventoryCountedAt").value = "";
+  $("#inventoryCountedAt").disabled = false;
+  $("#inventorySelection").classList.add("hidden");
+  prepareInventorySelection();
   $("#inventoryCategory").innerHTML = inventoryCategories().map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("");
   $("#inventoryCategory").disabled = true;
   $("#inventoryResponsible").value = currentSession.name;
@@ -5104,7 +5331,7 @@ function openInventoryForm(inventoryId = null) {
 }
 
 async function startInventoryCount() {
-  if (currentRole !== "branch" && !testMode) return;
+  if (!["branch","owner"].includes(currentRole) && !testMode) return;
   const branchId = $("#inventoryWarehouse").value;
   const existing = inventoryLockForBranch(branchId);
   if (existing) { openInventoryDocument(existing.id); return; }
@@ -5112,10 +5339,10 @@ async function startInventoryCount() {
   if (!responsible) { showToast("Укажите ответственного за подсчёт"); return; }
   const scope = $("#inventoryScope").value;
   const category = scope === "category" ? $("#inventoryCategory").value : "";
-  const items = inventorySnapshotItems(branchId, scope, category);
+  const items = inventorySnapshotItems(branchId, scope === "category" ? scope : "full", category);
   if (!items.length) { showToast("В выбранной категории нет продуктов"); return; }
   if (serverMode) {
-    const response = await runServerAction("inventory.start", { scope, category, responsible });
+    const response = await runServerAction("inventory.start", { branchId, scope, category, responsible, itemIds:[...document.querySelectorAll("[data-inventory-select]:checked")].map(el=>el.value), countedAt:$("#inventoryCountedAt").value ? new Date($("#inventoryCountedAt").value).toISOString() : null });
     if (!response) return;
     openInventoryDocument(response.entity?.id);
     showToast("Подсчёт начат, движения по точке приостановлены");
@@ -5148,14 +5375,14 @@ function openInventoryDocument(inventoryId) {
   if (currentRole === "branch" && currentSession.branchId !== inventory.branchId) { showToast("Документ относится к другой точке"); return; }
   currentInventoryId = inventory.id;
   const branch = branchById(inventory.branchId);
-  const editable = (currentRole === "branch" || testMode) && ["counting", "returned"].includes(inventory.status);
+  const editable = (["branch","owner"].includes(currentRole) || testMode) && ["counting", "returned"].includes(inventory.status);
   const review = (currentRole === "owner" || testMode) && inventory.status === "submitted";
   const isLocked = ["counting", "submitted", "returned"].includes(inventory.status);
   $("#inventoryModalEyebrow").textContent = inventory.status === "submitted" ? "Проверка инвентаризации" : "Контроль остатков точки";
   $("#inventoryModalTitle").textContent = `${inventory.number} · ${inventoryStatusLabel(inventory.status)}`;
   $("#inventorySetup").classList.add("hidden");
   $("#inventoryCountWorkspace").classList.remove("hidden");
-  $("#inventoryDocumentMeta").innerHTML = `<div><span>Точка</span><strong>${escapeHtml(branch?.name || "Точка")}</strong></div><div><span>Проверка</span><strong>${escapeHtml(inventoryScopeLabel(inventory))}</strong><small>${inventory.items.length} ${pluralRu(inventory.items.length, "позиция", "позиции", "позиций")}</small></div><div><span>Ответственный</span><strong>${escapeHtml(inventory.responsible)}</strong><small>${escapeHtml(inventory.createdBy)}</small></div><div><span>Начата</span><strong>${new Date(inventory.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</strong><small>${inventory.submittedAt ? `отправлена ${new Date(inventory.submittedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "черновик точки"}</small></div>`;
+  $("#inventoryDocumentMeta").innerHTML = `<div><span>Точка</span><strong>${escapeHtml(branch?.name || "Точка")}</strong></div><div><span>Проверка</span><strong>${escapeHtml(inventoryScopeLabel(inventory))}</strong><small>${inventory.items.length} ${pluralRu(inventory.items.length, "позиция", "позиции", "позиций")}</small></div><div><span>Ответственный</span><strong>${escapeHtml(inventory.responsible)}</strong><small>${escapeHtml(inventory.createdBy)}</small></div><div><span>Начата</span><strong>${new Date(inventory.countedAt || inventory.createdAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}</strong><small>${inventory.submittedAt ? `отправлена ${new Date(inventory.submittedAt).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", hour: "2-digit", minute: "2-digit" })}` : "черновик точки"}</small></div>`;
   $("#inventoryLockNote").classList.toggle("hidden", !isLocked);
   $("#inventoryLockNote").classList.toggle("returned", inventory.status === "returned");
   $("#inventoryLockNote").innerHTML = inventory.status === "returned"
@@ -5163,12 +5390,9 @@ function openInventoryDocument(inventoryId) {
     : inventory.status === "submitted"
       ? `${uiIcon("alert")}<div><strong>Документ отправлен на проверку</strong><small>Складские движения точки приостановлены до решения главного администратора.</small></div>`
       : `${uiIcon("alert")}<div><strong>Остатки точки зафиксированы</strong><small>Поставки, перемещения и производство временно заблокированы.</small></div>`;
-  $("#inventoryCountList").innerHTML = `<div class="inventory-count-head"><span>Продукт</span><span>Учётный остаток</span><span>Фактически</span><span>Ед.</span><span>Разница</span></div>${inventory.items.map((item) => {
-    const entity = logisticsItem(item.itemId);
-    const actual = item.actual == null ? "" : item.actual;
-    const difference = item.actual == null ? null : Number(item.actual) - Number(item.book || 0);
-    return `<div class="inventory-count-row" data-inventory-item="${item.itemId}" data-book-stock="${item.book}" data-unit-cost="${item.unitCost}"><div><strong>${escapeHtml(entity?.name || item.itemId)}</strong><small>${escapeHtml(entity?.category || "")} · ${money(item.unitCost || 0)} / ${entity?.unit || "ед."}</small></div><span>${decimal(item.book, 3)}</span><input class="inventory-actual" type="number" min="0" step="0.001" value="${actual}" placeholder="Введите" ${editable ? "" : "readonly"} /><b>${entity?.unit || "ед."}</b><strong class="inventory-diff ${difference > 0 ? "positive" : difference < 0 ? "negative" : ""}">${difference == null ? "—" : `${difference > 0 ? "+" : ""}${decimal(difference, 3)}`}</strong></div>`;
-  }).join("")}`;
+  $("#inventoryCountSearch").value = "";
+  $("#inventoryCountFilter").value = "all";
+  renderInventoryCountTable(inventory, editable);
   $("#inventoryCommentLabel").textContent = editable ? "Комментарий управляющего" : "Комментарий управляющего к подсчёту";
   $("#inventoryComment").value = inventory.comment || "";
   $("#inventoryComment").readOnly = !editable;
@@ -5182,12 +5406,180 @@ function openInventoryDocument(inventoryId) {
   $("#returnInventoryButton").classList.toggle("hidden", !review);
   $("#postInventoryButton").classList.toggle("hidden", !review);
   updateInventoryDifference();
+  filterInventoryCount();
   $("#inventoryModal").classList.remove("hidden");
+}
+
+function inventoryItemInfo(item) {
+  const entity = logisticsItem(item.itemId);
+  return {
+    name: item.name || entity?.name || "Позиция",
+    unit: item.unit || entity?.unit || "ед.",
+    category: item.lotId ? "Раздача" : item.category || entity?.category || ""
+  };
+}
+
+function inventoryDateLabel(value) {
+  const date = new Date(value);
+  return value && Number.isFinite(date.getTime()) ? date.toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" }) : "—";
+}
+
+function inventoryVariance(actual, book) {
+  return actual == null || !Number.isFinite(actual) ? null
+    : Math.round(actual * 1000) === Math.round(Number(book || 0) * 1000) ? 0 : actual - Number(book || 0);
+}
+
+function inventoryMovementCell(item, index, field, bucket, monetary = false) {
+  const summary = item.movementSummary;
+  const value = summary?.available ? summary[field] : null;
+  if (value == null) return '<span class="inventory-muted">—</span>';
+  const label = monetary ? money(value) : decimal(value, 3);
+  if (!summary.entries?.some(entry => entry.bucket === bucket)) return label;
+  const titles = { incoming: "Поступления", outgoing: "Расход", writeoff: "Списания", adjustment: "Корректировки" };
+  return `<button type="button" class="inventory-movement-link" data-inventory-movement="${index}" data-movement-bucket="${bucket}" aria-label="${escapeHtml(`${titles[bucket]}: ${inventoryItemInfo(item).name}`)}">${label}${uiIcon("chevron")}</button>`;
+}
+
+function renderInventoryCountTable(inventory, editable) {
+  const serving = inventory.scope === "serving";
+  const headings = ["Наименование", ...(!serving ? ["Последняя проверка", "Нач. остаток", "Поступления", "Расход", "Списано", "Списано, сом", "Корректировки"] : []), "Учётный остаток", "Факт. остаток", "Сумма факта", "Разница", "Разница, сом"];
+  const cells = inventory.items.map((item, index) => {
+    const entity = inventoryItemInfo(item);
+    const summary = item.movementSummary;
+    const actual = item.actual == null ? "" : Number(Number(item.actual).toFixed(3));
+    const cell = (label, html, className = "") => `<td data-label="${label}" class="${className}">${html}</td>`;
+    return `<tr class="inventory-count-row" data-inventory-item="${escapeHtml(String(item.itemId))}" data-book-stock="${Number(item.book || 0)}" data-unit-cost="${Number(item.unitCost || 0)}">
+      <th scope="row" class="inventory-item-name"><strong>${escapeHtml(entity.name)}</strong><small>${escapeHtml(entity.category)} · ${escapeHtml(entity.unit)}</small></th>
+      ${!serving ? cell("Последняя проверка", escapeHtml(inventoryDateLabel(summary?.lastCountAt)), "inventory-last-count")
+        + cell("Нач. остаток", summary?.available ? decimal(summary.opening, 3) : "—")
+        + cell("Поступления", inventoryMovementCell(item, index, "incoming", "incoming"))
+        + cell("Расход", inventoryMovementCell(item, index, "outgoing", "outgoing"))
+        + cell("Списано", inventoryMovementCell(item, index, "writtenOff", "writeoff"))
+        + cell("Списано, сом", inventoryMovementCell(item, index, "writtenOffCost", "writeoff", true))
+        + cell("Корректировки", inventoryMovementCell(item, index, "adjustments", "adjustment")) : ""}
+      ${cell("Учётный остаток", `<strong>${decimal(item.book, 3)}</strong>`, "inventory-book-cell")}
+      ${cell("Факт. остаток", `<input class="inventory-actual" type="number" inputmode="decimal" min="0" step="0.001" value="${actual}" placeholder="Введите" aria-label="${escapeHtml(`Фактический остаток: ${entity.name}, ${entity.unit}`)}" ${editable ? "" : "readonly"}>`, "inventory-actual-cell")}
+      ${cell("Сумма факта", '<span class="inventory-actual-value">—</span>')}
+      ${cell("Разница", '<strong class="inventory-diff">—</strong>')}
+      ${cell("Разница, сом", '<strong class="inventory-diff-value">—</strong>')}
+    </tr>`;
+  }).join("");
+  $("#inventoryCountList").innerHTML = `<table class="inventory-count-table ${serving ? "inventory-serving-table" : ""}"><thead><tr>${headings.map((heading) => `<th scope="col">${heading}</th>`).join("")}</tr></thead><tbody>${cells}</tbody></table>`;
+  const missingHistory = !serving && inventory.items.some(item => !item.movementSummary?.available);
+  const reconstructed = inventory.items.some(item => item.movementSummary?.available && item.movementSummary.openingBasis === "reconstructed");
+  $("#inventoryHistoryNote").textContent = serving
+    ? "Учёт принятой раздачи. Ингредиенты списаны при производстве и повторно не учитываются."
+    : missingHistory ? "В этом документе часть расшифровок не сохранена. Полная история фиксируется для новых инвентаризаций."
+    : reconstructed ? "Начальный остаток восстановлен по истории движений. Значения со стрелкой открывают расшифровку." : "Значения со стрелкой открывают расшифровку движений с предыдущей проверки.";
+  $("#inventoryHistoryNote").classList.remove("hidden");
+}
+
+function filterInventoryCount(keepEditing = false) {
+  const query = $("#inventoryCountSearch").value.trim().toLocaleLowerCase();
+  const filter = $("#inventoryCountFilter").value;
+  let visible = 0;
+  let counted = 0;
+  const rows = [...document.querySelectorAll("#inventoryCountList .inventory-count-row")];
+  rows.forEach(row => {
+    const input = row.querySelector(".inventory-actual");
+    const actual = input.value === "" ? null : Number(input.value);
+    const isCounted = actual != null && Number.isFinite(actual) && actual >= 0;
+    if (isCounted) counted += 1;
+    const difference = inventoryVariance(actual, Number(row.dataset.bookStock));
+    const matches = filter === "all" || (filter === "uncounted" && !isCounted) || (filter === "counted" && isCounted) || (filter === "different" && isCounted && difference !== 0);
+    const editing = keepEditing === true && row.contains(document.activeElement);
+    row.hidden = !editing && (!matches || !row.querySelector(".inventory-item-name").textContent.toLocaleLowerCase().includes(query));
+    if (!row.hidden) visible += 1;
+  });
+  $("#inventoryCountProgress").textContent = `Подсчитано: ${counted} из ${rows.length}`;
+  $("#inventoryCountEmpty").classList.toggle("hidden", visible > 0);
+}
+
+function inventoryDocumentRows(inventory) {
+  const inputs = currentInventoryId === inventory.id ? new Map([...document.querySelectorAll("#inventoryCountList .inventory-count-row")].map(row => [row.dataset.inventoryItem, row.querySelector(".inventory-actual").value])) : new Map();
+  return inventory.items.map(item => {
+    const raw = inputs.has(String(item.itemId)) ? inputs.get(String(item.itemId)) : item.actual;
+    const actual = raw == null || raw === "" ? null : Number(raw);
+    const difference = inventoryVariance(actual, item.book);
+    return { ...item, ...inventoryItemInfo(item), actual, difference, actualValue: actual == null ? null : actual * Number(item.unitCost || 0), differenceValue: difference == null ? null : difference * Number(item.unitCost || 0) };
+  });
+}
+
+function openInventoryMovement(index, bucket) {
+  const inventory = inventoryById(currentInventoryId);
+  const item = inventory?.items[Number(index)];
+  const summary = item?.movementSummary;
+  if (!summary?.available) return;
+  const titles = { incoming: "Поступления", outgoing: "Расход", writeoff: "Списания", adjustment: "Корректировки" };
+  if (!titles[bucket]) return;
+  const types = { supplier_receipt: "Поставка", transfer_in: "Перемещение на точку", transfer_out: "Перемещение с точки", production_consumption: "Производство", sale: "Продажа товара", sale_consumption: "Продажа блюда", sale_refund: "Возврат продажи", sales_import: "Импорт продаж", external_sale: "Импорт продаж", writeoff: "Списание", inventory_adjustment: "Инвентаризация", ingredient_count: "Пересчёт смены" };
+  const entries = (summary.entries || []).filter(entry => entry.bucket === bucket);
+  const entity = inventoryItemInfo(item);
+  $("#inventoryMovementTitle").textContent = `${titles[bucket]} · ${entity.name}`;
+  $("#inventoryMovementSubtitle").textContent = `${summary.lastCountAt ? `После проверки ${inventoryDateLabel(summary.lastCountAt)}` : "По сохранённой истории"} · до ${inventoryDateLabel(summary.asOf || inventory.countedAt || inventory.createdAt)}`;
+  let quantity = 0;
+  let cost = 0;
+  let knownCost = true;
+  $("#inventoryMovementBody").innerHTML = `<div class="inventory-movement-table-wrap"><table><thead><tr><th>Дата</th><th>Операция</th><th>Количество</th><th>Стоимость</th><th>Сотрудник</th></tr></thead><tbody>${entries.map(entry => {
+    quantity += Number(entry.quantity || 0);
+    if (entry.cost == null) knownCost = false;
+    else cost += Number(entry.cost);
+    const document = entry.documentNumber && entry.documentNumber !== "POS" ? entry.documentNumber : "";
+    return `<tr><td>${escapeHtml(inventoryDateLabel(entry.date))}</td><td><strong>${escapeHtml(types[entry.movementType] || titles[bucket])}${document ? ` · ${escapeHtml(document)}` : ""}</strong>${entry.dishName ? `<small>${escapeHtml(entry.dishName)}</small>` : ""}</td><td>${decimal(entry.quantity, 3)} ${escapeHtml(entity.unit)}</td><td>${entry.cost == null ? "—" : money(entry.cost)}</td><td>${escapeHtml(entry.actor || "—")}</td></tr>`;
+  }).join("")}</tbody></table></div><footer><span>${entries.length} ${pluralRu(entries.length, "операция", "операции", "операций")}</span><strong>${decimal(quantity, 3)} ${escapeHtml(entity.unit)}</strong><strong>${knownCost ? money(cost) : "Стоимость не сохранена"}</strong></footer>`;
+  const dialog = $("#inventoryMovementDialog");
+  if (!dialog.open) dialog.showModal();
+}
+
+async function exportInventoryDocument() {
+  const inventory = inventoryById(currentInventoryId);
+  if (!inventory) return;
+  if (!serverMode) { showToast("Экспорт доступен для сохранённых документов на сервере"); return; }
+  const button = $("#exportInventoryButton");
+  button.disabled = true;
+  try {
+    const items = inventoryDocumentRows(inventory).map(item => ({ itemId: item.itemId, actual: item.actual }));
+    if (items.some(item => item.actual != null && (!Number.isFinite(item.actual) || item.actual < 0))) { showToast("Проверьте фактические остатки"); return; }
+    const report = await AshkanaApi.exportInventory(inventory.id, ["counting", "returned"].includes(inventory.status) ? items : undefined);
+    const bytes = Uint8Array.from(atob(report.xlsx), character => character.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const link = document.createElement("a");
+    link.href = url;
+    link.download = report.filename;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(url), 1000);
+  } catch (error) { showToast(error.message || "Не удалось выгрузить инвентаризацию"); }
+  finally { button.disabled = false; }
+}
+
+function inventoryPrintHtml(inventory) {
+  const rows = inventoryDocumentRows(inventory);
+  const serving = inventory.scope === "serving";
+  let surplus = 0, shortage = 0;
+  rows.forEach(item => { if (item.differenceValue > 0) surplus += item.differenceValue; else if (item.differenceValue < 0) shortage -= item.differenceValue; });
+  const quantity = value => value == null ? "—" : decimal(value, 3);
+  const amount = value => value == null ? "—" : money(value);
+  const heading = ["Наименование", "Ед.", ...(!serving ? ["Нач. остаток", "Приход", "Расход", "Списано", "Корректировки"] : []), "Учёт", "Факт", "Сумма факта", "Разница", "Разница, сом"];
+  return `<!doctype html><html lang="ru"><meta charset="utf-8"><title>${escapeHtml(inventory.number)} · Oimo</title><style>@page{size:A4 landscape;margin:12mm}body{font:11px Arial,sans-serif;color:#302b32}h1{font-size:20px;margin-bottom:8px}p{line-height:1.5}table{width:100%;border-collapse:collapse;margin-top:20px}th,td{padding:7px 5px;border-bottom:1px solid #ded8dc;text-align:right}th:first-child,td:first-child{text-align:left}thead{display:table-header-group}th{background:#f1e9f0}tr{break-inside:avoid}footer{margin-top:20px;display:flex;gap:30px;justify-content:flex-end}.note{color:#716a73;font-size:10px}</style><body><h1>${escapeHtml(inventory.number)} · Инвентаризация</h1><p>${escapeHtml(branchById(inventory.branchId)?.name || "Точка")} · ${escapeHtml(inventoryDateLabel(inventory.countedAt || inventory.createdAt))}<br>Ответственный: ${escapeHtml(inventory.responsible || "—")} · ${escapeHtml(inventoryStatusLabel(inventory.status))}</p><table><thead><tr>${heading.map(text => `<th>${text}</th>`).join("")}</tr></thead><tbody>${rows.map(item => {
+    const s = item.movementSummary?.available ? item.movementSummary : {};
+    const values = [item.name, item.unit, ...(!serving ? [quantity(s.opening), quantity(s.incoming), quantity(s.outgoing), quantity(s.writtenOff), quantity(s.adjustments)] : []), quantity(item.book), quantity(item.actual), amount(item.actualValue), quantity(item.difference), amount(item.differenceValue)];
+    return `<tr>${values.map(value => `<td>${escapeHtml(String(value))}</td>`).join("")}</tr>`;
+  }).join("")}</tbody></table><p class="note">Подсчитано: ${rows.filter(item => item.actual != null).length} из ${rows.length}. ${escapeHtml($("#inventoryHistoryNote").textContent.replace("Значения со стрелкой открывают расшифровку.", ""))}</p><footer><span>Излишки: <b>${money(surplus)}</b></span><span>Недостача: <b>${money(shortage)}</b></span><span>Итого: <b>${money(surplus - shortage)}</b></span></footer></body></html>`;
+}
+
+function printInventoryDocument() {
+  const inventory = inventoryById(currentInventoryId);
+  if (!inventory) return;
+  const printWindow = window.open("", "_blank", "width=1100,height=800");
+  if (!printWindow) { showToast("Браузер заблокировал окно печати"); return; }
+  printWindow.opener = null;
+  printWindow.document.write(inventoryPrintHtml(inventory));
+  printWindow.document.close();
+  setTimeout(() => { printWindow.focus(); printWindow.print(); }, 250);
 }
 
 function syncInventoryCount(inventory) {
   document.querySelectorAll(".inventory-count-row").forEach((row) => {
-    const item = inventory.items.find((entry) => entry.itemId === row.dataset.inventoryItem);
+    const item = inventory.items.find((entry) => String(entry.itemId) === row.dataset.inventoryItem);
     if (!item) return;
     const raw = row.querySelector(".inventory-actual").value.trim();
     item.actual = raw === "" ? null : Math.max(0, Number(raw));
@@ -5198,24 +5590,34 @@ function syncInventoryCount(inventory) {
 function updateInventoryDifference() {
   let surplus = 0;
   let shortage = 0;
+  const inventory = inventoryById(currentInventoryId);
   document.querySelectorAll(".inventory-count-row").forEach((row) => {
-    const entity = stockEntityById(row.dataset.inventoryItem);
+    const item = inventory?.items.find((entry) => String(entry.itemId) === row.dataset.inventoryItem);
+    const unit = item?.unit || stockEntityById(row.dataset.inventoryItem)?.unit || "";
     const book = Number(row.dataset.bookStock || 0);
     const raw = row.querySelector(".inventory-actual").value.trim();
     const differenceElement = row.querySelector(".inventory-diff");
+    const actualValue = row.querySelector(".inventory-actual-value");
+    const differenceValue = row.querySelector(".inventory-diff-value");
     if (raw === "") {
       differenceElement.textContent = "—";
       differenceElement.className = "inventory-diff";
+      if (actualValue) actualValue.textContent = "—";
+      if (differenceValue) { differenceValue.textContent = "—"; differenceValue.className = "inventory-diff-value"; }
       return;
     }
     const actual = Math.max(0, Number(raw));
-    const difference = actual - book;
-    differenceElement.textContent = `${difference > 0 ? "+" : ""}${decimal(difference, 3)}`;
+    const difference = Math.round(actual * 1000) === Math.round(book * 1000) ? 0 : actual - book;
+    differenceElement.textContent = `${difference > 0 ? "+" : ""}${decimal(difference, 3)}${unit ? ` ${unit}` : ""}`;
     differenceElement.className = `inventory-diff ${difference > 0 ? "positive" : difference < 0 ? "negative" : ""}`;
     const amount = difference * Number(row.dataset.unitCost || 0);
+    if (actualValue) actualValue.textContent = money(actual * Number(row.dataset.unitCost || 0));
+    if (differenceValue) {
+      differenceValue.textContent = `${amount > 0 ? "+" : amount < 0 ? "−" : ""}${money(Math.abs(amount))}`;
+      differenceValue.className = `inventory-diff-value ${amount > 0 ? "positive" : amount < 0 ? "negative" : ""}`;
+    }
     if (amount > 0) surplus += amount;
     else shortage += Math.abs(amount);
-    if (!entity) differenceElement.textContent = "—";
   });
   const net = surplus - shortage;
   $("#inventorySurplus").textContent = money(surplus);
@@ -5226,7 +5628,7 @@ function updateInventoryDifference() {
 
 async function saveInventoryDraft() {
   const inventory = inventoryById(currentInventoryId);
-  if (!inventory || !["counting", "returned"].includes(inventory.status) || (currentRole !== "branch" && !testMode)) return;
+  if (!inventory || !["counting", "returned"].includes(inventory.status) || (!["branch","owner"].includes(currentRole) && !testMode)) return;
   syncInventoryCount(inventory);
   if (serverMode) {
     const response = await runServerAction("inventory.save", {
@@ -5251,7 +5653,7 @@ async function saveInventoryDraft() {
 
 async function submitInventory() {
   const inventory = inventoryById(currentInventoryId);
-  if (!inventory || !["counting", "returned"].includes(inventory.status) || (currentRole !== "branch" && !testMode)) return;
+  if (!inventory || !["counting", "returned"].includes(inventory.status) || (!["branch","owner"].includes(currentRole) && !testMode)) return;
   syncInventoryCount(inventory);
   const missing = inventory.items.find((item) => item.actual == null || !Number.isFinite(Number(item.actual)));
   if (missing) { showToast(`Введите фактическое количество: ${logisticsItem(missing.itemId)?.name || "позиция"}`); return; }
@@ -5286,7 +5688,7 @@ async function submitInventory() {
 
 async function cancelInventory() {
   const inventory = inventoryById(currentInventoryId);
-  if (!inventory || !["counting", "returned"].includes(inventory.status) || (currentRole !== "branch" && !testMode)) return;
+  if (!inventory || !["counting", "returned"].includes(inventory.status) || (!["branch","owner"].includes(currentRole) && !testMode)) return;
   if (serverMode) {
     const response = await runServerAction("inventory.cancel", { id: inventory.id });
     if (!response) return;
@@ -5332,8 +5734,6 @@ async function returnInventory() {
 async function postInventory() {
   const inventory = inventoryById(currentInventoryId);
   if (!inventory || inventory.status !== "submitted" || (currentRole !== "owner" && !testMode)) return;
-  const changedItem = inventory.items.find((item) => Math.abs(branchStock(inventory.branchId, item.itemId) - Number(item.book || 0)) > .0001);
-  if (changedItem) { showToast(`Остаток «${logisticsItem(changedItem.itemId)?.name || "позиции"}» изменился после начала — нужен новый подсчёт`); return; }
   if (serverMode) {
     const response = await runServerAction("inventory.post", {
       id: inventory.id,
@@ -5346,6 +5746,8 @@ async function postInventory() {
     showToast(`${inventory.number}: проведена, остатки точки скорректированы`);
     return;
   }
+  const changedItem = inventory.items.find((item) => Math.abs(branchStock(inventory.branchId, item.itemId) - Number(item.book || 0)) > .0001);
+  if (changedItem) { showToast(`Остаток «${logisticsItem(changedItem.itemId)?.name || "позиции"}» изменился после начала — нужен новый подсчёт`); return; }
   logisticsState.branchStocks[inventory.branchId] ||= {};
   inventory.items.forEach((item) => { logisticsState.branchStocks[inventory.branchId][item.itemId] = Number(item.actual || 0); });
   const totals = inventoryTotals(inventory);
@@ -5457,6 +5859,31 @@ const ownerNavSectionByView = {
   employees: "access",
   settings: "settings"
 };
+
+function mobileWorkspaceChoices() {
+  const view = document.querySelector(".admin-view.active")?.id.replace("view-", "");
+  const section = ownerNavSectionByView[view];
+  const submenuId = { analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
+  if (!submenuId) return [];
+  const targets = { menuPage: "recipes", ownerAnalyticsTab: "reports", ownerStockTab: "inventory", ownerFinanceTab: "finance", settingsTab: "settings" };
+  return [...document.querySelectorAll(`#${submenuId} button`)].flatMap((button) => {
+    const key = Object.keys(targets).find((name) => button.dataset[name]) || (button.dataset.ownerAccessView ? "ownerAccessView" : "ownerView");
+    const value = button.dataset[key];
+    const targetView = targets[key] || value;
+    if (!value || button.hidden || button.disabled || button.classList.contains("hidden") || !canAccessView(targetView)) return [];
+    if (key === "ownerStockTab" && !canAccessStockTab(value)) return [];
+    const selected = view === targetView && (["ownerView", "ownerAccessView"].includes(key) || button.classList.contains("active"));
+    return [{ value: `${key}:${value}`, label: button.textContent.trim(), selected, button }];
+  });
+}
+
+function renderMobileWorkspaceNavigation() {
+  const container = $("#mobileWorkspaceNavigation");
+  const select = $("#mobileWorkspaceSelect");
+  const choices = mobileWorkspaceChoices();
+  container.classList.toggle("hidden", choices.length < 2);
+  select.innerHTML = choices.map((choice) => `<option value="${escapeHtml(choice.value)}"${choice.selected ? " selected" : ""}>${escapeHtml(choice.label)}</option>`).join("");
+}
 
 function setOwnerNavSection(section, open) {
   const submenuId = { analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
@@ -5634,6 +6061,17 @@ window.addEventListener("storage", (event) => {
 });
 
 // Close the previous workspace before submenu handlers change the section.
+$("#mobileWorkspaceSelect").addEventListener("change", (event) => {
+  // Reuse permitted navigation targets and their existing handlers, including
+  // closing an editor before changing sections. Recheck access on every change.
+  const choice = mobileWorkspaceChoices().find((entry) => entry.value === event.target.value);
+  if (choice) choice.button.click();
+  renderMobileWorkspaceNavigation();
+});
+new MutationObserver(renderMobileWorkspaceNavigation).observe($("#mainNav"), {
+  subtree: true, attributes: true, attributeFilter: ["class", "hidden", "disabled"]
+});
+
 $("#mainNav").addEventListener("click", (event) => {
   if (!event.target.closest("button")) return;
   document.querySelectorAll(".modal-backdrop:not(.hidden), .side-drawer-backdrop:not(.hidden)").forEach((workspace) => workspace.classList.add("hidden"));
@@ -5783,8 +6221,16 @@ $("#preparationSearch").addEventListener("input", renderPreparations);
 $("#preparationCategoryFilter").addEventListener("change", renderPreparations);
 $("#preparationsTable").addEventListener("click", (event) => {
   const button = event.target.closest("[data-preparation-edit]");
-  if (button) openPreparationForm(button.dataset.preparationEdit);
+  if (button) { openPreparationForm(button.dataset.preparationEdit); return; }
+  const compose = event.target.closest('[data-preparation-compose]');
+  if (compose) { openPreparationComposition(compose.dataset.preparationCompose); return; }
+  const row = event.target.closest('[data-preparation-id]');
+  if (row && !window.getSelection()?.toString()) openPreparationComposition(row.dataset.preparationId);
 });
+$('#closePreparationComposition').addEventListener('click', closePreparationComposition);
+$('#preparationCompositionDone').addEventListener('click', closePreparationComposition);
+$('#editPreparationComposition').addEventListener('click', () => openPreparationForm(currentPreparationId));
+$('#preparationCompositionDrawer').addEventListener('click', event => { if (event.target === $('#preparationCompositionDrawer')) closePreparationComposition(); });
 $("#ingredientSearch").addEventListener("input", renderIngredientsMenu);
 $("#ingredientsTable").addEventListener("click", (event) => {
   const button = event.target.closest("[data-ingredient-edit]");
@@ -5883,8 +6329,21 @@ $("#employeesTable").addEventListener("click", async event => {
   finally { button.disabled = false; }
 });
 $("#employeesTable").addEventListener("click", (event) => {
+  const remove = event.target.closest('[data-delete-employee]');
+  if (remove) { openEmployeeDelete(remove.dataset.deleteEmployee, remove); return; }
   const button = event.target.closest("[data-edit-employee]");
   if (button) openEmployeeForm(button.dataset.editEmployee);
+});
+$('#deleteEmployeeButton').addEventListener('click', event => openEmployeeDelete(editingEmployeeId, event.currentTarget));
+$('#confirmEmployeeDelete').addEventListener('click', confirmEmployeeDelete);
+$('#cancelEmployeeDelete').addEventListener('click', closeEmployeeDelete);
+$('#closeEmployeeDelete').addEventListener('click', closeEmployeeDelete);
+$('#employeeDeleteDialog').addEventListener('cancel', event => { if (deletingEmployee) event.preventDefault(); });
+$('#employeeDeleteDialog').addEventListener('close', () => {
+  pendingEmployeeDeleteId = null;
+  const target = employeeDeleteTrigger?.isConnected && employeeDeleteTrigger.getClientRects().length ? employeeDeleteTrigger : $('#addEmployeeButton');
+  target.focus({preventScroll:true});
+  employeeDeleteTrigger = null;
 });
 $("#employeeNameInput").addEventListener("input", () => {
   if (!employeeLoginEdited) $("#employeeLoginInput").value = slugifyBranchLogin($("#employeeNameInput").value).replace(/-/g, ".");
@@ -6096,7 +6555,11 @@ $("#addComponentButton").addEventListener("click", () => {
   renderRecipeComponentsEditor();
 });
 $("#recipeComponentsEditor").addEventListener("input", updateRecipeLiveCalculation);
-$("#recipeComponentsEditor").addEventListener("change", updateRecipeLiveCalculation);
+$("#recipeComponentsEditor").addEventListener("change", (event) => {
+  syncRecipeDraftFromEditor();
+  if (event.target.matches(".component-ingredient")) renderRecipeComponentsEditor();
+  else updateRecipeLiveCalculation();
+});
 $("#recipeComponentsEditor").addEventListener("click", (event) => {
   const button = event.target.closest(".remove-component");
   if (!button) return;
@@ -6123,7 +6586,11 @@ $("#addPreparationComponentButton").addEventListener("click", () => {
   renderPreparationComponentsEditor();
 });
 $("#preparationComponentsEditor").addEventListener("input", updatePreparationCalculation);
-$("#preparationComponentsEditor").addEventListener("change", updatePreparationCalculation);
+$("#preparationComponentsEditor").addEventListener("change", (event) => {
+  syncPreparationDraftFromEditor();
+  if (event.target.matches(".preparation-component-ingredient")) renderPreparationComponentsEditor();
+  else updatePreparationCalculation();
+});
 $("#preparationComponentsEditor").addEventListener("click", (event) => {
   const button = event.target.closest("[data-remove-preparation-component]");
   if (!button) return;
@@ -6275,8 +6742,8 @@ $("#addSupplyPaymentButton").addEventListener("click", () => {
   syncSupplyPayments();
   const accounts = supplyPaymentAccounts();
   if (!accounts.length) { showToast("Нет доступного финансового счёта для оплаты"); return; }
-  const paid = supplyDraftPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0);
-  supplyDraftPayments.push({ accountId: accounts[0].id, occurredAt: $("#supplyReceivedAt").value, amount: Math.max(0, supplyDocumentAmount() - paid) });
+  const paid = supplyMoney(supplyDraftPayments.reduce((sum, payment) => sum + Number(payment.amount || 0), 0));
+  supplyDraftPayments.push({ accountId: accounts[0].id, occurredAt: $("#supplyReceivedAt").value, amount: Math.max(0, supplyMoney(supplyDocumentAmount() - paid)) });
   renderSupplyPayments();
 });
 $("#supplyPaymentEditor").addEventListener("input", updateSupplyPaymentCalculation);
@@ -6314,7 +6781,17 @@ $("#productionRecipe").addEventListener("change", updateProductionPreview);
 $("#productionQuantity").addEventListener("input", updateProductionPreview);
 $("#saveProductionButton").addEventListener("click", saveProduction);
 $("#inventoryScope").addEventListener("change", () => { $("#inventoryCategory").disabled = $("#inventoryScope").value !== "category"; });
-$("#inventoryCountList").addEventListener("input", updateInventoryDifference);
+$("#inventoryCountList").addEventListener("input", () => { updateInventoryDifference(); filterInventoryCount(true); });
+$("#inventoryCountList").addEventListener("change", () => filterInventoryCount());
+$("#inventoryCountSearch").addEventListener("input", filterInventoryCount);
+$("#inventoryCountFilter").addEventListener("change", filterInventoryCount);
+$("#inventoryCountList").addEventListener("click", event => {
+  const button = event.target.closest("[data-inventory-movement]");
+  if (button) openInventoryMovement(button.dataset.inventoryMovement, button.dataset.movementBucket);
+});
+$("#closeInventoryMovement").addEventListener("click", () => $("#inventoryMovementDialog").close());
+$("#printInventoryButton").addEventListener("click", printInventoryDocument);
+$("#exportInventoryButton").addEventListener("click", exportInventoryDocument);
 $("#startInventoryButton").addEventListener("click", startInventoryCount);
 $("#saveInventoryDraftButton").addEventListener("click", saveInventoryDraft);
 $("#submitInventoryButton").addEventListener("click", submitInventory);
@@ -6344,9 +6821,11 @@ $("#signOutButton").addEventListener("click", async () => {
   location.href = "/login";
 });
 document.addEventListener("keydown", (event) => {
+  if ($('#employeeDeleteDialog').open) return;
   if (event.key === "Escape") {
     closeNotifications();
     $("#recipeDrawer").classList.add("hidden");
+    if (!$('#preparationCompositionDrawer').classList.contains('hidden')) closePreparationComposition();
     document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.classList.add("hidden"));
   }
 });
@@ -6497,3 +6976,126 @@ $("#productionBranchSelect").addEventListener("change",()=>{if(adminCustodyPanel
 function salePaymentParts(sale) { return Array.isArray(sale.payments) ? sale.payments : [{method:sale.paymentMethod,amount:Number(sale.total || 0)}]; }
 function salePaymentAmount(sale, method) { return salePaymentParts(sale).filter(part=>part.method===method).reduce((sum,part)=>sum+Number(part.amount || 0),0); }
 function salePaymentSummary(sale) { return salePaymentParts(sale).map(part=>`${paymentMethodLabel(part.method)}: ${money(part.amount)}`).join(" · "); }
+
+
+const supplyDetails = document.createElement('dialog');
+supplyDetails.id = 'supplyDetailsDialog';
+document.body.append(supplyDetails);
+function openSupplyDetails(id) {
+  const supply = logisticsState.supplies.find(s => s.id === id);
+  if (!supply) return;
+  const accounts = financeState.accounts.filter(a => a.status === 'active' && a.type !== 'cash' && (!a.branchId || a.branchId === supply.branchId));
+  const debt = Math.max(0, supplyMoney(supply.debt || 0));
+  const canPay = currentRole === 'owner' && debt > 0;
+  const paymentForm = canPay && accounts.length ? `<form><label>Счёт<select name="account" required>${accounts.map(a=>`<option value="${escapeHtml(a.id)}">${escapeHtml(a.name)}</option>`).join('')}</select></label><label>Сумма<input name="amount" type="number" min="0.01" step="0.01" max="${debt}" value="${debt}" required></label><p role="alert" data-error></p><button class="primary-button" type="submit">Оплатить поставку</button></form>` : canPay ? '<p>Для оплаты добавьте активный счёт в разделе «Финансы → Счета».</p>' : '';
+  supplyDetails.innerHTML = `<header><h2>${escapeHtml(supply.number)} · ${escapeHtml(supply.supplier)}</h2><button type="button" data-close-supply class="icon-button" aria-label="Закрыть">×</button></header><p>${supplyPaymentStatusLabel(supply.paymentStatus)} · Долг: <strong>${money(debt)}</strong></p><div class="supply-detail-items">${(supply.items || []).map(i=>`<div><span>${escapeHtml(logisticsItem(i.itemId)?.name || i.itemId)}</span><span>${Number(i.quantity).toLocaleString('ru-RU')} × ${money(i.price)}</span></div>`).join('')}</div><h3>Платежи</h3>${(supply.payments || []).map(p=>`<article class="supply-payment-history"><div><strong>${money(p.amount)}</strong><span>${escapeHtml(financeState.accounts.find(a=>a.id===p.accountId)?.name || '')}</span><small>${escapeHtml(new Date(p.occurredAt).toLocaleString('ru-RU'))}</small>${p.reversedAt ? `<small class="supply-payment-reversed">Отменён ${escapeHtml(new Date(p.reversedAt).toLocaleString('ru-RU'))} · ${escapeHtml(p.reversedBy)}<br>${escapeHtml(p.reversalReason)}</small>` : ''}</div>${currentRole === 'owner' && p.id && !p.reversedAt ? `<button type="button" class="icon-button" data-reverse-payment="${escapeHtml(p.id)}" title="Отменить оплату" aria-label="Отменить оплату ${money(p.amount)}">${uiIcon('arrow')}</button>` : ''}</article>`).join('') || '<p>Оплат пока нет</p>'}<section data-payment-reversal hidden></section>${paymentForm}`;
+  supplyDetails.querySelector('[data-close-supply]').onclick = ()=>supplyDetails.close();
+  supplyDetails.querySelectorAll('[data-reverse-payment]').forEach(button => {
+    button.onclick = () => openSupplyPaymentReversal(supply, button.dataset.reversePayment, accounts);
+  });
+  const form = supplyDetails.querySelector('form');
+  if(form) {
+    form.onsubmit = async event=>{
+      event.preventDefault();
+      const button = form.querySelector('button');
+      if (button.disabled) return;
+      button.disabled = true;
+      form.querySelector('[data-error]').textContent = '';
+      form.elements.account.disabled = true;
+      form.elements.amount.disabled = true;
+      try {
+        const response = await runServerAction('supply.pay', {id, accountId:form.elements.account.value, amount:Number(form.elements.amount.value)});
+        if(response) { openSupplyDetails(id); renderDocuments(); }
+        else form.querySelector('[data-error]').textContent = $('#adminToast')?.textContent || 'Не удалось сохранить платёж. Проверьте соединение и повторите попытку.';
+      } catch(error) { form.querySelector('[data-error]').textContent = error.message; }
+      finally { button.disabled = false; form.elements.account.disabled = false; form.elements.amount.disabled = false; }
+    };
+  }
+  if(!supplyDetails.open) supplyDetails.showModal();
+}
+function openSupplyPaymentReversal(supply, paymentId, accounts) {
+  const payment = (supply.payments || []).find(p => p.id === paymentId);
+  if (!payment || payment.reversedAt || currentRole !== 'owner') return;
+  const section = supplyDetails.querySelector('[data-payment-reversal]');
+  const payForm = supplyDetails.querySelector(':scope > form');
+  if (payForm) payForm.hidden = true;
+  section.hidden = false;
+  section.innerHTML = `<form class="supply-reversal-form"><h3>Отменить оплату ${money(payment.amount)}</h3><p>Долг восстановится. Укажите, куда вернулись деньги.</p><label>Счёт возврата<select name="account" required>${accounts.map(a=>`<option value="${escapeHtml(a.id)}" ${a.id === payment.accountId ? 'selected' : ''}>${escapeHtml(a.name)}</option>`).join('')}</select></label><label>Причина<textarea name="reason" minlength="3" maxlength="1000" rows="2" required></textarea></label><p role="alert" data-error></p><div class="supply-reversal-actions"><button type="button" class="secondary-action" data-cancel-reversal>Назад</button><button type="submit" class="primary-button" ${accounts.length ? '' : 'disabled'}>Подтвердить отмену</button></div></form>`;
+  section.querySelector('[data-cancel-reversal]').onclick = () => openSupplyDetails(supply.id);
+  const form = section.querySelector('form');
+  form.onsubmit = async event => {
+    event.preventDefault();
+    if (form.dataset.pending) return;
+    if (!form.reportValidity()) return;
+    form.dataset.pending = 'true';
+    const payload = {id:supply.id, paymentId, accountId:form.elements.account.value, reason:form.elements.reason.value.trim()};
+    const controls = [...form.querySelectorAll('button,input,select,textarea')];
+    controls.forEach(control => { control.disabled = true; });
+    form.querySelector('[data-error]').textContent = '';
+    try {
+      const response = await runServerAction('supply.payment.reverse', payload);
+      if (response) { openSupplyDetails(supply.id); renderDocuments(); showToast('Оплата отменена, долг восстановлен'); }
+      else form.querySelector('[data-error]').textContent = $('#adminToast')?.textContent || 'Не удалось отменить оплату';
+    } catch (error) { form.querySelector('[data-error]').textContent = error.message; }
+    finally { delete form.dataset.pending; controls.forEach(control => { control.disabled = false; }); }
+  };
+  section.scrollIntoView({block:'nearest'});
+  form.elements.reason.focus({preventScroll:true});
+}
+document.addEventListener('click', event=>{ const button=event.target.closest('[data-view-supply]'); if(button)openSupplyDetails(button.dataset.viewSupply); });
+
+function prepareInventorySelection() {
+  $('#inventorySelectionSearch').value = '';
+  $('#inventorySelectionList').innerHTML = inventorySnapshotItems($('#inventoryWarehouse').value, 'full', '').map(item =>
+    `<label class="inventory-selection-row"><input type="checkbox" data-inventory-select value="${escapeHtml(item.itemId)}"><span class="inventory-selection-name">${escapeHtml(logisticsItem(item.itemId)?.name || item.itemId)}</span></label>`
+  ).join('');
+  renderInventorySelection();
+}
+
+function renderInventorySelection() {
+  const query = $('#inventorySelectionSearch').value.trim().toLocaleLowerCase();
+  const rows = [...document.querySelectorAll('#inventorySelectionList .inventory-selection-row')];
+  rows.forEach(row => { row.hidden = !row.textContent.toLocaleLowerCase().includes(query); });
+  const selected = rows.filter(row => row.querySelector('input').checked).length;
+  $('#inventorySelectionCount').textContent = `Выбрано: ${selected} из ${rows.length}`;
+  $('#inventorySelectionEmpty').classList.toggle('hidden', rows.some(row => !row.hidden));
+}
+$('#inventoryScope').addEventListener('change',()=>{
+ const scope=$('#inventoryScope').value;
+ $('#inventorySelection').classList.toggle('hidden',scope!=='selected');
+ $('#inventoryCountedAt').disabled=scope==='serving';
+ if(scope==='serving')$('#inventoryCountedAt').value='';
+});
+$('#inventorySelectionSearch').oninput=renderInventorySelection;
+$('#inventorySelectionList').addEventListener('change', renderInventorySelection);
+
+// Disclosures keep occasional tools out of the main workflow.
+{
+  const disclosures = [...document.querySelectorAll('.ux-tools, .ux-advanced-filters')];
+  document.addEventListener('click', event => {
+    disclosures.forEach(details => {
+      if (details.open && !details.contains(event.target)) details.open = false;
+    });
+    const command = event.target.closest('.ux-tools-panel button');
+    if (command) command.closest('.ux-tools').open = false;
+  });
+  document.addEventListener('keydown', event => {
+    if (event.key !== 'Escape') return;
+    disclosures.filter(details => details.open).forEach(details => {
+      details.open = false;
+      details.querySelector('summary').focus();
+    });
+  });
+  const extraFilters = document.querySelector('.ux-advanced-filters');
+  const updateExtraFilterCount = () => {
+    if (!extraFilters) return;
+    const count = [...extraFilters.querySelectorAll('select')].filter(select => select.value !== (select.id === 'ingredientSort' ? 'name' : '')).length;
+    const badge = document.querySelector('#ingredientExtraFilterCount');
+    badge.hidden = !count;
+    badge.textContent = count ? String(count) : '';
+    extraFilters.classList.toggle('has-active-filters', count > 0);
+  };
+  extraFilters?.addEventListener('change', updateExtraFilterCount);
+  document.querySelector('#resetIngredientFilters')?.addEventListener('click', updateExtraFilterCount);
+  updateExtraFilterCount();
+}

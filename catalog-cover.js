@@ -23,7 +23,7 @@ window.CatalogCover = (() => {
     drafts.get(prefix)?.controller.abort();
     const controller=new AbortController();
     const draft={controller,image:safeImage(item?.image),color:safeColor(item?.color),busy:false,token:0};drafts.set(prefix,draft);
-    root.innerHTML=`<div data-cover-preview></div><div class="catalog-cover-actions"><label class="secondary-action">Загрузить фото<input data-cover-file type="file" accept="image/jpeg,image/png,image/webp"></label><small>JPG, PNG, WebP · до 2 МБ</small><button type="button" data-cover-remove class="poster-action">Удалить фото</button><small data-cover-status role="status"></small></div>${externalColorId?'':`<label class="catalog-color-label">Цвет<input data-cover-color type="color" value="${draft.color}"></label>`}`;
+    root.innerHTML=`<div data-cover-preview></div><div class="catalog-cover-actions"><label class="secondary-action">Загрузить фото<input data-cover-file type="file" accept="image/jpeg,image/png,image/webp"></label><small>JPG, PNG, WebP · до 2 МБ</small><button type="button" data-cover-remove class="danger-button">Удалить фото</button><small data-cover-status role="status"></small></div>${externalColorId?'':`<label class="catalog-color-label">Цвет<input data-cover-color type="color" value="${draft.color}"></label>`}`;
     const color=externalColorId?document.getElementById(externalColorId):root.querySelector('[data-cover-color]');
     const name=document.getElementById(prefix+'NameInput');
     const render=()=>{draft.color=safeColor(color.value);root.querySelector('[data-cover-preview]').innerHTML=thumb(draft,name.value);root.querySelector('[data-cover-remove]').hidden=!draft.image;};

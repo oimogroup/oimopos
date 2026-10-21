@@ -43,14 +43,10 @@ button, input { font: inherit; }
 .login-card > label span { display: block; margin-bottom: 7px; color: #536168; font-size: 13px; font-weight: 500; }
 .login-card input { width: 100%; height: 48px; padding: 0 13px; border: 1px solid #d7dee1; border-radius: 9px; outline: 0; color: #26353c; background: #fff; font-size: 14px; transition: border-color .15s, box-shadow .15s; }
 .login-card input:hover { border-color: #c5ced2; }
-.login-card input:focus { border-color: #7968ce; box-shadow: 0 0 0 3px #efedfb; }
 .login-error, .login-notice { margin: 14px 0 0; padding: 11px 13px; border-radius: 8px; font-size: 12px; line-height: 1.45; }
 .login-error { color: #a93d48; background: #fff0f1; }
 .login-notice { color: #5747a3; background: #f0eefb; }
-.login-submit { width: 100%; height: 47px; margin-top: 21px; padding: 0 16px; display: flex; align-items: center; justify-content: center; gap: 10px; border: 0; border-radius: 9px; color: #fff; background: var(--violet); font-size: 14px; font-weight: 500; cursor: pointer; box-shadow: 0 8px 20px rgba(101,84,192,.22); }
-.login-submit:hover { background: var(--violet-dark); }
-.login-submit:disabled { opacity: .6; cursor: wait; }
-.login-submit .icon { width: 17px; height: 17px; }
+.login-submit { width: 100%; margin-top: 21px; }
 .demo-access { margin-top: 28px; padding-top: 22px; display: flex; align-items: flex-start; gap: 11px; border-top: 1px solid #e6eaec; }
 .demo-access > i { width: 34px; height: 34px; display: grid; place-items: center; flex: none; border-radius: 9px; color: #6554c0; background: #efedfb; }
 .demo-access > i .icon { width: 17px; height: 17px; }
@@ -64,7 +60,6 @@ button, input { font: inherit; }
 .terminal-auth .mobile-brand > span { background: #176b4b; }
 .terminal-auth .auth-copy > p { color: #91c4aa; }
 .terminal-auth .role-list article > i { color: #a9d6bf; background: rgba(82, 177, 127, .12); }
-.terminal-auth .login-card input:focus { border-color: #2a7f5c; box-shadow: 0 0 0 3px #e5f2eb; }
 .terminal-auth .demo-access > i { color: #176b4b; background: #e8f3ed; }
 
 @media (max-width: 900px) {

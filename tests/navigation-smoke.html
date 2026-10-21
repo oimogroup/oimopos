@@ -46,8 +46,11 @@
             ['[data-nav-section="analytics"]', "reports"],
           ]) {
             click("#dashboardOrdersButton");
+            if (doc.querySelector('[data-receipt-open="navigation-receipt"]').getAttribute("aria-expanded") === "true") click('[data-receipt-open="navigation-receipt"]');
             click('[data-receipt-open="navigation-receipt"]');
-            check(`receipt-details-open-${view}`, visible("#receiptModal"));
+            const receiptButton = doc.querySelector('[data-receipt-open="navigation-receipt"]');
+            const detailsRow = receiptButton.closest("tr").nextElementSibling;
+            check(`receipt-details-open-${view}`, receiptButton.getAttribute("aria-expanded") === "true" && detailsRow?.classList.contains("receipt-expanded") && Boolean(detailsRow.querySelector('[data-receipt-tab="bill"][aria-selected="true"]')) && detailsRow.textContent.includes("Итого: 100"));
             click(selector);
             check(`receipt-details-to-${view}`, noWorkspace() && visible(`#view-${view}`));
           }

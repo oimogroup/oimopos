@@ -1,0 +1,115 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Gross ingredient cost regression</title>
+  <style>
+    body { margin: 0; }
+    iframe { display: block; height: 100vh; border: 0; }
+    #results { position: fixed; right: 0; bottom: 0; z-index: 100; max-width: 380px; max-height: 25vh; margin: 0; overflow: auto; background: white; white-space: pre-wrap; font: 11px monospace; }
+  </style>
+</head>
+<body>
+<pre id="results">RUNNING</pre>
+<iframe id="app" title="Тест себестоимости"></iframe>
+<script>
+(async () => {
+  const params = new URLSearchParams(location.search);
+  const frame = document.querySelector('#app');
+  frame.style.width = `${Math.max(320, Math.min(1440, Number(params.get('width')) || 1440))}px`;
+  const checks = [];
+  const check = (name, condition) => {
+    checks.push(`${condition ? 'PASS' : 'FAIL'}:${name}`);
+    document.querySelector('#results').textContent = checks.join('|');
+  };
+  // Actual test-mode save handlers persist only these browser fixture keys.
+  // Restore them so running the fixture never leaves its audit recipes behind.
+  const savedStorage = new Map(['ashkana-admin-recipes-v1', 'ashkana-admin-preparations-v1'].map(key => [key, localStorage.getItem(key)]));
+  try {
+    await new Promise(resolve => {
+      frame.addEventListener('load', resolve, { once: true });
+      frame.src = '../admin?test=1#menu/recipes';
+    });
+    const w = frame.contentWindow, d = frame.contentDocument;
+    const q = selector => d.querySelector(selector);
+    const errors = [];
+    w.addEventListener('error', event => errors.push(event.message));
+    w.addEventListener('unhandledrejection', event => errors.push(String(event.reason)));
+    w.fetch = () => Promise.reject(new Error('Unexpected network request in fixture'));
+    w.AshkanaApi.action = async () => { throw new Error('Unexpected business API call'); };
+    if (!w.eval('testMode && !serverMode')) throw new Error('Fixture requires isolated test mode');
+    const number = selector => {
+      const text = q(selector).textContent.replace(/\s/g, '').replace(',', '.');
+      return Number(text.match(/-?\d+(?:\.\d+)?/)?.[0]);
+    };
+    const input = (selector, value) => {
+      const element = q(selector);
+      element.value = String(value);
+      element.dispatchEvent(new w.Event('input', { bubbles: true }));
+    };
+    const ingredient = { id: 'audit-rice', name: 'Рис для проверки брутто', category: 'Бакалея', unit: 'кг', averageCost: 100, stock: 10, limit: 0 };
+    const recipeId = w.eval('Math.max(900000, ...recipes.map(row => Number(row.id) || 0)) + 1');
+    const recipe = { id: recipeId, name: 'Блюдо — проверка брутто', category: 'Горячее', station: 'Кухня', yield: 800, price: 200, components: [{ ingredientId: ingredient.id, gross: 1000, net: 800 }] };
+    const preparation = { id: 'audit-gross-preparation', name: 'Заготовка — проверка брутто', category: 'Заготовки кухни', station: 'Кухня', yield: 800, cost: 0, components: [{ ingredientId: ingredient.id, gross: 1000, net: 800 }] };
+    w.eval(`ingredients = ingredients.filter(row => row.id !== 'audit-rice'); ingredients.push(${JSON.stringify(ingredient)}); recipes.push(${JSON.stringify(recipe)}); preparations = preparations.filter(row => row.id !== 'audit-gross-preparation'); preparations.push(${JSON.stringify(preparation)}); logisticsState.branchCosts.b1 ||= {}; logisticsState.branchCosts.b1['audit-rice'] = 100;`);
+    w.renderAll();
+
+    check('component-cost-includes-raw-loss', w.componentCost(recipe.components[0]) === 100);
+    check('recipe-cost-includes-raw-loss', w.recipeCost(recipe) === 100);
+    check('branch-recipe-cost-includes-raw-loss', w.recipeCostForBranch(recipe, 'b1') === 100);
+    w.openRecipe(recipeId);
+    check('recipe-composition-and-total-show-100', number('#drawerCost') === 100 && number('#drawerTotalCost') === 100 && number('#compositionTable tr td:last-child') === 100);
+    check('recipe-finished-output-is-800g', q('#drawerYield').textContent === '800 г');
+    w.openRecipeForm(recipeId);
+    check('recipe-editor-initial-cost-is-100', number('#recipeLiveCost') === 100 && number('#recipeComponentsEditor .component-cost') === 100);
+    check('recipe-editor-initial-food-cost-is-50-percent', number('#recipeLiveFoodCost') === 50);
+    input('#recipeComponentsEditor .component-gross', 1200);
+    check('recipe-gross-edit-updates-cost-to-120', number('#recipeLiveCost') === 120 && number('#recipeComponentsEditor .component-cost') === 120 && number('#recipeLiveFoodCost') === 60);
+    check('recipe-gross-edit-preserves-net-and-output', Number(q('#recipeComponentsEditor .component-net').value) === 800 && Number(q('#recipeYieldInput').value) === 800);
+    input('#recipeComponentsEditor .component-net', 700);
+    check('recipe-net-edit-keeps-gross-cost', number('#recipeLiveCost') === 120 && number('#recipeComponentsEditor .component-cost') === 120);
+    check('recipe-net-edit-preserves-explicit-output', Number(q('#recipeYieldInput').value) === 800);
+    await w.saveRecipeForm();
+    const savedRecipe = JSON.parse(w.localStorage.getItem('ashkana-admin-recipes-v1')).find(row => row.id === recipeId);
+    check('recipe-save-persists-independent-quantities', savedRecipe?.yield === 800 && savedRecipe.components[0].gross === 1200 && savedRecipe.components[0].net === 700);
+    check('saved-recipe-cost-is-120', w.recipeCost(savedRecipe) === 120 && w.recipeCostForBranch(savedRecipe, 'b1') === 120);
+    check('recipe-save-closes-editor', q('#recipeModal').classList.contains('hidden'));
+
+    check('preparation-batch-cost-is-100', w.preparationCost(preparation) === 100);
+    w.openPreparationComposition(preparation.id);
+    check('preparation-composition-cost-is-100-and-125-per-kg', number('#preparationCompositionCost') === 100 && number('#preparationCompositionUnitCost') === 125 && number('#preparationCompositionTable [data-label="Стоимость"]') === 100);
+    w.openPreparationForm(preparation.id);
+    check('preparation-editor-cost-is-100-and-125-per-kg', number('#preparationBatchCost') === 100 && number('#preparationUnitCost') === 125 && number('#preparationComponentsEditor .component-cost') === 100);
+    input('#preparationComponentsEditor .preparation-component-gross', 1200);
+    check('preparation-gross-edit-updates-batch-and-unit-cost', number('#preparationBatchCost') === 120 && number('#preparationUnitCost') === 150 && number('#preparationComponentsEditor .component-cost') === 120);
+    check('preparation-gross-edit-preserves-net-and-output', Number(q('#preparationComponentsEditor .preparation-component-net').value) === 800 && Number(q('#preparationYieldInput').value) === 800);
+    input('#preparationComponentsEditor .preparation-component-net', 700);
+    check('preparation-net-edit-keeps-gross-cost', number('#preparationBatchCost') === 120 && number('#preparationUnitCost') === 150 && number('#preparationComponentsEditor .component-cost') === 120);
+    check('preparation-net-total-is-700g-output-stays-800g', q('#preparationNetWeight').textContent.replace(/\s+/g, ' ').trim() === '0,7 кг' && Number(q('#preparationYieldInput').value) === 800);
+    await w.savePreparationForm();
+    const savedPreparation = JSON.parse(w.localStorage.getItem('ashkana-admin-preparations-v1')).find(row => row.id === preparation.id);
+    check('preparation-save-persists-cost-120', savedPreparation?.cost === 120 && w.preparationCost(savedPreparation) === 120);
+    check('preparation-save-persists-independent-quantities', savedPreparation?.yield === 800 && savedPreparation.components[0].gross === 1200 && savedPreparation.components[0].net === 700);
+    check('preparation-save-closes-editor', q('#preparationModal').classList.contains('hidden'));
+    w.openPreparationForm(preparation.id);
+    check('reopened-preparation-restores-cost-and-output', number('#preparationBatchCost') === 120 && number('#preparationUnitCost') === 150 && Number(q('#preparationYieldInput').value) === 800);
+    const saveRect = q('#savePreparationButton').getBoundingClientRect();
+    check('save-control-fits-viewport', saveRect.left >= 0 && saveRect.right <= w.innerWidth + 1 && saveRect.bottom <= w.innerHeight + 1);
+    const deleteButton = q('#deletePreparationButton'), deleteRect = deleteButton.getBoundingClientRect();
+    check('delete-control-is-accessible-icon', deleteButton.getAttribute('aria-label') === 'Удалить полуфабрикат' && !deleteButton.textContent.trim() && !!deleteButton.querySelector('svg'));
+    check('delete-control-fits-viewport', deleteRect.width >= 40 && deleteRect.left >= 0 && deleteRect.right <= w.innerWidth + 1 && deleteRect.bottom <= w.innerHeight + 1);
+    check('no-browser-errors', errors.length === 0);
+    if (params.has('preview')) document.querySelector('#results').hidden = true;
+  } catch (error) {
+    check(`runtime:${error.stack}`, false);
+  } finally {
+    for (const [key, value] of savedStorage) {
+      if (value === null) localStorage.removeItem(key);
+      else localStorage.setItem(key, value);
+    }
+  }
+})();
+</script>
+</body>
+</html>

@@ -1,0 +1,18 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Offline conflict review checks</title><pre id="results">RUNNING</pre><iframe id="app" src="/admin?test=1#finance/transactions" style="position:fixed;left:-10000px;width:1440px;height:1000px"></iframe><script>
+(async()=>{
+ const checks=[],check=(n,v)=>{checks.push(`${v?'PASS':'FAIL'}:${n}`);document.querySelector('#results').textContent=checks.join('|')},pause=()=>new Promise(r=>setTimeout(r,20));
+ try{
+  const f=document.querySelector('#app');await new Promise(r=>f.addEventListener('load',r,{once:true}));const w=f.contentWindow,d=f.contentDocument,q=s=>d.querySelector(s),posts=[];
+  let rows=[{requestId:'offline-example-1',total:80,serverTotal:90,employeeName:'Анна <кассир>',createdAt:'2026-10-22T06:00:00Z',error:'Требуется проверка остатков',payload:{items:[{id:'water',quantity:2}]}}],fail=true;
+  w.AshkanaApi.offlineConflicts=async()=>JSON.parse(JSON.stringify(rows));w.AshkanaApi.resolveOfflineReceipt=async payload=>{posts.push(payload);if(fail)throw new Error('Недостаточно остатка');rows=[];return {receipt:{status:'synced'}}};
+  await w.OimoOfflineReview.open(true);check('owner-conflict-journal-opens',!q('#offlineReviewSection').hidden&&q('#offlineReviewSection').open);
+  check('conflict-detail-and-employee-escaped',q('#offlineReviewList').textContent.includes('Анна <кассир>')&&!q('#offlineReviewList кассир'));
+  const form=q('[data-offline-request]');check('owner-can-explicitly-select-replacement-shift',!!form.elements.useCurrentShift);check('existing-server-total-can-be-reconciled',!!form.elements.acceptServer&&q('#offlineReviewList').textContent.includes('90'));
+  form.elements.reason.value='Фактические остатки проверены';form.requestSubmit();for(let i=0;i<100&&form.querySelector('button').disabled;i++)await pause();
+  check('failed-resolution-remains-reviewable',form.isConnected&&form.querySelector('p').textContent.includes('Недостаточно'));
+  fail=false;form.elements.acceptServer.checked=true;form.elements.useCurrentShift.checked=true;form.requestSubmit();for(let i=0;i<100&&q('[data-offline-request]');i++)await pause();
+  check('resolution-keeps-reason-and-explicit-choices',posts.at(-1).requestId==='offline-example-1'&&posts.at(-1).acceptServer&&posts.at(-1).useCurrentShift&&posts.at(-1).reason.length>=3);
+  check('resolved-record-leaves-pending-journal',!q('[data-offline-request]')&&q('#offlineReviewStatus').textContent.includes('проведены'));
+ }catch(e){check('runtime:'+e.stack,false)}document.body.dataset.done='true';
+})();
+</script></html>

@@ -1,0 +1,53 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Printer transport checks</title><pre id="results" style="white-space:pre-wrap">RUNNING</pre><script src="/receipt-printing.js"></script><script>
+(async()=>{
+ const checks=[],check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');};
+ const rejected=async action=>{try{await action();return false;}catch(_){return true;}};
+ try{
+  const p=window.OimoPrinting;
+  check('invalid-settings-reset',p.normalize(null).receiptPaperWidth===80&&p.normalize({receiptPrinterMode:'injected',receiptPaperWidth:30}).receiptPrinterMode==='browser');
+  check('legacy-settings-upgrade',p.normalize({receiptPrinterMode:'browser',receiptPrinterName:'old',autoPrintReceipt:true}).receiptPaperWidth===80);
+  check('cutter-default-off',!p.normalize().receiptCutPaper);
+  const html='<h1>Кафе «Утро»</h1><p>Чек №123</p><hr><p><span>Очень длинное название блюда: борщ со сметаной и зеленью</span><b>1 234,56</b></p><p><strong>Итого</strong><b>1 234,56</b></p><small>Спасибо!<br>До встречи.</small>';
+  const narrow=await p.rasterize(html,{receiptPaperWidth:58}),wide=await p.rasterize(html,{receiptPaperWidth:80});
+  check('58mm-raster-width',narrow.width===384&&narrow.height>100);
+  check('80mm-raster-width',wide.width===576&&wide.height>100);
+  check('custom-head-width',(await p.rasterize(html,{receiptDots:512})).width===512);
+  check('png-output',atob(narrow.base64).slice(1,4)==='PNG');
+  check('long-receipt-is-not-truncated',(await p.rasterize(html.repeat(8),{receiptPaperWidth:58})).height>narrow.height*7);
+  check('oversized-raster-is-rejected',await rejected(()=>p.rasterize(html.repeat(200),{})));
+  const logo=document.createElement('canvas');logo.width=30;logo.height=20;const ctx=logo.getContext('2d');ctx.fillRect(0,0,30,20);
+  const withLogo=await p.rasterize('<img src="'+logo.toDataURL()+'">'+html,{});
+  check('logo-included',withLogo.height>wide.height);
+  let calls=[],connected=false,fail=false,active=0,maxActive=0;
+  window.qz={websocket:{isActive:()=>connected,connect:async()=>{connected=true;}},printers:{find:async()=>['Printer B','Термопринтер','Printer B']},configs:{create:(name,options)=>({name,options})},print:async(config,data)=>{calls.push({config,data});active++;maxActive=Math.max(maxActive,active);await new Promise(r=>setTimeout(r,5));active--;if(fail)throw new Error('queue unavailable');}};
+  const names=await p.findPrinters();check('real-printer-names-found',names.length===2&&names.includes('Термопринтер'));
+  const settings={receiptPrinterMode:'qz',receiptPrinterName:'Термопринтер',receiptPaperWidth:58};
+  const result=await p.print(html,settings,'test-receipt');
+  check('driver-mode-uses-selected-printer',calls[0].config.name==='Термопринтер');
+  check('driver-mode-sends-image',calls[0].data[0].type==='pixel'&&calls[0].data[0].format==='image');
+  check('driver-page-width',calls[0].config.options.size.width===58&&calls[0].config.options.units==='mm');
+  check('status-is-queued-not-printed',result.status==='queued');
+  const count=calls.length;
+  check('missing-printer-rejected',await rejected(()=>p.print(html,{...settings,receiptPrinterName:'missing'}))&&calls.length===count);
+  check('empty-selection-rejected',await rejected(()=>p.print(html,{...settings,receiptPrinterName:''})));
+  check('disabled-print-rejected',await rejected(()=>p.print(html,{receiptPrinterMode:'none'})));
+  await p.print(html,{...settings,receiptPrinterMode:'escpos'});
+  let job=calls.at(-1);
+  check('escpos-raster-protocol',job.data[1].type==='raw'&&job.data[1].options.language==='ESCPOS');
+  check('escpos-without-unrequested-cut',job.data.length===3);
+  await p.print(html,{...settings,receiptPrinterMode:'escpos',receiptCutPaper:true});
+  check('escpos-cutter-opt-in',calls.at(-1).data.at(-1)==='\x1dV\x01');
+  const before=calls.length;fail=true;
+  check('transport-failure-reported',await rejected(()=>p.print(html,settings)));
+  check('failure-never-auto-retries',calls.length===before+1);
+  fail=false;await p.print(html,settings);check('queue-recovers-after-failure',calls.length===before+2);
+  await Promise.all([p.print(html,settings),p.print(html,settings)]);check('jobs-are-serialized',maxActive===1);
+  let printedWidth='';window.print=()=>{printedWidth=[...document.head.querySelectorAll('style')].at(-1).textContent;check('browser-print-area-exists',!!document.querySelector('#posPrintArea'));window.dispatchEvent(new Event('afterprint'));};
+  const browserResult=await p.print(html,{receiptPrinterMode:'browser',receiptPaperWidth:58});
+  check('browser-58mm-layout',printedWidth.includes('width:58mm'));
+  check('browser-cleanup-after-dialog',!document.querySelector('#posPrintArea')&&browserResult.status==='dialog');
+  const sdk=await fetch('/vendor/qz-tray-2.3.0.js').then(r=>{if(!r.ok)throw new Error('SDK missing');return r.text();});new Function(sdk);check('vendored-sdk-present',sdk.includes('@version 2.3.0'));
+ }catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

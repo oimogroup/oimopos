@@ -1,0 +1,169 @@
+<!doctype html>
+<html lang="ru">
+<head>
+  <meta charset="utf-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1">
+  <title>Supplier payment reversal regression checks</title>
+  <style>
+    body { margin: 0; background: #eee; }
+    iframe { display: block; height: 100vh; border: 0; background: white; }
+    #results { position: fixed; right: 0; bottom: 0; z-index: 20; max-width: 340px; max-height: 28vh; margin: 0; overflow: auto; background: white; font: 11px monospace; white-space: pre-wrap; }
+  </style>
+</head>
+<body>
+<pre id="results">RUNNING</pre>
+<script>
+(async () => {
+  const checks = [];
+  const check = (name, condition) => {
+    checks.push(`${condition ? 'PASS' : 'FAIL'}:${name}`);
+    document.querySelector('#results').textContent = checks.join('\n');
+  };
+  const pause = () => new Promise(resolve => setTimeout(resolve, 20));
+  const clone = value => JSON.parse(JSON.stringify(value));
+  const width = Math.max(320, Math.min(1440, Number(new URLSearchParams(location.search).get('width')) || 1280));
+  const frames = [];
+  async function appFrame(role = 'owner') {
+    const frame = document.createElement('iframe');
+    frame.style.width = width + 'px';
+    if (role === 'branch') frame.style.display = 'none';
+    document.body.append(frame);
+    frames.push(frame);
+    await new Promise(resolve => {
+      frame.addEventListener('load', resolve, {once: true});
+      frame.src = `../admin.html?test=1&role=${role}#inventory/supplies`;
+    });
+    const win = frame.contentWindow;
+    if (!win.openSupplyDetails || !win.openSupplyPaymentReversal) throw new Error('Current supplier reversal UI is not loaded');
+    win.__smokeErrors = [];
+    win.addEventListener('error', event => win.__smokeErrors.push(event.message));
+    win.addEventListener('unhandledrejection', event => win.__smokeErrors.push(String(event.reason)));
+    // The test-mode page skips auth/workspace requests. Block every subsequent
+    // network request; actions below use only the explicit in-memory API mock.
+    win.fetch = () => Promise.reject(new Error('Unexpected network request during fixture test'));
+    win.AshkanaApi.action = async () => { throw new Error('Unexpected unstubbed action'); };
+    win.eval('serverMode = true');
+    return {frame, win, doc: frame.contentDocument};
+  }
+  try {
+    const {win: w, doc: d} = await appFrame();
+    const q = selector => d.querySelector(selector);
+    const now = new Date().toISOString();
+    const fixture = w.eval('JSON.parse(JSON.stringify({branches,suppliers,ingredients,recipes,products,preparations,menuCategories,ingredientCategories,stations,logisticsState,financeState,sales:[],companySettings:{general:{currency:"KGS"}}}))');
+    fixture.logisticsState.supplies = [{
+      id: 'reversal-supply', number: 'ПС-ТЕСТ', supplierId: 'supplier-frunze', supplier: 'Тестовый поставщик',
+      branchId: 'b1', receivedAt: now, createdAt: now, invoiceNumber: 'TEST-REVERSAL',
+      total: 200, paid: 100, debt: 100, paymentStatus: 'partial',
+      items: [{itemId: 'rice', quantity: 2, price: 100}],
+      payments: [{id: 'reversal-payment', amount: 100, accountId: 'finance-bank', occurredAt: now, createdAt: now, createdBy: 'Владелец'}],
+    }];
+    fixture.financeState = {
+      accounts: [{id: 'finance-bank', name: 'Расчётный счёт', type: 'bank', branchId: null, openingBalance: 1000, status: 'active'}],
+      categories: [
+        {id: 'finance-expense-purchases', name: 'Оплата поставщику', kind: 'expense', status: 'active'},
+        {id: 'finance-income-supplier-refunds', name: 'Возврат от поставщика', kind: 'income', status: 'active'},
+      ],
+      transactions: [{id: 'purchase-payment', type: 'expense', amount: 100, accountId: 'finance-bank',
+        categoryId: 'finance-expense-purchases', branchId: 'b1', documentId: 'reversal-supply', occurredAt: now,
+        counterparty: 'Тестовый поставщик', automatic: true}],
+    };
+    fixture.sales = [{id: 'fixture-sale', number: 1, branchId: 'b1', createdAt: now, paymentMethod: 'cash', total: 1000,
+      items: [{id: 'p-1', name: 'Вода', category: 'Напитки', price: 100, unitCost: 40, quantity: 10}]}];
+    w.hydrateServerWorkspace({version: 1, state: clone(fixture)});
+    w.renderAll();
+    w.setFinancePeriod('all');
+    w.renderFinance();
+    const metricsBefore = w.financeMetrics();
+    const pnlBefore = q('#financeNetProfit').textContent;
+    const moneyBefore = w.financeAccountBalance('finance-bank');
+    check('baseline profit and paid account balance', metricsBefore.net === 600 && moneyBefore === 900);
+
+    w.openSupplyDetails('reversal-supply');
+    const dialog = q('#supplyDetailsDialog');
+    const historyBefore = w.eval('JSON.stringify(logisticsState.supplies[0])');
+    const reversalButton = () => q('[data-reverse-payment="reversal-payment"]');
+    check('owner has accessible reversal action', !!reversalButton()?.querySelector('svg') && reversalButton().getAttribute('aria-label').includes('100'));
+    reversalButton().click();
+    const reversalForm = () => q('[data-payment-reversal] form');
+    check('action opens inline confirmation with account and reason', dialog.open && !q('[data-payment-reversal]').hidden && !!reversalForm()?.elements.account && !!reversalForm()?.elements.reason);
+    check('original payment account selected', reversalForm().elements.account.value === 'finance-bank');
+    check('ordinary payment form hidden during reversal', q('#supplyDetailsDialog > form').hidden);
+    check('reason receives focus', d.activeElement === reversalForm().elements.reason);
+    q('[data-cancel-reversal]').click();
+    check('cancel leaves payment and debt unchanged', historyBefore === w.eval('JSON.stringify(logisticsState.supplies[0])') && q('[data-payment-reversal]').hidden);
+    check('cancel restores ordinary payment form', !q('#supplyDetailsDialog > form').hidden);
+
+    let calls = 0;
+    const requests = [];
+    w.AshkanaApi.action = async (action, payload) => {
+      calls++;
+      requests.push({action, payload: clone(payload)});
+      throw new Error('Нет соединения. Повторите отмену оплаты');
+    };
+    reversalButton().click();
+    let form = reversalForm();
+    await form.onsubmit({preventDefault() {}});
+    check('empty reason blocks submission', calls === 0 && form.elements.reason.required && !form.elements.reason.checkValidity());
+    form.elements.reason.value = 'Ошибочная оплата поставщику';
+    await form.onsubmit({preventDefault() {}});
+    check('server failure appears inside form', form.querySelector('[data-error]').textContent.includes('Нет соединения'));
+    check('failure preserves accounting and allows retry', historyBefore === w.eval('JSON.stringify(logisticsState.supplies[0])') && !form.querySelector('[type="submit"]').disabled && !form.dataset.pending);
+    check('server receives selected payment account and reason', calls === 1 && requests[0].action === 'supply.payment.reverse' && requests[0].payload.id === 'reversal-supply' && requests[0].payload.paymentId === 'reversal-payment' && requests[0].payload.accountId === 'finance-bank' && requests[0].payload.reason === 'Ошибочная оплата поставщику');
+
+    await pause();
+    const rect = dialog.getBoundingClientRect();
+    check('dialog fits viewport', rect.left >= -1 && rect.right <= w.innerWidth + 1 && dialog.scrollWidth <= dialog.clientWidth + 1);
+    check('form controls fit dialog', [...form.querySelectorAll('select,textarea,button')].every(control => {
+      const box = control.getBoundingClientRect();
+      return box.left >= rect.left - 1 && box.right <= rect.right + 1;
+    }));
+
+    let release;
+    w.AshkanaApi.action = (action, payload) => {
+      calls++;
+      requests.push({action, payload: clone(payload)});
+      return new Promise(resolve => { release = resolve; });
+    };
+    const pending = form.onsubmit({preventDefault() {}});
+    await form.onsubmit({preventDefault() {}});
+    check('pending double submit sends one request', calls === 2 && form.dataset.pending === 'true');
+    check('pending confirmation controls are disabled', [...form.querySelectorAll('button,select,textarea')].every(control => control.disabled));
+    const after = clone(fixture);
+    const supply = after.logisticsState.supplies[0];
+    supply.paid = 0;
+    supply.debt = 200;
+    supply.paymentStatus = 'unpaid';
+    Object.assign(supply.payments[0], {reversedAt: now, reversedBy: 'Владелец', reversalReason: 'Ошибочная оплата поставщику'});
+    after.financeState.transactions.push({id: 'supplier-reversal', type: 'income', amount: 100, accountId: 'finance-bank',
+      categoryId: 'finance-income-supplier-refunds', branchId: 'b1', documentId: 'reversal-supply', occurredAt: now,
+      counterparty: 'Тестовый поставщик', comment: 'Ошибочная оплата поставщику', automatic: true});
+    release({version: 2, state: after});
+    await pending;
+    await pause();
+    check('success refreshes paid amount and supplier debt', w.eval('logisticsState.supplies[0].paid') === 0 && w.eval('logisticsState.supplies[0].debt') === 200 && dialog.querySelector('p strong').textContent.includes('200'));
+    check('payment history records reversal author and reason', dialog.textContent.includes('Отменён') && dialog.textContent.includes('Владелец') && dialog.textContent.includes('Ошибочная оплата поставщику'));
+    check('reversed payment cannot be reversed again', !reversalButton());
+    w.openSupplyPaymentReversal(w.eval('logisticsState.supplies[0]'), 'reversal-payment', w.eval('financeState.accounts'));
+    check('direct invocation also rejects reversed payment', q('[data-payment-reversal]').hidden && calls === 2);
+    w.renderFinance();
+    const metricsAfter = w.financeMetrics();
+    check('supplier refund leaves P&L unchanged', metricsAfter.net === metricsBefore.net && metricsAfter.otherIncome === 0 && q('#financeNetProfit').textContent === pnlBefore);
+    check('refund restores money to selected account', w.financeAccountBalance('finance-bank') === moneyBefore + 100 && w.financeAccountBalance('finance-bank') === 1000);
+    check('expense and compensating income both remain in history', w.eval('financeState.transactions.length') === 2 && w.eval('financeState.transactions.some(row=>row.id==="purchase-payment")'));
+
+    const branch = await appFrame('branch');
+    branch.win.hydrateServerWorkspace({version: 1, state: clone(fixture)});
+    branch.win.openSupplyDetails('reversal-supply');
+    check('branch staff cannot see reversal action for active payment', !branch.doc.querySelector('[data-reverse-payment]'));
+    branch.win.openSupplyPaymentReversal(branch.win.eval('logisticsState.supplies[0]'), 'reversal-payment', branch.win.eval('financeState.accounts'));
+    check('branch direct invocation cannot open reversal form', branch.doc.querySelector('[data-payment-reversal]').hidden);
+    check('no runtime errors in either role', w.__smokeErrors.length === 0 && branch.win.__smokeErrors.length === 0);
+    check('only expected mock writes occurred', calls === 2 && requests.every(entry => entry.action === 'supply.payment.reverse'));
+  } catch (error) {
+    check('runtime ' + error.stack, false);
+  }
+  document.querySelector('#results').textContent = checks.join('\n');
+})();
+</script>
+</body>
+</html>

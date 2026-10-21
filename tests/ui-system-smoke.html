@@ -6,6 +6,24 @@
     <script>
       const checks = [];
       const check = (name, condition) => checks.push(`${condition ? "PASS" : "FAIL"} ${name}`);
+      const frames = [];
+      async function loadFrame({url, html}) {
+        const frame = document.createElement("iframe");
+        frame.style.cssText = "position:absolute;left:-10000px;width:1440px;height:1000px;border:0";
+        frames.push(frame);
+        const loaded = new Promise(resolve => frame.addEventListener("load", resolve, {once:true}));
+        if (url) frame.src = url;
+        else frame.srcdoc = html.replace(/<script[^>]*>[\s\S]*?<\/script>/g, "").replace("<head>", '<head><base href="/">');
+        document.body.append(frame);
+        await loaded;
+        return frame;
+      }
+      function readable(frame, selectors) {
+        return selectors.every(selector => {
+          const elements = [...frame.contentDocument.querySelectorAll(selector)];
+          return elements.length > 0 && elements.every(element => parseFloat(frame.contentWindow.getComputedStyle(element).fontSize) >= 12);
+        });
+      }
       Promise.all([
         fetch("../admin.html?v=36").then((response) => response.text()),
         fetch("../admin.css?v=36").then((response) => response.text()),
@@ -13,22 +31,34 @@
         fetch("../index.html?v=27").then((response) => response.text()),
         fetch("../styles.css?v=27").then((response) => response.text()),
         fetch("../app.js?v=27").then((response) => response.text()),
-      ]).then(([adminHtml, adminCss, adminJs, posHtml, posCss, posJs]) => {
+      ]).then(async ([adminHtml, adminCss, adminJs, posHtml, posCss, posJs]) => {
         const legacySymbols = /[⌂◇♙⚙⌄⌁⇣⇄□◫↗≡▣↪＋☷⇩⇧▧⌕♧▱]/;
         check("admin-svg-system", adminHtml.includes('id="ui-home"') && adminHtml.includes('id="ui-inventory"') && adminHtml.includes('id="ui-close"'));
         check("pos-svg-system", posHtml.includes('id="pos-receipt"') && posHtml.includes('id="pos-card"') && posHtml.includes('id="pos-tray"'));
         check("no-legacy-symbol-icons", !legacySymbols.test(adminHtml + adminJs + posHtml + posJs));
-        check("readable-admin-type", !/font-size:\s*(7|8|9|10)px/.test(adminCss));
-        check("readable-pos-type", !/font-size:\s*(7|8|9|10)px/.test(posCss));
+        // Measure real controls after all linked stylesheets and overrides apply.
+        // Small numeric badges are not prose or input labels.
+        const [admin, pos] = await Promise.all([loadFrame({url:"../admin.html?test=1"}), loadFrame({html:posHtml})]);
+        admin.contentWindow.switchView("employees");
+        admin.contentWindow.openEmployeeForm();
+        check("readable-admin-type", readable(admin, [".employee-permission-group label small", ".main-nav p"]));
+        check("readable-pos-type", readable(pos, [".order-context-button small", ".order-header .eyebrow", ".cash-shift-summary span", ".cash-actions span", ".supply-lines-head", ".supply-form-footer span"]));
+        const posDoc = pos.contentDocument;
+        posDoc.querySelector("#cashDrawer").classList.remove("hidden");
+        check("cash-helper-text-fits", [...posDoc.querySelectorAll(".cash-actions button, .cash-shift-summary > div")].every(element => element.scrollWidth <= element.clientWidth + 1 && element.scrollHeight <= element.clientHeight + 1));
+        const addDish = posDoc.querySelector("#addProductionLine");
+        check("production-add-svg-label", Boolean(addDish.querySelector('svg[aria-hidden="true"] use[href="#pos-plus"]')) && addDish.textContent.includes("Добавить блюдо"));
         check("moderate-font-weight", !/font-weight:\s*(750|800|850|900)/.test(adminCss + posCss));
         check("responsive-admin-navigation", adminCss.includes("@media (max-width: 1080px)") && adminCss.includes("width: 78px"));
         check("icon-render-helpers", adminJs.includes("function uiIcon") && posJs.includes("posIcon"));
-        check("receipt-history-ui", adminHtml.includes('data-analytics-tab="receipts"') && adminHtml.includes('id="receiptModal"') && adminJs.includes("function renderReceipts"));
+        check("receipt-history-ui", adminHtml.includes('data-analytics-tab="receipts"') && adminHtml.includes('id="receiptsTable"') && adminJs.includes("function receiptInlineDetails") && adminJs.includes("function renderReceipts"));
         check("safe-catalog-delete-ui", adminHtml.includes('id="catalogDeleteModal"') && adminHtml.includes('id="deleteIngredientButton"') && adminHtml.includes('id="deleteRecipeButton"') && adminJs.includes("catalogDeleteConstraint"));
         document.querySelector("#results").textContent = checks.join("\n");
+        frames.forEach(frame => frame.remove());
         document.body.dataset.done = "true";
       }).catch((error) => {
         document.querySelector("#results").textContent = `FAIL ${error.message}`;
+        frames.forEach(frame => frame.remove());
         document.body.dataset.done = "true";
       });
     </script>

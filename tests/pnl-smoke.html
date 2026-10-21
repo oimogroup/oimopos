@@ -1,0 +1,55 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>P&L UI checks</title><pre id="results">RUNNING</pre><iframe id="app" src="/admin?test=1#finance/pnl" style="position:fixed;left:-10000px;width:1440px;height:1000px"></iframe><script>
+(async()=>{
+ const checks=[],check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');},pause=()=>new Promise(r=>setTimeout(r,20));
+ try {
+  const frame=document.querySelector('#app');await new Promise(r=>frame.addEventListener('load',r,{once:true}));
+  const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s),posts=[];
+  const context={start:'2026-10-01',end:'2026-10-22',companyToday:'2026-10-22',branchId:'all',currency:'KGS',revenue:10000,cost:4000,gross:6000,otherIncome:100,expenses:4000,net:2100,margin:21,expenseGroups:[{id:'rent',name:'Аренда <помещения>',amount:3000},{id:'wages',name:'Зарплата',amount:1000}],documents:[],payments:[],warnings:['Тестовое предупреждение'],categories:[{id:'rent',name:'Аренда <помещения>'}],accounts:[{id:'finance-bank',name:'Банк'}]};
+  const snapshot=w.eval('JSON.parse(JSON.stringify({branches,ingredients,recipes,products,preparations,menuCategories,ingredientCategories,stations,logisticsState,financeState,sales:[],companySettings:{general:{currency:"KGS",timezone:"Asia/Almaty"}}}))');
+  let failRead=false,failWrite=false;
+  w.AshkanaApi.pnl=async(start,end,branch)=>{if(failRead)throw new Error('Сервер недоступен');return JSON.parse(JSON.stringify({...context,start,end,branchId:branch}));};
+  w.AshkanaApi.action=async(action,payload)=>{
+   posts.push({action,payload});if(failWrite)throw new Error('Сумма превышает остаток');
+   if(action==='pnl.expense.create')context.documents.push({...payload,id:'expense1',paid:0,recognized:2200});
+   if(action==='pnl.pay'){context.documents[0].paid+=payload.amount;context.payments.push({...payload,id:'payment1'});}
+   if(action==='pnl.reverse'){context.documents[0].paid=0;context.payments[0].reversedAt='2026-10-22';}
+   if(action==='pnl.expense.void'){context.documents[0].voidedAt='2026-10-22';context.documents[0].voidReason=payload.reason;}
+   return {version:11,state:snapshot,entity:{id:'fixture'}};
+  };
+  q('#financeDateFrom').value=context.start;q('#financeDateTo').value=context.end;
+  w.OimoPnl.enableForTest();for(let i=0;i<100&&q('#pnlAddExpense').disabled;i++)await pause();
+  check('pnl-accrual-report-visible',q('#pnlStatus').textContent.includes('По начислению')&&q('#financeNetProfit').textContent.replace(/\s/g,'').includes('2100'));
+  check('category-escaped',q('#financePnlRows').textContent.includes('Аренда <помещения>')&&!q('#financePnlRows помещения'));
+  check('margin-and-warnings',q('#financePnlRows').textContent.includes('21%')&&q('#pnlWarnings').textContent.includes('предупреждение'));
+  check('expense-controls-available',!q('#pnlAddExpense').hidden&&!q('#pnlExpenseSection').hidden);
+  q('#pnlAddExpense').click();const form=q('#pnlForm');
+  check('expense-default-whole-month',form.elements.start.value==='2026-10-01'&&form.elements.end.value==='2026-10-31');
+  form.elements.amount.value='3100';form.elements.reason.value='Аренда помещения';form.requestSubmit();
+  for(let i=0;i<100&&(q('#pnlDialog').open||q('#pnlAddExpense').disabled);i++)await pause();
+  check('unpaid-expense-is-created-with-period',posts[0]?.action==='pnl.expense.create'&&posts[0].payload.amount===3100&&posts[0].payload.start==='2026-10-01'&&!('accountId' in posts[0].payload));
+  check('expense-and-debt-shown',q('#pnlExpenseList').textContent.includes('Аренда помещения')&&!!q('[data-pnl-pay]'));
+  q('[data-pnl-pay]').click();form.elements.amount.value='1000';form.elements.accountId.value='finance-bank';form.elements.reason.value='Первая часть оплаты';form.requestSubmit();
+  for(let i=0;i<100&&(q('#pnlDialog').open||q('#pnlAddExpense').disabled);i++)await pause();
+  check('partial-payment-sent-once',posts.filter(p=>p.action==='pnl.pay').length===1&&posts.at(-1).payload.amount===1000);
+  check('payment-does-not-double-expense',q('#financeNetProfit').textContent.replace(/\s/g,'').includes('2100')&&q('#pnlExpenseList').textContent.replace(/\s/g,'').includes('2100'));
+  q('[data-pnl-reverse]').click();form.elements.accountId.value='finance-bank';form.elements.reason.value='Возвращена ошибочная оплата';form.requestSubmit();
+  for(let i=0;i<100&&(q('#pnlDialog').open||q('#pnlAddExpense').disabled);i++)await pause();
+  check('reversal-shows-void-control',posts.at(-1).action==='pnl.reverse'&&!!q('[data-pnl-void]'));
+  failWrite=true;q('[data-pnl-void]').click();form.elements.reason.value='Ошибочная запись';form.requestSubmit();
+  for(let i=0;i<100&&q('#pnlSubmit').disabled;i++)await pause();
+  check('rejection-keeps-form-open',q('#pnlDialog').open&&q('#pnlError').textContent.includes('остаток'));
+  q('#pnlCancel').click();
+  let blob;w.URL.createObjectURL=b=>{blob=b;return 'blob:test';};w.HTMLAnchorElement.prototype.click=function(){};
+  w.exportFinanceCsv();await pause();const csv=await blob.text();
+  check('pnl-export-contains-report-not-transactions',csv.includes('Чистая прибыль')&&csv.includes('Рентабельность')&&!csv.includes('Контрагент'));
+  failRead=true;w.OimoPnl.refresh();
+  check('stale-profit-is-hidden-during-refresh',q('#financeNetProfit').textContent==='…'&&q('#exportFinanceButton').disabled);
+  for(let i=0;i<100&&q('#pnlStatus').textContent.includes('Рассчитываем');i++)await pause();
+  check('server-failure-is-not-zero-profit',q('#financeNetProfit').textContent==='—'&&q('#pnlStatus').textContent.includes('Сервер недоступен'));
+  w.switchFinanceTab('transactions');check('cash-export-independent-of-pnl-failure',!q('#exportFinanceButton').disabled);w.switchFinanceTab('pnl');check('failed-pnl-export-remains-disabled',q('#exportFinanceButton').disabled);
+  check('only-mocked-pnl-writes',posts.every(p=>p.action.startsWith('pnl.')));
+  if(new URLSearchParams(location.search).has('preview')){failRead=false;w.OimoPnl.refresh();await new Promise(r=>setTimeout(r,200));frame.style='width:100%;height:1050px;border:0';document.querySelector('#results').hidden=true;document.body.style.margin='0';}
+ } catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

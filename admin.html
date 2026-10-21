@@ -4,9 +4,9 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=57" />
-    <link rel="stylesheet" href="minimal.css?v=accounting-24" />
-      <link rel="stylesheet" href="oimo.css?v=11" />
+    <link rel="stylesheet" href="admin.css?v=pnl-1" />
+    <link rel="stylesheet" href="minimal.css?v=actions-15" />
+      <link rel="stylesheet" href="oimo.css?v=clear-ux-1" />
   </head>
   <body data-ui="admin">
     <svg class="ui-icon-sprite" aria-hidden="true">
@@ -85,6 +85,7 @@
             <button class="active" data-owner-finance-tab="pnl" type="button">Прибыль и убытки</button>
             <button data-owner-finance-tab="transactions" type="button">Транзакции</button>
             <button data-owner-finance-tab="shifts" type="button">Кассовые смены</button>
+            <button data-owner-finance-tab="payroll" type="button">Зарплата</button>
             <button data-owner-finance-tab="accounts" type="button">Счета</button>
             <button data-owner-finance-tab="categories" type="button">Категории</button>
           </div>
@@ -92,6 +93,7 @@
           <p id="ownerScopeNavLabel">Доступ</p>
           <button class="nav-item" data-nav-section="access" type="button" aria-controls="accessNavSubmenu" aria-expanded="false"><svg class="ui-icon"><use href="#ui-users"/></svg>Доступ <svg class="ui-icon nav-chevron"><use href="#ui-chevron"/></svg></button>
           <div class="nav-submenu" id="accessNavSubmenu">
+            <button data-owner-access-view="branches" type="button">Заведения</button>
             <button data-owner-access-view="registers" type="button">Кассы</button>
             <button data-owner-access-view="employees" type="button">Сотрудники</button>
           </div>
@@ -119,6 +121,7 @@
         </nav>
 
         <div class="sidebar-bottom">
+          <a href="/docs/user-guide/" target="_blank" rel="noopener" id="userGuideLink"><svg class="ui-icon"><use href="#ui-info"/></svg>Руководство</a>
           <a href="/pos" id="cashierLink"><svg class="ui-icon"><use href="#ui-cashier"/></svg>Перейти в кассу</a>
           <div class="sync-state"><i></i><span><strong>Данные сохранены</strong><small>защищённый сервер</small></span></div>
         </div>
@@ -128,23 +131,25 @@
         <header class="admin-topbar">
           <div class="breadcrumbs"><span>Oimo</span><b>/</b><strong id="breadcrumbTitle">Главная</strong></div>
           <div class="topbar-tools">
-            <button class="period-button" type="button">Последние 7 дней <svg class="ui-icon"><use href="#ui-chevron"/></svg></button>
             <div class="notification-center" id="notificationCenter">
-              <button class="notification-button" id="notificationButton" type="button" aria-label="Уведомления" aria-expanded="false" aria-controls="notificationPanel">
+              <button class="notification-button icon-button" id="notificationButton" type="button" aria-label="Уведомления" aria-expanded="false" aria-controls="notificationPanel">
                 <svg viewBox="0 0 24 24" aria-hidden="true"><path d="M18 8a6 6 0 0 0-12 0c0 7-3 7-3 9h18c0-2-3-2-3-9M10 21h4" /></svg>
                 <i class="notification-badge hidden" id="notificationBadge">0</i>
               </button>
               <section class="notification-panel hidden" id="notificationPanel" aria-label="Список уведомлений">
-                <header><div><strong>Уведомления</strong><small id="notificationSummary">Нет новых</small></div><button class="hidden" id="markNotificationsRead" type="button">Прочитать все</button></header>
+                <header><div><strong>Уведомления</strong><small id="notificationSummary">Нет новых</small></div><button class="hidden secondary-action" id="markNotificationsRead" type="button">Прочитать все</button></header>
                 <div class="notification-list" id="notificationList"></div>
               </section>
             </div>
             <button class="owner-button" type="button"><span id="sessionInitials">АК</span><div><strong id="sessionName">Администратор</strong><small id="sessionRole">Администратор компании</small></div></button>
-            <button class="signout-button" id="signOutButton" type="button" title="Выйти" aria-label="Выйти"><svg class="ui-icon"><use href="#ui-logout"/></svg></button>
+            <button class="signout-button icon-button" id="signOutButton" type="button" title="Выйти" aria-label="Выйти"><svg class="ui-icon"><use href="#ui-logout"/></svg></button>
           </div>
         </header>
 
         <main class="admin-content">
+          <div class="mobile-workspace-navigation hidden" id="mobileWorkspaceNavigation">
+            <select id="mobileWorkspaceSelect" aria-label="Подраздел текущего раздела"></select>
+          </div>
           <section class="admin-view active getting-started" id="view-dashboard">
             <div class="page-heading getting-started-heading">
               <div><h1>Начало работы</h1><p>Всё, что нужно для первой продажи</p></div>
@@ -174,7 +179,7 @@
                   <span class="start-help-icon"><svg class="ui-icon"><use href="#ui-info"/></svg></span>
                   <h2>Как устроена работа</h2>
                   <p>От закупки продуктов до первого чека — весь процесс по шагам.</p>
-                  <a href="docs/program-process-flow.html" target="_blank" rel="noopener">Открыть инструкцию<svg class="ui-icon"><use href="#ui-arrow"/></svg></a>
+                  <a href="/docs/user-guide/" target="_blank" rel="noopener">Инструкция со скриншотами<svg class="ui-icon"><use href="#ui-arrow"/></svg></a>
                 </article>
                 <article class="start-help-card start-help-links">
                   <h2>Быстрый переход</h2>
@@ -197,7 +202,7 @@
 
             <div class="menu-pane active" id="menu-pane-recipes">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong><span id="recipeCount">0</span> тех. карт</strong><div><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-columns"/></svg>Столбцы</button><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button></div></div>
+                <div class="poster-list-meta"><strong><span id="recipeCount">0</span> тех. карт</strong></div>
                 <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="recipeSearch" type="search" placeholder="Быстрый поиск" /></label><select id="recipeCategory"><option>Все категории</option><option>Первые</option><option>Горячее</option><option>Салаты</option><option>Выпечка</option></select><select id="recipeStationFilter"><option>Все цеха</option></select><select><option>Столовая №1 — Манаса</option></select></div>
                 <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Цех</th><th>Выход</th><th>Себестоимость</th><th>Цена</th><th>Наценка</th><th></th><th></th></tr></thead><tbody id="recipesTable"></tbody></table>
               </article>
@@ -205,7 +210,7 @@
 
             <div class="menu-pane" id="menu-pane-products">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong><span id="productsCount">0</span> товаров</strong><div><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-columns"/></svg>Столбцы</button><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button></div></div>
+                <div class="poster-list-meta"><strong><span id="productsCount">0</span> товаров</strong></div>
                 <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="productSearch" type="search" placeholder="Быстрый поиск" /></label><select><option>Все категории</option><option>Напитки</option><option>Сладости</option></select><select><option>Столовая №1 — Манаса</option></select></div>
                 <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Штрихкод</th><th>Себестоимость</th><th>Цена</th><th>Наценка</th><th>Остаток</th><th></th></tr></thead><tbody id="productsTable"></tbody></table>
               </article>
@@ -213,7 +218,7 @@
 
             <div class="menu-pane" id="menu-pane-preparations">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong><span id="preparationsCount">0</span> полуфабриката</strong><div><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button></div></div>
+                <div class="poster-list-meta"><strong><span id="preparationsCount">0</span> полуфабриката</strong></div>
                 <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="preparationSearch" type="search" placeholder="Быстрый поиск" /></label><select id="preparationCategoryFilter"><option>Все категории</option><option>Заготовки кухни</option><option>Холодный цех</option><option>Соусы и заправки</option><option>Выпечка</option></select></div>
                 <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Цех</th><th>Выход</th><th>Себестоимость</th><th>Используется</th><th></th></tr></thead><tbody id="preparationsTable"></tbody></table>
               </article>
@@ -221,16 +226,16 @@
 
             <div class="menu-pane" id="menu-pane-ingredients">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong><span id="ingredientCount">0</span> ингредиентов <small id="ingredientFilteredCount"></small></strong><div><details class="ingredient-columns"><summary>Столбцы</summary><div id="ingredientColumnOptions"></div></details><button type="button" id="exportIngredientsButton">Экспорт CSV</button><button type="button" id="importIngredientsButton">Импорт CSV</button><input id="ingredientImportFile" type="file" accept=".csv,text/csv" hidden></div></div>
+                <div class="poster-list-meta"><strong><span id="ingredientCount">0</span> ингредиентов <small id="ingredientFilteredCount"></small></strong><details class="ux-tools"><summary>Действия со списком <svg class="ui-icon" aria-hidden="true"><use href="#ui-chevron"/></svg></summary><div class="ux-tools-panel"><details class="ingredient-columns"><summary>Столбцы</summary><div id="ingredientColumnOptions"></div></details><button class="secondary-action" type="button" id="exportIngredientsButton">Экспорт CSV</button><button class="secondary-action" type="button" id="importIngredientsButton">Импорт CSV</button><input id="ingredientImportFile" type="file" accept=".csv,text/csv" hidden></div></details></div>
                 <div class="table-toolbar poster-toolbar ingredient-filters">
                   <label class="admin-search"><svg class="ui-icon"><use href="#ui-search"/></svg><input id="ingredientSearch" type="search" placeholder="Название, код или штрихкод" aria-label="Поиск ингредиентов"></label>
                   <select id="ingredientCategoryFilter" aria-label="Категория"><option value="">Все категории</option></select>
-                  <select id="ingredientUnitFilter" aria-label="Единица измерения"><option value="">Все единицы</option><option>кг</option><option>л</option><option>шт</option></select>
                   <select id="ingredientBranchFilter" aria-label="Склад"></select>
+                  <details class="ux-advanced-filters"><summary>Ещё фильтры <span id="ingredientExtraFilterCount" hidden></span><svg class="ui-icon" aria-hidden="true"><use href="#ui-chevron"/></svg></summary><div class="ux-filter-fields">                  <select id="ingredientUnitFilter" aria-label="Единица измерения"><option value="">Все единицы</option><option>кг</option><option>л</option><option>шт</option></select>
                   <select id="ingredientStockFilter" aria-label="Наличие"><option value="">Любой остаток</option><option value="positive">Есть в наличии</option><option value="zero">Нулевой остаток</option><option value="low">Ниже лимита</option></select>
                   <select id="ingredientUsageFilter" aria-label="Использование"><option value="">Любое использование</option><option value="used">Используется в составах</option><option value="unused">Не используется</option></select>
                   <select id="ingredientSort" aria-label="Сортировка"><option value="name">Название А–Я</option><option value="name-desc">Название Я–А</option><option value="cost">Себестоимость по возрастанию</option><option value="cost-desc">Себестоимость по убыванию</option><option value="stock">Остаток по возрастанию</option><option value="stock-desc">Остаток по убыванию</option></select>
-                  <button id="resetIngredientFilters" type="button" class="secondary-action">Сбросить</button>
+                  <button id="resetIngredientFilters" type="button" class="secondary-action">Сбросить</button></div></details>
                 </div>
                 <table class="data-table poster-menu-table" id="ingredientRegistry"><thead><tr><th>Название</th><th data-ingredient-column="category">Категория</th><th data-ingredient-column="unit">Ед. измерения</th><th data-ingredient-column="cost">Себестоимость</th><th data-ingredient-column="stock">Остаток</th><th data-ingredient-column="usage">В составе</th><th>Действия</th></tr></thead><tbody id="ingredientsTable"></tbody></table>
                 <p class="ingredient-list-note">Остаток и себестоимость показаны для выбранного склада. Детали показывают техкарты и полуфабрикаты, в которых используется ингредиент.</p>
@@ -276,7 +281,7 @@
 
             <div class="production-pane active" id="production-pane-record">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong>План и факт на выбранный день</strong><div><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button></div></div>
+                <div class="poster-list-meta"><strong>План и факт на выбранный день</strong></div>
                 <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="productionSearch" type="search" placeholder="Найти блюдо" /></label><select id="productionStationFilter"><option>Все цеха</option><option>Кухня</option><option>Холодный цех</option></select><span class="production-legend"><i></i> план <i></i> факт</span></div>
                 <table class="data-table production-record-table"><thead><tr><th>Блюдо</th><th>План, кг</th><th>Расчёт, порц.</th><th>Норма выдачи</th><th>Приготовлено</th><th>На раздаче</th><th>Выдано</th><th>Остаток</th><th>Статус</th><th></th></tr></thead><tbody id="productionRecordTable"></tbody></table>
               </article>
@@ -284,7 +289,7 @@
 
 <div class="custody-admin-entry"><button id="openCustodyJournal" class="primary-button" type="button">Приёмка, списания и расхождения</button></div><div id="adminCustodyPanel"></div>
             <div class="production-pane" id="production-pane-journal">
-              <article class="panel table-panel"><div class="poster-list-meta"><strong>Акты приготовления и передачи</strong><div><button type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button></div></div><table class="data-table"><thead><tr><th>Документ</th><th>Время</th><th>Блюдо</th><th>Факт выпуска</th><th>Передано</th><th>Температура</th><th>Состояние</th></tr></thead><tbody id="productionJournalTable"></tbody></table></article>
+              <article class="panel table-panel"><div class="poster-list-meta"><strong>Акты приготовления и передачи</strong></div><table class="data-table"><thead><tr><th>Документ</th><th>Время</th><th>Блюдо</th><th>Факт выпуска</th><th>Передано</th><th>Температура</th><th>Состояние</th></tr></thead><tbody id="productionJournalTable"></tbody></table></article>
             </div>
           </section>
 
@@ -294,7 +299,7 @@
             <div class="stock-pane active" id="stock-pane-overview">
               <div class="inventory-summary"><article><span>Стоимость остатков</span><strong id="stockValue">0 сом</strong><small id="stockValueCaption">на складе точки</small></article><article><span>Позиций на складе</span><strong id="stockPositions">0</strong><small id="stockPositionsCaption">фактически есть на точке</small></article><article class="warning"><span id="lowStockLabel">Ниже лимита</span><strong id="lowStockCount">0</strong><small id="lowStockCaption">нужно заказать поставщику</small></article><article><span id="lastSupplyLabel">Последняя приёмка</span><strong id="lastSupplyTotal">0 сом</strong><small id="lastSupplyCaption">поставок пока нет</small></article></div>
               <article class="panel table-panel">
-                <div class="table-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="stockSearch" type="search" placeholder="Найти продукт" /></label><select id="stockWarehouseFilter"><option>Столовая №1 — Манаса</option></select><select id="stockCategoryFilter"><option>Все категории</option><option>Мясо</option><option>Крупы</option><option>Овощи</option></select><button class="filter-button" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button></div>
+                <div class="table-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="stockSearch" type="search" placeholder="Найти продукт" /></label><select id="stockWarehouseFilter"><option>Столовая №1 — Манаса</option></select><select id="stockCategoryFilter"><option>Все категории</option><option>Мясо</option><option>Крупы</option><option>Овощи</option></select></div>
                 <table class="data-table"><thead><tr><th>Продукт</th><th>Категория</th><th>Остаток</th><th>Средняя цена</th><th>Стоимость</th><th id="stockLimitHeading">Лимит</th><th>Статус</th></tr></thead><tbody id="stockTable"></tbody></table>
               </article>
             </div>
@@ -307,7 +312,7 @@
                   <label><span>По дату</span><input id="documentDateTo" type="date" /></label>
                   <label><span id="documentPartyLabel">Поставщик</span><select id="documentPartyFilter"><option value="all">Все поставщики</option></select></label>
                   <label><span>Статус</span><select id="documentStatusFilter"><option value="all">Все статусы</option></select></label>
-                  <button class="document-filter-reset" id="resetDocumentFilters" type="button">Сбросить</button>
+                  <button class="document-filter-reset secondary-action" id="resetDocumentFilters" type="button">Сбросить</button>
                 </div>
                 <div class="document-filter-result"><span id="documentFilterSummary">Показаны все документы</span></div>
                 <table class="data-table"><thead id="documentsTableHead"></thead><tbody id="documentsTableBody"></tbody></table>
@@ -329,24 +334,39 @@
             <div class="finance-filters">
               <label><span>Период</span><select id="financePeriodPreset"><option value="today">Сегодня</option><option value="7">Последние 7 дней</option><option value="30" selected>Последние 30 дней</option><option value="month">Текущий месяц</option><option value="all">Всё время</option><option value="custom">Свой период</option></select></label>
               <label><span>С</span><input id="financeDateFrom" type="date" /></label><label><span>По</span><input id="financeDateTo" type="date" /></label>
-              <label><span>Заведение</span><select id="financeBranchFilter"></select></label><button class="filter-button" id="exportFinanceButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт CSV</button>
+              <label><span>Заведение</span><select id="financeBranchFilter"></select></label><button class="filter-button secondary-action" id="exportFinanceButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт CSV</button>
             </div>
-            <div class="section-tabs" id="financeTabs"><button class="active" data-finance-tab="pnl" type="button">Прибыль и убытки</button><button data-finance-tab="transactions" type="button">Операции</button><button data-finance-tab="shifts" type="button">Кассовые смены</button><button data-finance-tab="accounts" type="button">Счета</button><button data-finance-tab="categories" type="button">Категории</button></div>
+            <div class="section-tabs" id="financeTabs"><button class="active" data-finance-tab="pnl" type="button">Прибыль и убытки</button><button data-finance-tab="transactions" type="button">Операции</button><button data-finance-tab="shifts" type="button">Кассовые смены</button><button data-finance-tab="payroll" type="button">Зарплата</button><button data-finance-tab="accounts" type="button">Счета</button><button data-finance-tab="categories" type="button">Категории</button></div>
             <div class="finance-grid"><article class="finance-hero"><span>Чистая прибыль</span><strong id="financeNetProfit">0 сом</strong><i id="financeNetCaption">за выбранный период</i></article><article><span>Выручка</span><strong id="financeRevenue">0 сом</strong><small id="financeReceiptsCount">0 чеков</small></article><article><span>Операционные расходы</span><strong id="financeExpenses">0 сом</strong><small>без закупки запасов</small></article><article><span>Деньги на счетах</span><strong id="financeTotalBalance">0 сом</strong><small id="financeAccountsCount">0 активных счетов</small></article></div>
 
             <div class="finance-pane active" id="finance-pane-pnl">
-              <div class="finance-main-grid"><article class="panel pnl-panel"><div class="panel-heading"><div><h2>Отчёт о прибыли и убытках</h2><p id="financePnlCaption">Вся сеть</p></div></div><div id="financePnlRows"></div></article><article class="panel finance-balance-panel"><div class="panel-heading"><div><h2>Остатки по счетам</h2><p>Фактическое движение денег</p></div></div><div id="financeBalanceList"></div></article></div>
+              <div class="finance-main-grid"><article class="panel pnl-panel"><div class="panel-heading"><div><h2>P&L · Прибыли и убытки</h2><p id="financePnlCaption">Вся сеть</p></div><button type="button" class="secondary-action" id="pnlAddExpense" hidden>Добавить расход</button></div><p id="pnlStatus" role="status"></p><div id="financePnlRows"></div><div id="pnlWarnings"></div><p class="payroll-note" id="pnlMethod" hidden>Расход относится к периоду, за который он начислен. Оплата меняет деньги на счетах. Зарплата рассчитывается автоматически по ставкам и завершённому рабочему времени. Налоги учитываются в сумме, внесённой вами.</p></article><article class="panel finance-balance-panel"><div class="panel-heading"><div><h2>Остатки по счетам</h2><p>Фактическое движение денег</p></div></div><div id="financeBalanceList"></div></article></div>
+              <details class="payroll-section" id="pnlExpenseSection" hidden><summary>Расходы по периодам и их оплата</summary><p class="payroll-note">Аренду, коммуналку и другие расходы вносите здесь один раз. Оплату проводите из этой записи, чтобы не задвоить расход отдельной финансовой операцией. Для исправления отмените оплату, затем расход и создайте новую запись.</p><div id="pnlExpenseList"></div></details>
             </div>
             <div class="finance-pane" id="finance-pane-transactions">
+              <details class="payroll-section" id="offlineReviewSection" hidden><summary>Автономные чеки: требуется проверка</summary><p class="payroll-note">Оплаченные на кассе чеки с расхождениями остаются здесь до решения владельца. Проверьте остатки и смену перед повторным проведением. Старые цены и исходная дата чека сохраняются.</p><p id="offlineReviewStatus" role="status"></p><div id="offlineReviewList"></div></details>
               <article class="panel table-panel finance-table-panel"><div class="table-toolbar finance-transaction-toolbar"><label class="admin-search"><svg class="ui-icon"><use href="#ui-search"/></svg><input id="financeTransactionSearch" type="search" placeholder="Номер, категория или контрагент" /></label><select id="financeTransactionTypeFilter"><option value="all">Все типы</option><option value="sale">Продажи</option><option value="income">Поступления</option><option value="expense">Расходы</option><option value="transfer">Переводы</option></select><select id="financeTransactionAccountFilter"><option value="all">Все счета</option></select><span class="analytics-result-count" id="financeTransactionCount">0 операций</span></div><div class="table-scroll"><table class="data-table finance-transaction-table"><thead><tr><th>Операция</th><th>Дата</th><th>Точка</th><th>Категория</th><th>Счёт</th><th>Контрагент / комментарий</th><th>Сумма</th><th></th></tr></thead><tbody id="financeTransactionsTable"></tbody></table></div></article>
             </div>
             <div class="finance-pane" id="finance-pane-shifts"><article class="panel table-panel finance-table-panel"><div class="panel-heading"><div><h2>Кассовые смены</h2><p>Открытие, расчётный остаток, факт и расхождения</p></div></div><div class="table-scroll"><table class="data-table finance-shifts-table"><thead><tr><th>Смена</th><th>Касса и точка</th><th>Открыл</th><th>Открытие</th><th>Продажи наличными</th><th>Ожидалось</th><th>Факт</th><th>Расхождение</th><th>Статус</th></tr></thead><tbody id="financeShiftsTable"></tbody></table></div></article></div>
+            <div class="finance-pane" id="finance-pane-payroll">
+              <section class="payroll-intro"><div><h2>Зарплата команды</h2><p>Рабочее время → предварительный расчёт → начисление → выплата.</p></div><button class="secondary-action" type="button" id="payrollRefresh">Обновить</button></section>
+              <p class="payroll-status" id="payrollStatus" role="status" aria-live="polite"></p>
+              <div class="payroll-toolbar"><label>С даты<input id="payrollFrom" type="date"></label><label>По дату<input id="payrollTo" type="date"></label><button id="payrollCalculate" class="secondary-action" type="button">Рассчитать</button><button id="payrollApprove" class="primary-button" type="button" disabled>Начислить за период</button></div>
+              <p class="payroll-note">Проценты фиксируются при продаже. Возврат уменьшает начисление датой возврата. Открытые рабочие смены не входят в часы и фиксированную оплату за смену.</p>
+              <div class="payroll-summary" id="payrollSummary"></div>
+              <article class="panel table-panel"><div class="document-toolbar"><div><h2>Предварительный расчёт</h2><p>Начисленная ведомость сохраняет суммы и не меняется при изменении ставок.</p></div><button class="secondary-action" id="payrollExport" type="button" disabled>Скачать CSV</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Сотрудник</th><th>Часы / смены</th><th>Ставка</th><th>Проценты и возвраты</th><th>Корректировки</th><th>Начислить</th><th>Общий баланс</th><th></th></tr></thead><tbody id="payrollRows"></tbody></table></div></article>
+              <details class="payroll-section" open><summary>Ставки сотрудников</summary><p class="payroll-note">Новые ставки действуют с выбранной даты, не раньше сегодня. Месячная ставка начисляется по календарным дням, часовая и сменная — по завершённым рабочим сменам. Блокировка доступа не означает увольнение: для прекращения начислений назначьте нулевую ставку.</p><div id="payrollPolicies"></div></details>
+              <details class="payroll-section"><summary>Рабочее время</summary><div class="payroll-section-actions"><p class="payroll-note">Сотрудник отмечает начало и конец рабочего дня в кассе. Владелец может внести или исправить время с основанием.</p><button class="secondary-action" id="payrollAddTime" type="button">Добавить рабочую смену</button></div><div id="payrollTime"></div></details>
+              <details class="payroll-section" open><summary>Начисленные ведомости</summary><div id="payrollRuns"></div></details>
+              <details class="payroll-section"><summary>Выплаты и авансы</summary><p class="payroll-note">Выплата создаёт расход в финансах один раз. Аванс засчитывается при начислении. Отмена выплаты создаёт обратный приход и восстанавливает долг.</p><div id="payrollPayments"></div></details>
+              <details class="payroll-section"><summary>Основания начислений и корректировок</summary><div id="payrollEvents"></div></details>
+            </div>
             <div class="finance-pane" id="finance-pane-accounts"><article class="panel table-panel finance-table-panel"><div class="document-toolbar"><div><h2>Финансовые счета</h2><p>Кассы точек, банк, карты, сейф и другие места хранения денег</p></div><button class="primary-button" id="addFinanceAccountButton" type="button"><svg class="ui-icon"><use href="#ui-plus"/></svg>Добавить счёт</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Счёт</th><th>Тип</th><th>Точка</th><th>Начальный остаток</th><th>Текущий остаток</th><th>Статус</th><th></th></tr></thead><tbody id="financeAccountsTable"></tbody></table></div></article></div>
             <div class="finance-pane" id="finance-pane-categories"><div class="finance-categories-grid"><article class="panel"><div class="document-toolbar"><div><h2>Категории поступлений</h2><p>Кроме выручки по чекам</p></div><button class="secondary-action" data-add-finance-category="income" type="button"><svg class="ui-icon"><use href="#ui-plus"/></svg>Добавить</button></div><div class="finance-category-list" id="financeIncomeCategories"></div></article><article class="panel"><div class="document-toolbar"><div><h2>Категории расходов</h2><p>Статьи операционных затрат</p></div><button class="secondary-action" data-add-finance-category="expense" type="button"><svg class="ui-icon"><use href="#ui-plus"/></svg>Добавить</button></div><div class="finance-category-list" id="financeExpenseCategories"></div></article></div></div>
           </section>
 
           <section class="admin-view poster-analytics-view" id="view-reports">
-            <div class="page-heading analytics-page-heading"><div><h1>Статистика продаж</h1></div><div class="heading-actions"><button class="filter-button" id="exportAnalyticsButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button class="filter-button" id="printAnalyticsButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button></div></div>
+            <div class="page-heading analytics-page-heading"><div><h1>Статистика продаж</h1></div><div class="heading-actions"><button class="filter-button secondary-action" id="exportAnalyticsButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button class="filter-button secondary-action" id="printAnalyticsButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button></div></div>
 
             <div class="analytics-filters">
               <label><span>Период</span><select id="reportPeriodPreset"><option value="today">Сегодня</option><option value="7">Последние 7 дней</option><option value="30" selected>Последние 30 дней</option><option value="month">Текущий месяц</option><option value="all">Всё время</option><option value="custom">Свой период</option></select></label>
@@ -442,19 +462,31 @@
 
     <div class="side-drawer-backdrop hidden" id="recipeDrawer">
       <aside class="detail-drawer">
-        <header><div><p>Технологическая карта</p><h2 id="drawerRecipeName">Плов праздничный</h2></div><button class="drawer-close" aria-label="Закрыть" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Технологическая карта</p><h2 id="drawerRecipeName">Плов праздничный</h2></div><button class="drawer-close icon-button" aria-label="Закрыть" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="recipe-overview"><div><span>Цена продажи</span><strong id="drawerSalePrice">0 сом</strong></div><div><span>Себестоимость</span><strong id="drawerCost">0 сом</strong></div><div><span>Фудкост</span><strong id="drawerFoodCost">0%</strong></div></div>
-        <div class="drawer-section-title"><div><h3>Состав на 1 порцию</h3><p>Стоимость пересчитывается по поставкам</p></div><button id="editRecipeButton" type="button">Изменить</button></div>
+        <div class="drawer-section-title"><div><h3>Состав на 1 порцию</h3><p>Стоимость пересчитывается по поставкам</p></div><button class="secondary-action" id="editRecipeButton" type="button">Изменить</button></div>
+        <div id="drawerRecipeImportNotes" hidden></div>
         <table class="composition-table"><thead><tr><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Стоимость</th></tr></thead><tbody id="compositionTable"></tbody></table>
-        <div class="calculation-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p><strong>Как рассчитано</strong>Сумма стоимости ингредиентов по их текущей средневзвешенной цене. Продажа автоматически спишет указанное нетто со склада.</p></div>
+        <div class="calculation-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p><strong>Как рассчитано</strong>Себестоимость рассчитывается по брутто и текущей средневзвешенной цене ингредиентов. В столовой сырьё списывается при выпуске партии, в ресторане — при оплате заказа.</p></div>
         <div class="recipe-result"><span>Выход блюда <b id="drawerYield">0 г</b></span><strong>Итого <b id="drawerTotalCost">0 сом</b></strong></div>
         <button class="primary-button drawer-save" type="button">Сохранить изменения</button>
       </aside>
     </div>
 
+    <div class="side-drawer-backdrop hidden" id="preparationCompositionDrawer">
+      <aside class="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="preparationCompositionName">
+        <header><div><p>Полуфабрикат</p><h2 id="preparationCompositionName"></h2></div><button class="drawer-close icon-button" id="closePreparationComposition" aria-label="Закрыть состав" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <div class="recipe-overview"><div><span>Выход партии</span><strong id="preparationCompositionYield"></strong></div><div><span>Себестоимость партии</span><strong id="preparationCompositionCost"></strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationCompositionUnitCost"></strong></div></div>
+        <div class="drawer-section-title"><h3>Состав на партию</h3><button class="secondary-action" id="editPreparationComposition" type="button">Изменить</button></div>
+        <table class="composition-table"><thead><tr><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Стоимость</th></tr></thead><tbody id="preparationCompositionTable"></tbody></table>
+        <section id="preparationCompositionProcessSection" hidden><h3>Приготовление</h3><p id="preparationCompositionProcess"></p></section>
+        <button class="primary-button preparation-composition-done" id="preparationCompositionDone" type="button">Закрыть</button>
+      </aside>
+    </div>
+
     <div class="modal-backdrop hidden" id="receiptModal">
       <section class="admin-modal receipt-modal">
-        <header><div><p>История продаж</p><h2 id="receiptModalTitle">Чек</h2></div><button class="modal-close" aria-label="Закрыть" data-close="receiptModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>История продаж</p><h2 id="receiptModalTitle">Чек</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="receiptModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="receipt-detail-meta" id="receiptDetailsMeta"></div>
         <div class="receipt-detail-document">
           <div class="receipt-detail-heading"><div><strong>Состав чека</strong><small>Фактические цены и себестоимость на момент продажи</small></div><span class="status-badge good">Оплачен</span></div>
@@ -476,18 +508,18 @@
       <section class="admin-modal supply-document-modal">
         <header class="supply-page-header">
           <div class="supply-page-heading">
-            <button class="supply-page-back" aria-label="Вернуться к поставкам" data-close="supplyModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-arrow"/></svg></button>
+            <button class="supply-page-back icon-button" aria-label="Вернуться к поставкам" data-close="supplyModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-arrow"/></svg></button>
             <h2>Добавление поставки</h2>
           </div>
-          <button class="supply-print-button" id="printSupplyButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button>
+          <button class="supply-print-button secondary-action" id="printSupplyButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button>
         </header>
 
         <div class="supply-page-body">
           <div class="supply-document-meta">
             <label><span>Дата и время поставки</span><input id="supplyReceivedAt" type="datetime-local" /></label>
-            <label><span>Поставщик</span><div class="supply-supplier-control"><select id="supplySupplier"></select><button id="quickAddSupplierButton" type="button" title="Добавить нового поставщика"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg></button></div></label>
+            <label><span>Поставщик</span><div class="supply-supplier-control"><select id="supplySupplier"></select><button class="icon-button" id="quickAddSupplierButton" type="button" title="Добавить нового поставщика" aria-label="Добавить нового поставщика"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg></button></div></label>
             <label><span>Склад</span><select id="supplyWarehouse" disabled><option>Загрузка…</option></select></label>
-            <div class="supply-meta-payment"><span>Оплата</span><button id="addSupplyPaymentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить платёж</button></div>
+            <div class="supply-meta-payment"><span>Оплата</span><button class="secondary-action" id="addSupplyPaymentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить платёж</button></div>
             <label><span>Номер накладной</span><input id="supplyInvoiceNumber" type="text" placeholder="Необязательно" /></label>
             <label><span>Комментарий</span><textarea id="supplyComment" rows="3" placeholder="Необязательно"></textarea></label>
           </div>
@@ -506,7 +538,7 @@
           <div class="supply-items-section">
             <div class="supply-items-head"><span>Наименование</span><span>Фасовка</span><span>Количество</span><span>Цена за единицу</span><span>Общая сумма</span><span></span></div>
             <div class="supply-items-editor" id="supplyItemsEditor"></div>
-            <button class="supply-add-line" id="addSupplyItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ещё</button>
+            <button class="supply-add-line secondary-action" id="addSupplyItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ещё</button>
           </div>
 
           <div class="supply-document-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p>После сохранения товары поступят на склад заведения, а себестоимость пересчитается по средневзвешенному методу.</p></div>
@@ -521,7 +553,7 @@
 
     <div class="modal-backdrop supplier-modal-backdrop hidden" id="supplierModal">
       <section class="admin-modal supplier-modal">
-        <header><div><p>Справочник поставщиков сети</p><h2 id="supplierModalTitle">Новый поставщик</h2></div><button class="modal-close" aria-label="Закрыть" data-close="supplierModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Справочник поставщиков сети</p><h2 id="supplierModalTitle">Новый поставщик</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="supplierModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="supplier-form-grid">
           <label class="supplier-name-field"><span>Название поставщика *</span><input id="supplierNameInput" type="text" placeholder="Например, Аламедин Агро" /></label>
           <label><span>ИНН</span><input id="supplierInnInput" type="text" inputmode="numeric" maxlength="20" placeholder="Необязательно" /></label>
@@ -539,7 +571,7 @@
 
     <div class="modal-backdrop hidden" id="branchModal">
       <section class="admin-modal branch-modal">
-        <header><div><p id="branchModalEyebrow">Новое заведение</p><h2 id="branchModalTitle">Добавить заведение</h2></div><button class="modal-close" aria-label="Закрыть" data-close="branchModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p id="branchModalEyebrow">Новое заведение</p><h2 id="branchModalTitle">Добавить заведение</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="branchModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="branch-number-line"><span id="branchNumberPreview">02</span><div><strong>Новое заведение</strong><small>Склад откроется с нулевыми остатками</small></div></div>
         <div class="branch-form-section">
           <div class="branch-section-title"><strong>1. Заведение</strong><small>Название и адрес хранятся отдельно</small></div>
@@ -556,7 +588,7 @@
           <div class="branch-form-grid branch-access-grid">
             <input id="branchManagerInput" type="hidden" value="Не назначен" />
             <label><span>Адрес аккаунта</span><input id="branchLoginInput" type="text" maxlength="48" autocomplete="off" readonly /></label>
-            <label class="branch-password-field"><span id="branchPasswordLabel">Пароль терминала *</span><div class="branch-password-control"><input id="branchPasswordInput" type="text" minlength="6" maxlength="64" autocomplete="new-password" data-1p-ignore /><button id="generateBranchPasswordButton" type="button">Сгенерировать</button></div><small class="branch-password-hint hidden" id="branchPasswordHint">Существующий пароль скрыт. Оставьте поле пустым, если менять его не нужно.</small></label>
+            <label class="branch-password-field"><span id="branchPasswordLabel">Пароль терминала *</span><div class="branch-password-control"><input id="branchPasswordInput" type="text" minlength="6" maxlength="64" autocomplete="new-password" data-1p-ignore /><button class="secondary-action" id="generateBranchPasswordButton" type="button">Сгенерировать</button></div><small class="branch-password-hint hidden" id="branchPasswordHint">Существующий пароль скрыт. Оставьте поле пустым, если менять его не нужно.</small></label>
           </div>
         </div>
         <div class="branch-create-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p id="branchFormNote">После создания добавьте поставщиков и сотрудников. Права сотрудников действуют в рамках аккаунта.</p></div>
@@ -566,30 +598,32 @@
 
     <div class="modal-backdrop hidden" id="branchAccessModal">
       <section class="admin-modal branch-access-modal">
-        <header><div><p id="branchAccessEyebrow">Заведение создано</p><h2 id="branchAccessTitle">Основная касса</h2></div><button class="modal-close" aria-label="Закрыть" data-close="branchAccessModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
-        <div class="branch-success-mark">✓</div>
-        <p class="branch-access-copy" id="branchAccessCopy">Введите эти данные на устройстве кассы. После входа сотрудник выбирает своё имя и вводит личный PIN.</p>
+        <header><div><p id="branchAccessEyebrow">Заведение создано</p><h2 id="branchAccessTitle">Основная касса</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="branchAccessModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <div class="access-details">
+        <div class="access-intro"><div class="branch-success-mark" aria-hidden="true">✓</div>
+        <p class="branch-access-copy" id="branchAccessCopy">Введите эти данные на устройстве кассы. После входа сотрудник вводит личный PIN — терминал определит его автоматически.</p></div>
         <div class="branch-credentials"><div><span>Адрес аккаунта</span><strong id="createdBranchLogin">—</strong></div><div><span>Пароль основной кассы</span><strong id="createdBranchPassword">—</strong></div></div>
         <div class="branch-access-hint"><svg class="ui-icon"><use href="#ui-inventory"/></svg><p>Склад заведения создан с нулевыми остатками. Добавьте поставщиков и проведите первую поставку или инвентаризацию.</p></div>
+        </div>
         <div class="modal-actions"><button class="secondary-action" id="copyBranchAccessButton" type="button">Копировать доступ</button><button class="primary-button" data-close="branchAccessModal" type="button">Готово</button></div>
       </section>
     </div>
 
     <div class="modal-backdrop hidden" id="employeeModal">
       <section class="admin-modal employee-modal">
-        <header><div><p>Учётная запись сотрудника</p><h2 id="employeeModalTitle">Новый сотрудник</h2></div><button class="modal-close" aria-label="Закрыть" data-close="employeeModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Учётная запись сотрудника</p><h2 id="employeeModalTitle">Новый сотрудник</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="employeeModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="employee-form-grid">
           <label class="employee-name-field"><span>Имя и фамилия</span><input id="employeeNameInput" type="text" maxlength="200" placeholder="Например, Айжан Ибраева" /></label>
           <label><span>Телефон</span><input id="employeePhoneInput" type="tel" maxlength="40" placeholder="+996 555 000 000" /></label>
           <label><span>Основное заведение</span><select id="employeeBranchInput" disabled></select><small id="employeeBranchHint">Используется для смен и отчётов, но не ограничивает права по аккаунту.</small></label>
           <label><span>Должность и права</span><select id="employeeRoleInput"><option value="branch_manager">Руководитель</option><option value="hall_admin">Администратор зала</option><option value="waiter">Официант</option><option value="storekeeper">Кладовщик</option><option value="production">Производство</option><option value="marketer">Маркетолог</option><option value="cashier">Кассир</option></select></label>
           <label id="employeeLoginField"><span>Логин</span><input id="employeeLoginInput" type="text" minlength="3" maxlength="64" autocomplete="off" placeholder="aibraeva" /></label>
-          <label id="employeePasswordField"><span id="employeePasswordLabel">Временный пароль</span><div class="employee-password-control"><input id="employeePasswordInput" type="text" minlength="8" maxlength="200" autocomplete="new-password" /><button id="generateEmployeePasswordButton" type="button">Создать</button></div><small id="employeePasswordHint">Минимум 8 символов. Пароль будет показан только сейчас.</small></label>
-          <label id="employeePinField"><span id="employeePinLabel">PIN для кассы</span><div class="employee-password-control"><input id="employeePinInput" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 цифры" /><button id="generateEmployeePinButton" type="button">Создать</button></div><small id="employeePinHint">Сотрудник вводит PIN после авторизации кассового устройства.</small></label>
+          <label id="employeePasswordField"><span id="employeePasswordLabel">Временный пароль</span><div class="employee-password-control"><input id="employeePasswordInput" type="text" minlength="8" maxlength="200" autocomplete="new-password" /><button class="secondary-action" id="generateEmployeePasswordButton" type="button">Создать</button></div><small id="employeePasswordHint">Минимум 8 символов. Пароль будет показан только сейчас.</small></label>
+          <label id="employeePinField"><span id="employeePinLabel">PIN для кассы</span><div class="employee-password-control"><input id="employeePinInput" type="text" inputmode="numeric" maxlength="4" autocomplete="off" placeholder="4 цифры" /><button class="secondary-action" id="generateEmployeePinButton" type="button">Создать</button></div><small id="employeePinHint">Сотрудник вводит PIN после авторизации кассового устройства.</small></label>
         </div>
         <div class="employee-permission-note" id="employeePermissionNote"><svg class="ui-icon"><use href="#ui-info"/></svg><div><strong>Права руководителя</strong><p>Доступ к разделам аккаунта определяется выбранной должностью.</p></div></div>
         <section class="employee-permissions" id="employeePermissions">
-          <header><div><strong>Права доступа</strong><small>Должность задаёт шаблон. Переключатели можно изменить для конкретного сотрудника.</small></div><button id="resetEmployeePermissions" type="button">По должности</button></header>
+          <header><div><strong>Права доступа</strong><small>Должность задаёт шаблон. Переключатели можно изменить для конкретного сотрудника.</small></div><button class="secondary-action" id="resetEmployeePermissions" type="button">По должности</button></header>
           <div class="employee-permission-groups">
             <div class="employee-permission-group">
               <h3>Касса</h3>
@@ -612,20 +646,26 @@
           </div>
         </section>
         <label class="employee-active-toggle hidden" id="employeeActiveRow"><input id="employeeActiveInput" type="checkbox" checked /><span><strong>Разрешить вход в систему</strong><small>При отключении открытые сеансы сотрудника будут завершены</small></span></label>
-        <div class="modal-actions"><button class="secondary-action" data-close="employeeModal" type="button">Отмена</button><button class="primary-button" id="saveEmployeeButton" type="button">Создать сотрудника</button></div>
+        <div class="modal-actions employee-editor-actions"><button class="danger-button icon-button employee-delete-icon hidden" id="deleteEmployeeButton" type="button" title="Удалить сотрудника" aria-label="Удалить сотрудника"><svg class="ui-icon" aria-hidden="true"><use href="#ui-trash"/></svg></button><button class="secondary-action" data-close="employeeModal" type="button">Отмена</button><button class="primary-button" id="saveEmployeeButton" type="button">Создать сотрудника</button></div>
       </section>
     </div>
 
+    <dialog class="employee-delete-dialog" id="employeeDeleteDialog" aria-labelledby="employeeDeleteTitle" aria-describedby="employeeDeleteDescription">
+      <header><h2 id="employeeDeleteTitle">Удалить сотрудника?</h2><button class="modal-close icon-button" id="closeEmployeeDelete" type="button" aria-label="Закрыть"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+      <div class="employee-delete-body"><strong id="employeeDeleteName"></strong><p id="employeeDeleteDescription">Сотрудник исчезнет из списка и потеряет доступ. Его имя, чеки и история действий сохранятся.</p><p id="employeeDeleteError" role="alert" hidden></p></div>
+      <footer><button class="secondary-action" id="cancelEmployeeDelete" type="button" autofocus>Отмена</button><button class="danger-button" id="confirmEmployeeDelete" type="button">Удалить сотрудника</button></footer>
+    </dialog>
+
     <div class="modal-backdrop hidden" id="registerModal">
       <section class="admin-modal employee-modal">
-        <header><div><p>Рабочее место продаж</p><h2 id="registerModalTitle">Новая касса</h2></div><button class="modal-close" aria-label="Закрыть" data-close="registerModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Рабочее место продаж</p><h2 id="registerModalTitle">Новая касса</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="registerModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
         <div class="employee-form-grid">
           <label><span>Название кассы *</span><input id="registerNameInput" type="text" maxlength="200" placeholder="Например, Основная касса" /></label>
           <label><span>Заведение *</span><select id="registerBranchInput" disabled></select><small>Выберите заведение, в котором будет работать касса.</small></label>
           <label><span>Тип кассы</span><input type="text" value="Стандартная касса" readonly /><small>Продажи, чеки, смены и вход сотрудников по PIN.</small></label>
           <label><span>Склад списания</span><input id="registerWarehouseInput" type="text" readonly /><small>Товары и ингредиенты списываются в выбранном заведении.</small></label>
           <label><span>Логин аккаунта</span><input id="registerLoginInput" type="text" readonly /></label>
-          <label><span id="registerPasswordLabel">Пароль кассы *</span><div class="employee-password-control"><input id="registerPasswordInput" type="text" minlength="8" maxlength="200" autocomplete="new-password" /><button id="generateRegisterPasswordButton" type="button">Создать</button></div><small id="registerPasswordHint">Пароль должен отличаться от паролей других касс.</small></label>
+          <label><span id="registerPasswordLabel">Пароль кассы *</span><div class="employee-password-control"><input id="registerPasswordInput" type="text" minlength="8" maxlength="200" autocomplete="new-password" /><button class="secondary-action" id="generateRegisterPasswordButton" type="button">Создать</button></div><small id="registerPasswordHint">Пароль должен отличаться от паролей других касс.</small></label>
         </div>
         <div class="employee-permission-note"><svg class="ui-icon"><use href="#ui-info"/></svg><div><strong>Одна касса — одно устройство</strong><p>Если выполнить вход с этим паролем на другом устройстве, предыдущий сеанс кассы будет завершён.</p></div></div>
         <label class="employee-active-toggle hidden" id="registerActiveRow"><input id="registerActiveInput" type="checkbox" checked /><span><strong>Касса активна</strong><small>Отключённая касса не сможет войти и продолжить продажи</small></span></label>
@@ -635,29 +675,38 @@
 
     <div class="modal-backdrop hidden" id="registerAccessModal">
       <section class="admin-modal branch-access-modal">
-        <header><div><p>Касса готова</p><h2 id="registerAccessTitle">Доступ к кассе</h2></div><button class="modal-close" aria-label="Закрыть" data-close="registerAccessModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
-        <div class="branch-success-mark">✓</div>
-        <p class="branch-access-copy">Введите эти данные на устройстве кассы. Затем выберите сотрудника и введите его личный PIN.</p>
+        <header><div><p>Касса готова</p><h2 id="registerAccessTitle">Доступ к кассе</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="registerAccessModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
+        <div class="access-details">
+        <div class="access-intro"><div class="branch-success-mark" aria-hidden="true">✓</div>
+        <p class="branch-access-copy">Войдите на устройстве по логину аккаунта и паролю кассы. Затем сотрудник вводит личный PIN — терминал определит его автоматически.</p></div>
         <div class="branch-credentials"><div><span>Логин компании</span><strong id="createdRegisterLogin">—</strong></div><div><span>Пароль кассы</span><strong id="createdRegisterPassword">—</strong></div></div>
         <div class="branch-access-hint"><svg class="ui-icon"><use href="#ui-info"/></svg><p id="registerAccessHint">Эти данные активируют только выбранную кассу.</p></div>
+        </div>
         <div class="modal-actions"><button class="secondary-action" id="copyRegisterAccessButton" type="button">Копировать доступ</button><button class="secondary-action" id="openCreatedRegisterButton" type="button">Открыть кассу</button><button class="primary-button" data-close="registerAccessModal" type="button">Готово</button></div>
       </section>
     </div>
 
     <div class="modal-backdrop hidden" id="employeeAccessModal">
       <section class="admin-modal branch-access-modal">
-        <header><div><p>Сотрудник создан</p><h2 id="employeeAccessTitle">Доступ сотрудника</h2></div><button class="modal-close" aria-label="Закрыть" data-close="employeeAccessModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
-        <div class="branch-success-mark">✓</div>
-        <p class="branch-access-copy" id="employeeAccessCopy">Передайте данные сотруднику безопасным способом. После закрытия окна пароль больше не отображается.</p>
-        <div class="branch-credentials"><div><span id="employeeAccessPrimaryLabel">Логин</span><strong id="createdEmployeeLogin">—</strong></div><div><span id="employeeAccessSecondaryLabel">Временный пароль</span><strong id="createdEmployeePassword">—</strong></div></div>
+        <header><div><p>Сотрудник создан</p><h2 id="employeeAccessTitle">Доступ сотрудника</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="employeeAccessModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <div class="access-details">
+        <div class="access-intro"><div class="branch-success-mark" aria-hidden="true">✓</div>
+        <p class="branch-access-copy" id="employeeAccessCopy">Сохраните данные и передайте сотруднику. После закрытия страницы пароль больше не отображается.</p></div>
+        <div class="branch-credentials">
+          <div><span id="employeeAccessPrimaryLabel">Логин</span><strong id="createdEmployeeLogin">—</strong></div>
+          <div><span id="employeeAccessSecondaryLabel">Временный пароль</span><strong id="createdEmployeePassword">—</strong></div>
+          <div class="hidden" id="employeeAccessPinField"><span>PIN сотрудника</span><strong id="createdEmployeePin">—</strong></div>
+          <div class="access-wide"><span>Ссылка для входа</span><a id="createdEmployeeLink" href="/login" target="_blank" rel="noopener">Открыть вход</a></div>
+        </div>
         <div class="branch-access-hint"><svg class="ui-icon"><use href="#ui-info"/></svg><p id="employeeAccessHint">Сотрудник увидит только разделы, доступные его должности.</p></div>
+        </div>
         <div class="modal-actions"><button class="secondary-action" id="copyEmployeeAccessButton" type="button">Копировать доступ</button><button class="primary-button" data-close="employeeAccessModal" type="button">Готово</button></div>
       </section>
     </div>
 
     <div class="modal-backdrop hidden" id="writeoffModal">
       <section class="admin-modal compact-modal">
-        <header><div><p>Складской документ</p><h2>Новое списание</h2></div><button class="modal-close" aria-label="Закрыть" data-close="writeoffModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Складской документ</p><h2>Новое списание</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="writeoffModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <label class="full-label"><span>Ингредиент</span><select id="writeoffIngredient"></select></label>
         <div class="modal-grid"><label><span>Количество</span><div class="unit-input"><input id="writeoffQuantity" type="number" min="0.01" step="0.01" value="1" /><b id="writeoffUnit">кг</b></div></label><label><span>Причина</span><select id="writeoffReason"><option>Порча</option><option>Истёк срок годности</option><option>Проработка блюда</option><option>Недостача</option><option>Другое</option></select></label></div>
         <div class="document-result"><span>Будет списано со склада</span><strong id="writeoffCost">0 сом</strong></div>
@@ -667,7 +716,7 @@
 
     <div class="modal-backdrop hidden" id="productionModal">
       <section class="admin-modal compact-modal">
-        <header><div><p>Кухня</p><h2>Новое производство</h2></div><button class="modal-close" aria-label="Закрыть" data-close="productionModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Кухня</p><h2>Новое производство</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="productionModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <label class="full-label"><span>Технологическая карта</span><select id="productionRecipe"></select></label>
         <div class="modal-grid"><label><span>Количество порций</span><div class="unit-input"><input id="productionQuantity" type="number" min="1" step="1" value="10" /><b>порц.</b></div></label><label><span>Склад</span><select id="productionWarehouse"><option>Склад точки Манаса</option></select></label></div>
         <div class="production-preview" id="productionPreview"></div>
@@ -678,15 +727,24 @@
 
     <div class="modal-backdrop hidden" id="inventoryModal">
       <section class="admin-modal inventory-modal inventory-workflow-modal">
-        <header><div><p id="inventoryModalEyebrow">Контроль остатков точки</p><h2 id="inventoryModalTitle">Новая инвентаризация</h2></div><button class="modal-close" aria-label="Закрыть" data-close="inventoryModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p id="inventoryModalEyebrow">Контроль остатков точки</p><h2 id="inventoryModalTitle">Новая инвентаризация</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="inventoryModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
 
         <div id="inventorySetup">
           <div class="inventory-intro"><span>1</span><div><strong>Настройте подсчёт</strong><p>После начала складские движения этой точки будут приостановлены до решения главного администратора.</p></div></div>
           <div class="inventory-setup-grid">
             <label><span>Точка</span><select id="inventoryWarehouse" disabled><option value="b1">Столовая №1 — Манаса</option></select></label>
-            <label><span>Тип проверки</span><select id="inventoryScope"><option value="full">Полная инвентаризация</option><option value="category">По категории</option></select></label>
+            <label><span>Тип проверки</span><select id="inventoryScope"><option value="full">Полная инвентаризация</option><option value="category">По категории</option><option value="selected">Отдельные позиции</option><option value="serving">Готовые блюда на раздаче</option></select></label>
             <label><span>Категория</span><select id="inventoryCategory" disabled></select></label>
             <label><span>Ответственный за подсчёт</span><input id="inventoryResponsible" type="text" placeholder="Имя сотрудника" /></label>
+          </div>
+          <label class="inventory-count-date"><span>Дата подсчёта (пусто — сейчас)</span><input id="inventoryCountedAt" type="datetime-local"></label>
+          <div id="inventorySelection" class="inventory-selection hidden">
+            <div class="inventory-selection-toolbar">
+              <div class="inventory-selection-heading"><strong>Позиции для подсчёта</strong><span id="inventorySelectionCount" aria-live="polite"></span></div>
+              <input id="inventorySelectionSearch" type="search" placeholder="Найти продукт" aria-label="Найти позицию для подсчёта">
+            </div>
+            <div id="inventorySelectionList" class="inventory-selection-list"></div>
+            <p id="inventorySelectionEmpty" class="inventory-selection-empty hidden">Ничего не найдено</p>
           </div>
           <div class="inventory-rule-note"><svg class="ui-icon"><use href="#ui-alert"/></svg><p>Сначала завершите приёмки, отгрузки и выпуск кухни. Во время подсчёта система не даст провести движение товара по этой точке.</p></div>
         </div>
@@ -694,7 +752,16 @@
         <div class="hidden" id="inventoryCountWorkspace">
           <div class="inventory-document-meta" id="inventoryDocumentMeta"></div>
           <div class="inventory-lock-note" id="inventoryLockNote"><svg class="ui-icon"><use href="#ui-alert"/></svg><div><strong>Остатки точки зафиксированы</strong><small>Поставки, перемещения и производство временно заблокированы.</small></div></div>
+          <div class="inventory-count-toolbar">
+            <input id="inventoryCountSearch" type="search" placeholder="Найти позицию" aria-label="Поиск в инвентаризации">
+            <select id="inventoryCountFilter" aria-label="Показать позиции"><option value="all">Все позиции</option><option value="uncounted">Не подсчитаны</option><option value="different">С расхождениями</option><option value="counted">Подсчитаны</option></select>
+            <span id="inventoryCountProgress" aria-live="polite"></span>
+            <button id="printInventoryButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-print"/></svg>Печать</button>
+            <button id="exportInventoryButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button>
+          </div>
           <div class="inventory-count-list" id="inventoryCountList"></div>
+          <p class="inventory-count-empty hidden" id="inventoryCountEmpty">Нет позиций по выбранному фильтру</p>
+          <p class="inventory-history-note hidden" id="inventoryHistoryNote"></p>
           <label class="full-label inventory-comment-field"><span id="inventoryCommentLabel">Комментарий управляющего</span><textarea id="inventoryComment" placeholder="Причина расхождений или примечание к подсчёту"></textarea></label>
           <label class="full-label inventory-review-field hidden" id="inventoryReviewField"><span>Комментарий главного администратора</span><textarea id="inventoryReviewComment" placeholder="Обязателен при возврате на пересчёт"></textarea></label>
           <div class="inventory-difference"><div><span>Излишки</span><strong class="positive" id="inventorySurplus">0 сом</strong></div><div><span>Недостача</span><strong class="negative" id="inventoryShortage">0 сом</strong></div><div><span>Итоговая корректировка</span><strong id="inventoryNetDifference">0 сом</strong></div></div>
@@ -712,16 +779,22 @@
       </section>
     </div>
 
+    <dialog id="inventoryMovementDialog" class="inventory-movement-dialog" aria-labelledby="inventoryMovementTitle">
+      <header><div><h2 id="inventoryMovementTitle"></h2><p id="inventoryMovementSubtitle"></p></div><button type="button" class="modal-close icon-button" id="closeInventoryMovement" aria-label="Закрыть расшифровку"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+      <div id="inventoryMovementBody" class="inventory-movement-body"></div>
+    </dialog>
+
     <div class="modal-backdrop catalog-editor-backdrop hidden" id="recipeModal">
       <section class="admin-modal catalog-editor recipe-modal">
-        <header class="catalog-editor-header"><div><p>Меню / Тех. карты</p><h2 id="recipeModalTitle">Новая техкарта</h2><small>Блюдо для продажи с автоматическим списанием состава</small></div><button class="modal-close" aria-label="Закрыть" data-close="recipeModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header class="catalog-editor-header"><div><p>Меню / Тех. карты</p><h2 id="recipeModalTitle">Новая техкарта</h2><small>Блюдо для продажи с автоматическим списанием состава</small></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="recipeModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
+          <div id="recipeImportNotes" hidden></div>
           <section class="catalog-form-section">
             <div class="catalog-section-heading"><span>1</span><div><h3>Основные данные</h3><p>Название, категория, цех, выход и цена блюда</p></div></div>
-            <div class="recipe-form-grid catalog-form-grid"><label class="catalog-field-wide"><span>Название блюда</span><input id="recipeNameInput" type="text" placeholder="Например, Плов" /></label><label><span>Категория</span><select id="recipeCategoryInput"><option>Горячее</option><option>Первые</option><option>Салаты</option><option>Выпечка</option><option>Напитки</option></select></label><label><span>Цех приготовления</span><select id="recipeStationInput"></select></label><label class="catalog-calculated-field"><span>Выход блюда</span><div class="unit-input"><input id="recipeYieldInput" type="number" min="0" value="0" readonly aria-readonly="true" /><b>г</b></div><small>Сумма нетто в составе</small></label><label><span>Цена продажи</span><div class="unit-input"><input id="recipePriceInput" type="number" min="0" value="0" /><b>сом</b></div></label></div>
+            <div class="recipe-form-grid catalog-form-grid"><label class="catalog-field-wide"><span>Название блюда</span><input id="recipeNameInput" type="text" placeholder="Например, Плов" /></label><label><span>Категория</span><select id="recipeCategoryInput"><option>Горячее</option><option>Первые</option><option>Салаты</option><option>Выпечка</option><option>Напитки</option></select></label><label><span>Цех приготовления</span><select id="recipeStationInput"></select></label><label class="catalog-calculated-field"><span>Выход блюда</span><div class="unit-input"><input id="recipeYieldInput" type="number" min="0.001" step="0.001" value="0" /><b>г</b></div><small>Выход готового блюда по техкарте</small></label><label><span>Цена продажи</span><div class="unit-input"><input id="recipePriceInput" type="number" min="0" value="0" /><b>сом</b></div></label></div>
           </section>
           <section class="catalog-form-section">
-            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Расход продуктов на одну порцию: брутто и нетто</p></div><button class="catalog-add-row" id="addComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
+            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Расход продуктов на одну порцию: брутто и нетто</p></div><button class="catalog-add-row secondary-action" id="addComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
             <div class="recipe-components-editor" id="recipeComponentsEditor"></div>
           </section>
           <div class="recipe-live-calculation catalog-calculation"><div><span>Себестоимость</span><strong id="recipeLiveCost">0 сом</strong></div><div><span>Фудкост</span><strong id="recipeLiveFoodCost">0%</strong></div><div><span>Наценка</span><strong id="recipeLiveMarkup">0%</strong></div></div>
@@ -732,7 +805,7 @@
 
     <div class="modal-backdrop catalog-editor-backdrop hidden" id="ingredientModal">
       <section class="admin-modal catalog-editor ingredient-modal">
-        <header class="catalog-editor-header"><div><p>Меню / Ингредиенты</p><h2 id="ingredientModalTitle">Новый ингредиент</h2><small>Сырьё для тех. карт, полуфабрикатов и складского учёта</small></div><button class="modal-close" aria-label="Закрыть" data-close="ingredientModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header class="catalog-editor-header"><div><p>Меню / Ингредиенты</p><h2 id="ingredientModalTitle">Новый ингредиент</h2><small>Сырьё для тех. карт, полуфабрикатов и складского учёта</small></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="ingredientModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
           <section class="catalog-form-section">
             <div class="catalog-section-heading"><span>1</span><div><h3>Основные данные</h3><p>Укажите название, группу и единицу складского учёта</p></div></div>
@@ -764,7 +837,7 @@
 
     <div class="modal-backdrop catalog-editor-backdrop hidden" id="preparationModal">
       <section class="admin-modal catalog-editor recipe-modal preparation-modal">
-        <header class="catalog-editor-header"><div><p>Меню / Полуфабрикаты</p><h2 id="preparationModalTitle">Новый полуфабрикат</h2><small>Заготовка для использования в нескольких блюдах</small></div><button class="modal-close" aria-label="Закрыть" data-close="preparationModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header class="catalog-editor-header"><div><p>Меню / Полуфабрикаты</p><h2 id="preparationModalTitle">Новый полуфабрикат</h2><small>Заготовка для использования в нескольких блюдах</small></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="preparationModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
           <section class="catalog-form-section">
             <div class="catalog-section-heading"><span>1</span><div><h3>Основные данные</h3><p>Полуфабрикаты учитываются в килограммах и отдельно не продаются</p></div></div>
@@ -778,19 +851,19 @@
             </div>
           </section>
           <section class="catalog-form-section">
-            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Укажите брутто и нетто сырья на одну производственную партию</p></div><button class="catalog-add-row" id="addPreparationComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
+            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Укажите брутто и нетто сырья на одну производственную партию</p></div><button class="catalog-add-row secondary-action" id="addPreparationComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
             <div class="recipe-components-editor" id="preparationComponentsEditor"></div>
           </section>
           <div class="recipe-live-calculation preparation-live-calculation catalog-calculation"><div><span>Сырья нетто</span><strong id="preparationNetWeight">0 г</strong></div><div><span>Себестоимость партии</span><strong id="preparationBatchCost">0 сом</strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationUnitCost">0 сом</strong></div></div>
           <div class="calculation-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p><strong>Себестоимость считается автоматически.</strong>При изменении закупочных цен ингредиентов расчёт будет обновляться.</p></div>
         </div>
-        <div class="modal-actions catalog-editor-footer"><button class="danger-button modal-delete-action hidden" id="deletePreparationButton" type="button"><svg class="ui-icon"><use href="#ui-trash"/></svg>Удалить</button><span></span><button class="secondary-action" data-close="preparationModal" type="button">Отмена</button><button class="primary-button" id="savePreparationButton" type="button">Сохранить</button></div>
+        <div class="modal-actions catalog-editor-footer"><button class="icon-button danger-button modal-delete-action hidden" id="deletePreparationButton" type="button" title="Удалить полуфабрикат" aria-label="Удалить полуфабрикат"><svg class="ui-icon" aria-hidden="true"><use href="#ui-trash"/></svg></button><span></span><button class="secondary-action" data-close="preparationModal" type="button">Отмена</button><button class="primary-button" id="savePreparationButton" type="button">Сохранить</button></div>
       </section>
     </div>
 
     <div class="modal-backdrop catalog-editor-backdrop hidden" id="categoryModal">
       <section class="admin-modal catalog-editor catalog-editor-compact category-modal">
-        <header class="catalog-editor-header"><div><p id="categoryModalEyebrow">Меню / Категории</p><h2 id="categoryModalTitle">Новая категория</h2><small id="categoryModalDescription">Категория объединяет позиции в меню и на кассе</small></div><button class="modal-close" aria-label="Закрыть" data-close="categoryModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header class="catalog-editor-header"><div><p id="categoryModalEyebrow">Меню / Категории</p><h2 id="categoryModalTitle">Новая категория</h2><small id="categoryModalDescription">Категория объединяет позиции в меню и на кассе</small></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="categoryModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
           <section class="catalog-form-section catalog-form-section-first">
             <div class="category-form-grid catalog-form-grid">
@@ -806,7 +879,7 @@
 
     <div class="modal-backdrop catalog-editor-backdrop hidden" id="stationModal">
       <section class="admin-modal catalog-editor catalog-editor-compact category-modal">
-        <header class="catalog-editor-header"><div><p>Меню / Цеха</p><h2 id="stationModalTitle">Новый цех</h2><small>Маршрут приготовления и печати заказов</small></div><button class="modal-close" aria-label="Закрыть" data-close="stationModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header class="catalog-editor-header"><div><p>Меню / Цеха</p><h2 id="stationModalTitle">Новый цех</h2><small>Маршрут приготовления и печати заказов</small></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="stationModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
           <section class="catalog-form-section catalog-form-section-first"><div class="category-form-grid catalog-form-grid">
             <label class="catalog-field-wide"><span>Название цеха</span><input id="stationNameInput" type="text" maxlength="80" placeholder="Например, Горячий цех" /></label>
@@ -822,7 +895,7 @@
 
     <div class="modal-backdrop catalog-editor-backdrop hidden" id="productModal">
       <section class="admin-modal catalog-editor product-modal">
-        <header class="catalog-editor-header"><div><p>Меню / Товары</p><h2 id="productModalTitle">Новый товар</h2></div><button class="modal-close" aria-label="Закрыть" data-close="productModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header class="catalog-editor-header"><div><p>Меню / Товары</p><h2 id="productModalTitle">Новый товар</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="productModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
           <section class="catalog-form-section">
             
@@ -833,12 +906,12 @@
               <label><span>Штрихкод</span><input id="productBarcodeInput" type="text" inputmode="numeric" placeholder="Сканируйте или введите" /></label>
               <label><span>Единица измерения</span><select id="productUnitInput"><option value="шт">шт</option><option value="кг">кг</option><option value="л">л</option></select></label>
             </div>
-            <div class="product-cover-controls"><span class="product-row-label">Обложка</span><div class="product-cover-content"><div id="productCoverPreview" aria-label="Обложка товара"></div><div class="product-cover-actions"><label class="product-upload-button" for="productPhotoInput">Загрузить фото</label><input id="productPhotoInput" class="product-file-input" type="file" accept="image/jpeg,image/png,image/webp" /><small>JPG, PNG, WebP · до 2 МБ</small><button class="poster-action" id="removeProductPhoto" type="button">Удалить фото</button></div><label class="product-color-control"><input id="productColorInput" type="color" value="#5b8fbd" aria-label="Цвет обложки" /><span>Цвет</span></label></div></div>
+            <div class="product-cover-controls"><span class="product-row-label">Обложка</span><div class="product-cover-content"><div id="productCoverPreview" aria-label="Обложка товара"></div><div class="product-cover-actions"><label class="product-upload-button" for="productPhotoInput">Загрузить фото</label><input id="productPhotoInput" class="product-file-input" type="file" accept="image/jpeg,image/png,image/webp" /><small>JPG, PNG, WebP · до 2 МБ</small><button class="poster-action danger-button" id="removeProductPhoto" type="button">Удалить фото</button></div><label class="product-color-control"><input id="productColorInput" type="color" value="#5b8fbd" aria-label="Цвет обложки" /><span>Цвет</span></label></div></div>
             <div class="product-options catalog-checks"><label><input id="productWeightedInput" type="checkbox" /><span><strong>Весовой товар</strong></span></label><label><input id="productNoDiscountInput" type="checkbox" /><span><strong>Не применять скидки</strong></span></label></div>
           </section>
 
           <label class="product-variant-mode"><input id="productVariantsEnabled" type="checkbox"> С модификациями <small>Несколько видов товара со своими ценами и остатками</small></label>
-          <section class="catalog-form-section hidden" id="productVariantsSection"><div id="productVariantRows"></div><button class="poster-action" id="addProductVariant" type="button">+ Добавить модификацию</button><p class="product-variant-help">Остаток и себестоимость учитываются отдельно для каждого вида. Наценка пересчитывает цену после появления себестоимости.</p></section>
+          <section class="catalog-form-section hidden" id="productVariantsSection"><div id="productVariantRows"></div><button class="poster-action secondary-action" id="addProductVariant" type="button">+ Добавить модификацию</button><p class="product-variant-help">Остаток и себестоимость учитываются отдельно для каждого вида. Наценка пересчитывает цену после появления себестоимости.</p></section>
           <section class="catalog-form-section" id="productSinglePriceSection">
             <div class="catalog-section-heading"><div><h3>Цена и наценка</h3></div></div>
             <div class="product-price-grid"><label><span>Закупочная цена</span><div class="unit-input"><input id="productCostInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Цена продажи</span><div class="unit-input"><input id="productPriceInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Наценка</span><div class="unit-input"><input id="productMarkupInput" type="number" min="-100" step="0.01" value="0" /><b>%</b></div></label></div><small id="productMarkupValue"></small>
@@ -857,7 +930,7 @@
 
     <div class="modal-backdrop catalog-delete-backdrop hidden" id="catalogDeleteModal">
       <section class="admin-modal compact-modal catalog-delete-modal">
-        <header><div><p>Безопасное удаление</p><h2 id="catalogDeleteTitle">Удалить позицию?</h2></div><button class="modal-close" aria-label="Закрыть" data-close="catalogDeleteModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Безопасное удаление</p><h2 id="catalogDeleteTitle">Удалить позицию?</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="catalogDeleteModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-delete-entity"><svg class="ui-icon"><use href="#ui-trash"/></svg><div><span id="catalogDeleteKind">Позиция</span><strong id="catalogDeleteName">Название</strong></div></div>
         <p class="catalog-delete-description" id="catalogDeleteDescription">Позиция исчезнет из справочника и больше не будет доступна для новых операций.</p>
         <ul id="catalogDeleteLinks"></ul>
@@ -868,7 +941,7 @@
 
     <div class="modal-backdrop hidden" id="financeTransactionModal">
       <section class="admin-modal compact-modal finance-modal">
-        <header><div><p>Финансы</p><h2>Новая операция</h2></div><button class="modal-close" aria-label="Закрыть" data-close="financeTransactionModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Финансы</p><h2>Новая операция</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="financeTransactionModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
         <div class="finance-form-grid">
           <label><span>Тип операции</span><select id="financeTransactionType"><option value="expense">Расход</option><option value="income">Поступление</option><option value="transfer">Перевод между счетами</option></select></label>
           <label><span>Дата</span><input id="financeTransactionDate" type="date" /></label>
@@ -879,6 +952,7 @@
           <label><span>Сумма</span><div class="unit-input"><input id="financeTransactionAmount" type="number" min="0.01" step="0.01" /><b>сом</b></div></label>
           <label><span>Контрагент</span><input id="financeTransactionCounterparty" type="text" maxlength="120" placeholder="Необязательно" /></label>
           <label class="wide"><span>Комментарий</span><input id="financeTransactionComment" type="text" maxlength="240" placeholder="Назначение операции" /></label>
+          <details class="wide"><summary>Учёт в P&L</summary><label><span>Дата признания дохода / расхода</span><input id="financeRecognitionDate" type="date" /><small>Если не указана — дата оплаты. Для неоплаченных расходов используйте «P&L → Добавить расход».</small></label><label><span>Влияние на прибыль</span><select id="financeAffectsProfit"><option value="yes">Учитывать в прибыли</option><option value="no">Только движение денег: вклад, кредит, изъятие владельца</option></select></label></details>
         </div>
         <div class="finance-form-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p>Закупка продуктов сама по себе не уменьшает прибыль: себестоимость признаётся после продажи блюда. Платёж из поставки автоматически появится в движении денег.</p></div>
         <div class="modal-actions"><button class="secondary-action" data-close="financeTransactionModal" type="button">Отмена</button><button class="primary-button" id="saveFinanceTransactionButton" type="button">Провести операцию</button></div>
@@ -887,7 +961,7 @@
 
     <div class="modal-backdrop hidden" id="financeAccountModal">
       <section class="admin-modal compact-modal finance-modal">
-        <header><div><p>Финансы → Счета</p><h2 id="financeAccountModalTitle">Новый счёт</h2></div><button class="modal-close" aria-label="Закрыть" data-close="financeAccountModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Финансы → Счета</p><h2 id="financeAccountModalTitle">Новый счёт</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="financeAccountModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
         <div class="finance-form-grid"><label class="wide"><span>Название</span><input id="financeAccountName" type="text" maxlength="100" placeholder="Например, Карта DemirBank" /></label><label><span>Тип</span><select id="financeAccountType"><option value="bank">Банковский счёт</option><option value="cash">Наличные</option><option value="card">Эквайринг / карта</option><option value="safe">Сейф</option><option value="other">Другой</option></select></label><label><span>Точка</span><select id="financeAccountBranch"><option value="">Вся компания</option></select></label><label><span>Начальный остаток</span><div class="unit-input"><input id="financeAccountOpening" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Статус</span><select id="financeAccountStatus"><option value="active">Активный</option><option value="inactive">Архивный</option></select></label></div>
         <div class="modal-actions"><button class="secondary-action" data-close="financeAccountModal" type="button">Отмена</button><button class="primary-button" id="saveFinanceAccountButton" type="button">Сохранить счёт</button></div>
       </section>
@@ -895,7 +969,7 @@
 
     <div class="modal-backdrop hidden" id="financeCategoryModal">
       <section class="admin-modal compact-modal finance-modal">
-        <header><div><p>Финансы → Категории</p><h2 id="financeCategoryModalTitle">Новая категория</h2></div><button class="modal-close" aria-label="Закрыть" data-close="financeCategoryModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Финансы → Категории</p><h2 id="financeCategoryModalTitle">Новая категория</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="financeCategoryModal" type="button"><svg class="ui-icon"><use href="#ui-close"/></svg></button></header>
         <div class="finance-form-grid"><label class="wide"><span>Название</span><input id="financeCategoryName" type="text" maxlength="100" /></label><label><span>Тип</span><select id="financeCategoryKind"><option value="expense">Расход</option><option value="income">Поступление</option></select></label><label><span>Статус</span><select id="financeCategoryStatus"><option value="active">Активная</option><option value="inactive">Архивная</option></select></label></div>
         <div class="modal-actions"><button class="secondary-action" data-close="financeCategoryModal" type="button">Отмена</button><button class="primary-button" id="saveFinanceCategoryButton" type="button">Сохранить категорию</button></div>
       </section>
@@ -903,9 +977,9 @@
 
     <div class="modal-backdrop hidden" id="requestModal">
       <section class="admin-modal request-modal">
-        <header><div><p>Архивный маршрут</p><h2>Внутренняя заявка отключена</h2></div><button class="modal-close" aria-label="Закрыть" data-close="requestModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Архивный маршрут</p><h2>Внутренняя заявка отключена</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="requestModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="modal-grid"><label><span>Столовая</span><select id="requestBranch"></select></label><label><span>Нужно доставить</span><input id="requestNeededAt" type="date" /></label></div>
-        <div class="request-items-title"><div><strong>Потребность точки</strong><small>Количество указывается в складских единицах</small></div><button id="addRequestItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить продукт</button></div>
+        <div class="request-items-title"><div><strong>Потребность точки</strong><small>Количество указывается в складских единицах</small></div><button class="secondary-action" id="addRequestItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить продукт</button></div>
         <div class="request-items-editor" id="requestItemsEditor"></div>
         <label class="full-label"><span>Комментарий</span><input id="requestComment" type="text" placeholder="Маршрут больше не используется" /></label>
         <div class="modal-actions"><button class="secondary-action" data-close="requestModal" type="button">Закрыть</button><button class="primary-button" id="saveRequestButton" type="button" disabled>Маршрут отключён</button></div>
@@ -914,9 +988,9 @@
 
     <div class="modal-backdrop hidden" id="directOrderModal">
       <section class="admin-modal direct-order-modal">
-        <header><div><p>Точка → поставщик</p><h2>Новый заказ поставщику</h2></div><button class="modal-close" aria-label="Закрыть" data-close="directOrderModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Точка → поставщик</p><h2>Новый заказ поставщику</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="directOrderModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="direct-order-meta"><label><span>Столовая</span><select id="directOrderBranch" disabled></select></label><label><span>Поставщик для этой точки</span><select id="directOrderSupplier"></select></label><label><span>Желаемая дата поставки</span><input id="directOrderNeededAt" type="date" /></label></div>
-        <div class="request-items-title"><div><strong>Состав заказа</strong><small>Количество и ожидаемая цена для согласования</small></div><button id="addDirectOrderItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить продукт</button></div>
+        <div class="request-items-title"><div><strong>Состав заказа</strong><small>Количество и ожидаемая цена для согласования</small></div><button class="secondary-action" id="addDirectOrderItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить продукт</button></div>
         <div class="direct-order-items" id="directOrderItemsEditor"></div>
         <label class="full-label"><span>Комментарий и условия доставки</span><input id="directOrderComment" type="text" placeholder="Например, доставка до 07:30, оплата по накладной" /></label>
         <div class="direct-order-summary"><span><b id="directOrderPositionsCount">0</b> позиций</span><strong id="directOrderEstimatedTotal">0 сом</strong></div>
@@ -927,7 +1001,7 @@
 
     <div class="modal-backdrop hidden" id="directReceivingModal">
       <section class="admin-modal direct-receiving-modal">
-        <header><div><p>Поставщик → точка</p><h2 id="directReceivingTitle">Приёмка поставки</h2></div><button class="modal-close" aria-label="Закрыть" data-close="directReceivingModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Поставщик → точка</p><h2 id="directReceivingTitle">Приёмка поставки</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="directReceivingModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="receiving-meta" id="directReceivingMeta"></div>
         <div class="direct-receiving-document"><label><span>Номер накладной поставщика</span><input id="directReceivingInvoice" type="text" placeholder="Например, НК-1054" /></label><label><span>Дата и время приёмки</span><input id="directReceivingAt" type="datetime-local" /></label></div>
         <div class="direct-receiving-items" id="directReceivingItemsEditor"></div>
@@ -939,9 +1013,9 @@
 
     <div class="modal-backdrop hidden" id="pointTransferModal">
       <section class="admin-modal point-transfer-modal">
-        <header><div><p>Точка → точка</p><h2>Запросить продукты с другой точки</h2></div><button class="modal-close" aria-label="Закрыть" data-close="pointTransferModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Точка → точка</p><h2>Запросить продукты с другой точки</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="pointTransferModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="point-transfer-meta"><label><span>Откуда запросить</span><select id="pointTransferSource"></select></label><label><span>Получатель</span><select id="pointTransferDestination" disabled></select></label><label><span>Нужно получить</span><input id="pointTransferNeededAt" type="date" /></label></div>
-        <div class="request-items-title"><div><strong>Состав перемещения</strong><small>Количество указывается в складских единицах точки</small></div><button id="addPointTransferItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить продукт</button></div>
+        <div class="request-items-title"><div><strong>Состав перемещения</strong><small>Количество указывается в складских единицах точки</small></div><button class="secondary-action" id="addPointTransferItemButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить продукт</button></div>
         <div class="point-transfer-items" id="pointTransferItemsEditor"></div>
         <label class="full-label"><span>Причина и комментарий</span><input id="pointTransferComment" type="text" placeholder="Например, срочно для производства до следующей поставки" /></label>
         <div class="point-transfer-summary"><span><b id="pointTransferPositionsCount">0</b> позиций</span><strong id="pointTransferQuantityTotal">0 ед.</strong></div>
@@ -952,7 +1026,7 @@
 
     <div class="modal-backdrop hidden" id="pointTransferReceivingModal">
       <section class="admin-modal point-transfer-receiving-modal">
-        <header><div><p>Приёмка между точками</p><h2 id="pointTransferReceivingTitle">Принять перемещение</h2></div><button class="modal-close" aria-label="Закрыть" data-close="pointTransferReceivingModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Приёмка между точками</p><h2 id="pointTransferReceivingTitle">Принять перемещение</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="pointTransferReceivingModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="receiving-meta" id="pointTransferReceivingMeta"></div>
         <div class="point-transfer-receiving-items" id="pointTransferReceivingItems"></div>
         <label class="full-label"><span>Комментарий по расхождениям</span><input id="pointTransferReceivingComment" type="text" placeholder="Необязательно" /></label>
@@ -963,7 +1037,7 @@
 
     <div class="modal-backdrop hidden" id="directOrderSendModal">
       <section class="admin-modal direct-order-send-modal">
-        <header><div><p>Согласованный заказ</p><h2 id="directOrderSendTitle">Отправка поставщику</h2></div><button class="modal-close" aria-label="Закрыть" data-close="directOrderSendModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Согласованный заказ</p><h2 id="directOrderSendTitle">Отправка поставщику</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="directOrderSendModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="direct-send-meta" id="directSendMeta"></div>
         <div class="direct-send-document">
           <div class="direct-send-document-title"><div><strong>Заказ поставщику</strong><small>Документ сформирован по согласованным позициям</small></div><b id="directSendDocumentTotal">0 сом</b></div>
@@ -982,7 +1056,7 @@
 
     <div class="modal-backdrop hidden" id="batchModal">
       <section class="admin-modal batch-modal">
-        <header><div><p>Кухня столовой</p><h2>Выпуск блюда по весу</h2></div><button class="modal-close" aria-label="Закрыть" data-close="batchModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Кухня столовой</p><h2>Выпуск блюда по весу</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="batchModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="modal-grid"><label><span>Столовая</span><select id="batchBranch"></select></label><label><span>Технологическая карта</span><select id="batchRecipe"></select></label></div>
         <label class="full-label"><span>Фактический выход готового блюда после приготовления</span><div class="unit-input"><input id="batchWeight" type="number" min="0.1" step="0.1" value="10" /><b>кг</b></div></label>
         <div class="batch-calculation"><div><span>Эквивалент по техкарте</span><strong id="batchPortions">0 порций</strong></div><div><span>Себестоимость партии</span><strong id="batchCost">0 сом</strong></div></div>
@@ -994,7 +1068,7 @@
 
     <div class="modal-backdrop hidden" id="receivingModal">
       <section class="admin-modal receiving-modal">
-        <header><div><p>Архивный маршрут</p><h2 id="receivingModalTitle">Внутренняя приёмка отключена</h2></div><button class="modal-close" aria-label="Закрыть" data-close="receivingModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Архивный маршрут</p><h2 id="receivingModalTitle">Внутренняя приёмка отключена</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="receivingModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="receiving-meta" id="receivingMeta"></div>
         <div class="receiving-items" id="receivingItemsEditor"></div>
         <label class="full-label"><span>Комментарий по расхождениям или качеству</span><input id="receivingComment" type="text" placeholder="Необязательно" /></label>
@@ -1005,7 +1079,7 @@
 
     <div class="modal-backdrop hidden" id="servingTransferModal">
       <section class="admin-modal compact-modal">
-        <header><div><p>Кухня → линия раздачи</p><h2 id="servingTransferTitle">Передача готовой партии</h2></div><button class="modal-close" aria-label="Закрыть" data-close="servingTransferModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Кухня → линия раздачи</p><h2 id="servingTransferTitle">Передача готовой партии</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="servingTransferModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="modal-grid"><label><span>Передать на раздачу</span><div class="unit-input"><input id="servingTransferWeight" type="number" min="0.1" step="0.1" /><b>кг</b></div></label><label><span>Температура блюда</span><div class="unit-input"><input id="servingTransferTemperature" type="number" step="0.1" value="65" /><b>°C</b></div></label></div>
         <div class="modal-grid"><label><span>Линия / мармит</span><select id="servingLine"><option>Линия №1 · горячие блюда</option><option>Линия №2 · супы</option><option>Холодная витрина · салаты</option></select></label><label><span>Кто примет</span><select id="servingReceiver" required></select></label></div>
         <div class="document-result"><span>Расчётно получится</span><strong id="servingTransferPortions">0 порций</strong></div>
@@ -1015,7 +1089,7 @@
 
     <div class="modal-backdrop hidden" id="servingCloseModal">
       <section class="admin-modal compact-modal">
-        <header><div><p>Закрытие линии раздачи</p><h2 id="servingCloseTitle">Итоги выдачи блюда</h2></div><button class="modal-close" aria-label="Закрыть" data-close="servingCloseModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <header><div><p>Закрытие линии раздачи</p><h2 id="servingCloseTitle">Итоги выдачи блюда</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="servingCloseModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="modal-grid"><label><span>Выдано по кассе</span><div class="unit-input"><input id="servingSoldPortions" type="number" min="0" step="1" /><b>порц.</b></div></label><label><span>Фактический остаток</span><div class="unit-input"><input id="servingRemainingWeight" type="number" min="0" step="0.001" /><b>кг</b></div></label></div>
         <label class="full-label"><span>Что сделать с остатком</span><select id="servingRemainderAction"><option value="return">Вернуть на кухню</option><option value="writeoff">Списать в конце смены</option></select></label>
         <div class="serving-close-balance"><div><span>Передано</span><strong id="servingCloseTransferred">0 кг</strong></div><div><span>Расчётный расход</span><strong id="servingCloseUsed">0 кг</strong></div><div><span>Необъяснённое отклонение</span><strong id="servingCloseVariance">0 кг</strong></div></div>
@@ -1023,16 +1097,20 @@
       </section>
     </div>
 
-    <div class="modal-backdrop hidden" id="ingredientImportModal"><section class="admin-modal"><header><h2>Импорт ингредиентов</h2><button type="button" class="modal-close" data-close="ingredientImportModal" aria-label="Закрыть">×</button></header><p>CSV с колонками «Название», «Категория», «Ед. измерения». Дополнительно: «Штрихкод», «Лимит остатка». Новые позиции создаются без остатков; поступление оформляется через поставку.</p><div id="ingredientImportPreview"></div><div class="modal-actions"><button type="button" class="secondary-action" data-close="ingredientImportModal">Отмена</button><button id="confirmIngredientImport" class="primary-button" type="button">Импортировать</button></div></section></div>
+    <div class="modal-backdrop hidden" id="ingredientImportModal"><section class="admin-modal"><header><h2>Импорт ингредиентов</h2><button type="button" class="modal-close icon-button" data-close="ingredientImportModal" aria-label="Закрыть">×</button></header><p>CSV с колонками «Название», «Категория», «Ед. измерения». Дополнительно: «Штрихкод», «Лимит остатка». Новые позиции создаются без остатков; поступление оформляется через поставку.</p><div id="ingredientImportPreview"></div><div class="modal-actions"><button type="button" class="secondary-action" data-close="ingredientImportModal">Отмена</button><button id="confirmIngredientImport" class="primary-button" type="button">Импортировать</button></div></section></div>
+    <dialog id="payrollDialog" class="payroll-dialog"><form id="payrollForm"><header><div><p id="payrollDialogEyebrow">Зарплата</p><h2 id="payrollDialogTitle"></h2></div><button type="button" id="payrollDialogClose" class="icon-button" aria-label="Закрыть">×</button></header><div id="payrollFormFields"></div><p id="payrollFormError" role="alert"></p><footer><button type="button" class="secondary-action" id="payrollDialogCancel">Отмена</button><button type="submit" class="primary-button" id="payrollDialogSubmit">Сохранить</button></footer></form></dialog>
     <div class="admin-toast hidden" id="adminToast"></div>
     <script src="numeric-inputs.js?v=1"></script>
-    <script src="api-client.js?v=oimo-1"></script>
-    <script src="company-settings.js?v=oimo-1"></script>
-    <script src="catalog-cover.js?v=1"></script>
-    <script src="ingredients-list.js?v=icons-3"></script>
+    <script src="api-client.js?v=pnl-1"></script>
+    <script src="company-settings.js?v=actions-15"></script>
+    <script src="catalog-cover.js?v=actions-15"></script>
+    <script src="ingredients-list.js?v=clear-ux-1"></script>
     <script src="ingredient-picker.js?v=1"></script>
-    <script src="product-variants.js?v=covers-2"></script>
-    <script src="custody.js?v=accounting-6"></script>
-    <script src="admin.js?v=covers-2"></script>
+    <script src="product-variants.js?v=actions-15"></script>
+    <script src="custody.js?v=actions-15"></script>
+    <script src="admin.js?v=pnl-1"></script>
+    <script src="payroll.js?v=1"></script>
+    <script src="pnl.js?v=1"></script>
+    <script src="offline-review.js?v=1"></script>
   </body>
 </html>

@@ -6,14 +6,17 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import re
 from uuid import uuid4
+from urllib.parse import quote
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
+from fastapi.responses import JSONResponse
 from psycopg import Connection
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 
 from . import custody
+from .transfer_history import build_transfer_history, build_cash_shift_history
 from .config import get_settings
 from .database import close_pool, get_connection, open_pool, pool
 from .domain import DomainError, calculate_unit_costs, find_cycle
@@ -88,7 +91,7 @@ def _ensure_operational_data() -> None:
     with pool.connection() as connection, connection.transaction():
         login = settings.platform_initial_login.lower()
         existing = connection.execute(
-            "SELECT id FROM auth_users WHERE lower(login) = lower(%s) LIMIT 1",
+            "SELECT id FROM auth_users WHERE lower(login) = lower(%s) AND deleted_at IS NULL LIMIT 1",
             (login,),
         ).fetchone()
         if not existing:
@@ -120,7 +123,7 @@ app.add_middleware(
     allow_origins=get_settings().allowed_origins,
     allow_credentials=True,
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
-    allow_headers=["Content-Type", "X-Actor", "X-Ashkana-Client"],
+    allow_headers=["Content-Type", "X-Actor", "X-Ashkana-Client", "X-Oimo-Register", "X-Oimo-Tenant", "X-Oimo-Operator"],
 )
 
 
@@ -150,6 +153,10 @@ def _tenant_user(user: dict) -> str:
 def _authorize_staff_action(user: dict, action: str) -> None:
     if user["role"] != "branch":
         return
+    if action in {"work.shift.open", "work.shift.close"}:
+        if not _has_permission(user, "posAccess"):
+            raise HTTPException(403, "Нет доступа к отметке рабочего времени")
+        return
     if user.get("staff_role") == "production" and (action.startswith("sale.") or action.startswith("pos.")):
         raise HTTPException(status_code=403, detail="Сотрудник производства не может выполнять продажи и кассовые операции")
     if action in {"pos.receiving.accept", "pos.receiving.reject", "pos.serving.writeoff", "pos.serving.surplus"}:
@@ -157,7 +164,7 @@ def _authorize_staff_action(user: dict, action: str) -> None:
             raise HTTPException(status_code=403, detail="Приёмка доступна кассиру на открытой смене")
         return
     pos_permissions = {
-        "sale.create": "posAccess", "pos.order.save": "posAccess", "pos.order.remove": "posAccess", "pos.order.status": "posAccess",
+        "sale.import": "posAccess", "sale.create": "posAccess", "pos.order.save": "posAccess", "pos.order.remove": "posAccess", "pos.order.status": "posAccess",
         "pos.customer.upsert": "posAccess", "sale.refund": "posRefunds", "pos.cash.movement": "posCash",
     }
     if action == "supply.create" and user.get("register_id"):
@@ -277,6 +284,11 @@ def current_user(
     ).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="Сессия истекла или доступ изменён")
+    if request.headers.get('x-ashkana-client', '').lower() == 'pos':
+        expected_register = request.headers.get('x-oimo-register')
+        expected_tenant = request.headers.get('x-oimo-tenant')
+        if (expected_register and expected_register != str(row['id'])) or (expected_tenant and expected_tenant != str(row['tenant_id'])):
+            raise HTTPException(403, 'В браузере активирована другая касса. Вернитесь к исходной кассе для отправки её чеков.')
     if row.get("staff_role") == "production" and request.headers.get("x-ashkana-client", "").lower() != "pos" and request.url.path not in {"/api/v1/auth/me", "/api/v1/auth/logout"}:
         raise HTTPException(status_code=403, detail="Сотруднику производства доступен только терминал")
     _validate_tenant_access(row)
@@ -286,7 +298,10 @@ def current_user(
         if not branch or branch.get("status") != "active":
             raise HTTPException(status_code=403, detail="Точка отключена")
     connection.execute("UPDATE auth_sessions SET last_seen_at = CURRENT_TIMESTAMP WHERE id = %s", (row["session_id"],))
-    return dict(row)
+    result = dict(row)
+    if request.headers.get('x-ashkana-client', '').lower() == 'pos':
+        result['_expected_operator_id'] = request.headers.get('x-oimo-operator')
+    return result
 
 
 def _ensure_register_password_unique(
@@ -366,6 +381,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
         LEFT JOIN tenants t ON t.id = u.tenant_id
         LEFT JOIN tenant_subscriptions subscription ON subscription.tenant_id = u.tenant_id
         WHERE lower(u.login) = lower(%s) AND u.staff_role <> 'pos_terminal'
+          AND u.deleted_at IS NULL
         """,
         (payload.login,),
     ).fetchone()
@@ -564,6 +580,7 @@ def _operator_payload(row: dict) -> dict:
         "roleLabel": role_labels.get(row["staff_role"], "Сотрудник"),
         "initials": initials,
         "permissions": _normalized_permissions(row.get("staff_role"), row.get("access_permissions")),
+        "accountVersion": int(row.get("account_version") or 0),
     }
 
 
@@ -579,7 +596,7 @@ def _current_pos_operator(
     if raw_token:
         row = connection.execute(
             """
-            SELECT employee.id, employee.login, employee.display_name, employee.staff_role, employee.access_permissions,
+            SELECT employee.id, employee.login, employee.display_name, employee.staff_role, employee.access_permissions, employee.account_version,
                    employee.branch_id, operator.id AS operator_session_id
             FROM pos_operator_sessions operator
             JOIN auth_users employee ON employee.id = operator.employee_user_id
@@ -597,6 +614,8 @@ def _current_pos_operator(
         ).fetchone()
     if row and not _has_permission(dict(row), "posAccess"):
         row = None
+    if row and user.get('_expected_operator_id') and str(row['id']) != str(user['_expected_operator_id']):
+        raise HTTPException(423, 'Сотрудник в браузере сменился. Войдите по личному PIN повторно.')
     if not row:
         if required:
             raise HTTPException(status_code=423, detail="Введите личный PIN для входа в терминал")
@@ -660,6 +679,41 @@ def list_pos_shifts(
         (user["tenant_id"], limit),
     ).fetchall()
     return [_pos_shift_payload(dict(row)) for row in rows]
+
+
+def _pos_history_cash_shifts(connection: Connection, user: dict) -> list[dict]:
+    rows = connection.execute(
+        """
+        SELECT shift.id, shift.branch_id, shift.register_user_id, shift.opened_by_user_id,
+               shift.opened_at, shift.closed_at, register.display_name AS register_name,
+               opened.display_name AS opened_by
+        FROM pos_shifts shift
+        LEFT JOIN auth_users register ON register.id = shift.register_user_id
+        LEFT JOIN auth_users opened ON opened.id = shift.opened_by_user_id
+        WHERE shift.tenant_id = %s AND shift.branch_id = %s
+        ORDER BY shift.opened_at DESC, shift.id DESC
+        """,
+        (user["tenant_id"], user["branch_id"]),
+    ).fetchall()
+    return [{"id": row["id"], "branchId": str(row["branch_id"]),
+             "registerId": row["register_user_id"], "registerName": row.get("register_name") or "",
+             "employeeId": row["opened_by_user_id"], "employeeName": row.get("opened_by") or "",
+             "openedAt": row["opened_at"], "closedAt": row["closed_at"]} for row in rows]
+
+
+@app.get("/api/v1/pos/shifts/history", tags=["pos"])
+def pos_shifts_history(ashkana_pos_operator: str | None = Cookie(default=None), user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+    if operator.get("staff_role") == "production":
+        raise HTTPException(status_code=403, detail="История чеков недоступна")
+    from .company_settings import require_manager
+    state = _workspace_row(connection, str(user["tenant_id"]))["payload"]
+    try:
+        require_manager(state, operator, "orderHistory")
+    except PermissionError as error:
+        raise HTTPException(status_code=403, detail=str(error)) from error
+    actor = {**operator, "role": "branch", "branch_id": str(user["branch_id"]), "register_id": user["id"]}
+    return build_cash_shift_history(_pos_history_cash_shifts(connection, user), str(user["branch_id"]), actor)
 
 
 def _pos_register_record(connection: Connection, tenant_id: str, register_id: int) -> dict:
@@ -796,19 +850,6 @@ def update_pos_register(
                 raise HTTPException(status_code=422, detail="Для повторного включения кассы задайте новый пароль")
             if payload.password:
                 _ensure_register_password_unique(connection, tenant_id, payload.password, exclude_id=register_id)
-            target_pin = payload.pin
-            if not target_pin and payload.is_active and (
-                existing["branch_id"] != payload.branch_id or not existing["is_active"]
-            ) and existing["pin_hash"]:
-                saved_pin = connection.execute(
-                    "SELECT pgp_sym_decrypt(pin_encrypted, %s) AS pin FROM auth_users WHERE id = %s",
-                    (_employee_pin_key(), employee_id),
-                ).fetchone()
-                target_pin = saved_pin["pin"] if saved_pin else None
-                if not target_pin:
-                    raise HTTPException(status_code=422, detail="Задайте новый PIN при переносе или активации сотрудника")
-            if payload.is_active:
-                _assert_unique_employee_pin(connection, tenant_id, payload.branch_id, target_pin, employee_id)
             access_changed = (
                 existing["branch_id"] != payload.branch_id
                 or bool(existing["is_active"]) != payload.is_active
@@ -915,6 +956,16 @@ def production_admin_context(branch_id: str | None = Query(default=None), user: 
 def pos_production_context(ashkana_pos_operator: str | None = Cookie(default=None), user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
     operator = _current_pos_operator(connection, user, ashkana_pos_operator)
     return _production_context_response(connection, {**user, "id": operator["id"], "display_name": operator["display_name"], "staff_role": operator.get("staff_role"), "access_permissions": operator.get("access_permissions") or {}}, str(user["branch_id"]))
+
+
+@app.get("/api/v1/pos/transfers/history", tags=["pos"])
+def pos_transfer_history(ashkana_pos_operator: str | None = Cookie(default=None), user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+    if user.get("plan_code") == "restaurant" or operator.get("staff_role") not in {"production", "cashier", "branch_manager", "hall_admin"}:
+        raise HTTPException(status_code=403, detail="История передач доступна сотрудникам кухни и раздачи столовой")
+    state = _workspace_row(connection, str(user["tenant_id"]))["payload"]
+    actor = {**operator, "role": "branch", "branch_id": str(user["branch_id"]), "register_id": user["id"]}
+    return build_transfer_history(state, str(user["branch_id"]), actor, _pos_history_cash_shifts(connection, user))
 
 
 @app.get("/api/v1/pos/receiving", tags=["pos"])
@@ -1026,13 +1077,136 @@ def pos_supply_context(
         }
         for item in [*state.get("ingredients", []), *state.get("products", [])]
     ]
+    can_pay_drawer = operator.get("staff_role") != "production" and bool(_current_pos_shift(connection, user))
     accounts = [
         {"id": account["id"], "name": account["name"], "type": account.get("type", "other")}
         for account in state.get("financeState", {}).get("accounts", [])
         if account.get("status") == "active" and (not account.get("branchId") or str(account.get("branchId")) == branch_id)
+        and (account.get("type") != "cash" or (can_pay_drawer and str(account.get("branchId")) == branch_id))
     ]
-    supplies = state.get("logisticsState", {}).get("supplies", [])[:20]
-    return {"suppliers": suppliers, "items": items, "accounts": accounts, "supplies": supplies}
+    supplies = [supply for supply in state.get("logisticsState", {}).get("supplies", []) if str(supply.get("branchId")) == branch_id][:20]
+    settings = get_settings()
+    photo_enabled = bool(getattr(settings, "openai_api_key", "") and getattr(settings, "invoice_photo_model", ""))
+    return {"suppliers": suppliers, "items": items, "accounts": accounts, "supplies": supplies,
+            "photoImport": {"enabled": photo_enabled, "reason": "" if photo_enabled else
+                            "Распознавание фото не настроено. Фото можно прикрепить к поставке и заполнить позиции вручную"}}
+
+
+@app.post("/api/v1/pos/supplies/import-preview", tags=["pos"])
+def preview_supply_import(
+    payload: dict, request: Request,
+    ashkana_pos_operator: str | None = Cookie(default=None),
+    user: dict = Depends(current_user),
+    connection: Connection = Depends(get_connection),
+) -> dict:
+    _check_origin(request)
+    operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+    if not _has_permission(operator, "posSupply"):
+        raise HTTPException(status_code=403, detail="Для сотрудника не разрешена приёмка поставок")
+    from .supply_import import preview
+    state = _workspace_row(connection, str(user["tenant_id"]))["payload"]
+    try:
+        return preview(state, payload.get("file"), payload.get("fileName"))
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/api/v1/pos/supplies/photos", tags=["pos"])
+def upload_supply_photo(
+    payload: dict, request: Request,
+    ashkana_pos_operator: str | None = Cookie(default=None),
+    user: dict = Depends(current_user),
+    connection: Connection = Depends(get_connection),
+) -> dict:
+    from . import supply_photos
+    from .invoice_photo import PhotoInvoiceError
+
+    _check_origin(request)
+    operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+    if not _has_permission(operator, "posSupply"):
+        raise HTTPException(status_code=403, detail="Для сотрудника не разрешена приёмка поставок")
+    try:
+        with connection.transaction():
+            return supply_photos.upload(connection, user, operator, payload.get("file"), payload.get("fileName"))
+    except (supply_photos.PhotoStorageError, PhotoInvoiceError) as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+
+@app.post("/api/v1/pos/supplies/photos/{photo_id}/recognize", tags=["pos"])
+def recognize_supply_photo(
+    photo_id: str, request: Request,
+    ashkana_pos_operator: str | None = Cookie(default=None),
+    user: dict = Depends(current_user),
+    connection: Connection = Depends(get_connection),
+):
+    from . import supply_photos
+
+    _check_origin(request)
+    operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+    if not _has_permission(operator, "posSupply"):
+        raise HTTPException(status_code=403, detail="Для сотрудника не разрешена приёмка поставок")
+    state = _workspace_row(connection, str(user["tenant_id"]))["payload"]
+    try:
+        with connection.transaction():
+            result, status_code = supply_photos.recognize(connection, user, operator, photo_id, state, get_settings())
+        if status_code != 200:
+            return JSONResponse(result, status_code=status_code)
+        return result
+    except supply_photos.PhotoStorageError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+
+
+def _supply_photo_user(
+    request: Request, client: str = Query(default=""),
+    ashkana_session: str | None = Cookie(default=None),
+    ashkana_pos_session: str | None = Cookie(default=None),
+    connection: Connection = Depends(get_connection),
+) -> dict:
+    # Browser <img>/<a> requests cannot set the terminal header. Scope only this
+    # photo route to the requested cookie, without falling back to an admin login.
+    if client == "pos":
+        headers = [(key, value) for key, value in request.scope.get("headers", [])
+                   if key.lower() != b"x-ashkana-client"]
+        request = Request({**request.scope, "headers": [*headers, (b"x-ashkana-client", b"pos")]})
+    return current_user(request, ashkana_session, ashkana_pos_session, connection)
+
+
+@app.get("/api/v1/pos/supplies/photos/{photo_id}", tags=["pos"])
+def get_supply_photo(
+    photo_id: str, download: bool = False,
+    ashkana_pos_operator: str | None = Cookie(default=None),
+    user: dict = Depends(_supply_photo_user),
+    connection: Connection = Depends(get_connection),
+) -> Response:
+    from . import supply_photos
+
+    tenant_id = _tenant_user(user)
+    operator = None
+    if user.get("staff_role") == "pos_terminal":
+        operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+        if not _has_permission(operator, "posSupply"):
+            raise HTTPException(status_code=403, detail="Для сотрудника не разрешена приёмка поставок")
+    elif user.get("role") != "owner" and not _has_permission(user, "inventory"):
+        raise HTTPException(status_code=403, detail="Фотография поставки недоступна")
+    try:
+        photo = supply_photos.get_photo(connection, tenant_id, photo_id)
+        if user.get("role") != "owner" and str(photo["branch_id"]) != str(user.get("branch_id")):
+            raise supply_photos.PhotoStorageError("Фотография не найдена", 404)
+        if not photo["linked"]:
+            supply_photos.require_uploader(photo, user, operator or user)
+        else:
+            state = _workspace_row(connection, tenant_id)["payload"]
+            if not any(supply.get("photo", {}).get("id") == photo_id
+                       and str(supply.get("branchId")) == str(photo["branch_id"])
+                       for supply in state.get("logisticsState", {}).get("supplies", [])):
+                raise supply_photos.PhotoStorageError("Фотография поставки не найдена", 404)
+    except supply_photos.PhotoStorageError as error:
+        raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+    disposition = "attachment" if download else "inline"
+    return Response(bytes(photo["content"]), media_type=photo["content_type"], headers={
+        "Content-Disposition": f"{disposition}; filename*=UTF-8''{quote(photo['file_name'], safe='')}",
+        "Cache-Control": "private, no-store", "X-Content-Type-Options": "nosniff",
+    })
 
 
 @app.get("/api/v1/pos/operator", tags=["pos"])
@@ -1073,7 +1247,7 @@ def unlock_pos(
         if terminal["pin_locked"]:
             raise HTTPException(status_code=429, detail="Слишком много попыток. Повторите через 5 минут")
         candidates = connection.execute(
-            """SELECT id, display_name, staff_role, access_permissions, pin_hash,
+            """SELECT id, display_name, staff_role, access_permissions, pin_hash, account_version,
                       (pin_locked_until IS NOT NULL AND pin_locked_until > CURRENT_TIMESTAMP) AS pin_locked
                FROM auth_users
                WHERE tenant_id = %s AND branch_id = %s AND role = 'branch' AND is_active
@@ -1200,8 +1374,10 @@ def close_pos_shift(
             raise HTTPException(status_code=409, detail="Учёт изменился. Обновите окно закрытия смены и пересчитайте остатки")
         from .shift_reconciliation import close_serving
         try:
+            from .workspace import _require_unlocked
+            _require_unlocked(state, str(user["branch_id"]))
             close_serving(state, {**user, "id":operator["id"], "display_name":operator["display_name"], "register_id":user["id"], "shift_id":shift["id"]}, payload.stock_counts, payload.stock_confirmed)
-        except custody.CustodyError as error:
+        except (custody.CustodyError, WorkspaceError) as error:
             raise HTTPException(status_code=error.status_code, detail=str(error)) from error
         connection.execute("UPDATE operational_state SET payload = %s, version = version + 1, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s", (Jsonb(state), user["tenant_id"]))
     cash_sales = sum(
@@ -1278,6 +1454,7 @@ def _employee_record(connection: Connection, tenant_id: str, employee_id: int) -
         LEFT JOIN pos_operator_sessions operator ON operator.employee_user_id = account.id
         WHERE account.id = %s AND account.tenant_id = %s AND account.role = 'branch'
           AND account.staff_role <> 'pos_terminal'
+          AND account.deleted_at IS NULL
         GROUP BY account.id
         """,
         (employee_id, tenant_id),
@@ -1295,6 +1472,7 @@ def _sync_branch_managers(connection: Connection, tenant_id: str, state: dict) -
             SELECT branch_id, display_name
             FROM auth_users
             WHERE tenant_id = %s AND role = 'branch' AND staff_role = 'branch_manager' AND is_active
+              AND deleted_at IS NULL
             """,
             (tenant_id,),
         ).fetchall()
@@ -1321,6 +1499,7 @@ def list_employees(user: dict = Depends(current_user), connection: Connection = 
         LEFT JOIN pos_operator_sessions operator ON operator.employee_user_id = account.id
         WHERE account.tenant_id = %s AND account.role = 'branch'
           AND account.staff_role <> 'pos_terminal'
+          AND account.deleted_at IS NULL
           {branch_clause}
         GROUP BY account.id
         ORDER BY account.is_active DESC, account.display_name, account.id
@@ -1473,6 +1652,7 @@ def update_employee(
                        is_active, account_version
                 FROM auth_users
                 WHERE id = %s AND tenant_id = %s AND role = 'branch' AND staff_role <> 'pos_terminal'
+                  AND deleted_at IS NULL
                 FOR UPDATE
                 """,
                 (employee_id, tenant_id),
@@ -1564,6 +1744,101 @@ def update_employee(
     except UniqueViolation as error:
         raise HTTPException(status_code=409, detail="Этот логин уже используется") from error
     return _employee_record(connection, tenant_id, employee_id)
+
+
+def _assert_employee_responsibility_closed(connection: Connection, tenant_id: str, state: dict,
+                                           employee_id: int) -> None:
+    """Do not leave shifts or personal receipts that require this account stuck."""
+    logistics = state.get("logisticsState", {})
+    identity = str(employee_id)
+    if any(shift.get("status") == "open" and str(shift.get("employeeId")) == identity
+           for shift in logistics.get("productionShifts", [])):
+        raise HTTPException(status_code=409, detail="Перед удалением сотрудник должен закрыть смену производства")
+    if connection.execute(
+        "SELECT id FROM pos_shifts WHERE tenant_id = %s AND opened_by_user_id = %s AND closed_at IS NULL LIMIT 1",
+        (tenant_id, employee_id),
+    ).fetchone():
+        raise HTTPException(status_code=409, detail="Перед удалением закройте кассовую смену, открытую сотрудником")
+    for document in logistics.get("custodyDocuments", []):
+        if (document.get("status") == "pending" and document.get("kind") in {"transfer", "handover"}
+                and str((document.get("recipient") or {}).get("id")) == identity):
+            raise HTTPException(status_code=409, detail="Перед удалением завершите или отмените передачи, адресованные лично сотруднику")
+    # Closed shifts, pooled handovers and existing stock keep the original actor
+    # identity; the next cashier, cook or manager can continue their accounting.
+
+
+@app.delete("/api/v1/employees/{employee_id}", tags=["employees"])
+def delete_employee(
+    employee_id: int,
+    request: Request,
+    user: dict = Depends(current_user),
+    connection: Connection = Depends(get_connection),
+) -> dict:
+    _check_origin(request)
+    _company_admin_or_branch_manager(user)
+    if str(employee_id) == str(user["id"]):
+        raise HTTPException(status_code=403, detail="Нельзя удалить собственную учётную запись")
+    tenant_id = str(user["tenant_id"])
+    with connection.transaction():
+        workspace = _workspace_row(connection, tenant_id, for_update=True)
+        state = workspace["payload"]
+        employee = connection.execute(
+            """
+            SELECT id, login, display_name, branch_id, staff_role
+            FROM auth_users
+            WHERE id = %s AND tenant_id = %s AND role = 'branch'
+              AND staff_role <> 'pos_terminal' AND deleted_at IS NULL
+            FOR UPDATE
+            """,
+            (employee_id, tenant_id),
+        ).fetchone()
+        if not employee:
+            raise HTTPException(status_code=404, detail="Сотрудник не найден")
+        _assert_managed_branch(user, employee["branch_id"])
+        if user["role"] == "branch" and employee["staff_role"] == "branch_manager":
+            raise HTTPException(status_code=403, detail="Руководителя удаляет владелец аккаунта")
+        _assert_employee_responsibility_closed(connection, tenant_id, state, employee_id)
+        from .payroll import current_shift, stop_employee
+        if current_shift(state, employee_id):
+            raise HTTPException(409, "Перед удалением закройте рабочую смену сотрудника")
+        stop_employee(state, employee_id)
+        # Keep the original identity for history. The partial unique login index
+        # lets a new employee reuse this login without inheriting this user ID.
+        connection.execute(
+            """
+            UPDATE auth_users
+            SET deleted_at = CURRENT_TIMESTAMP, is_active = FALSE,
+                account_version = account_version + 1, updated_at = CURRENT_TIMESTAMP
+            WHERE id = %s AND tenant_id = %s AND deleted_at IS NULL
+            """,
+            (employee_id, tenant_id),
+        )
+        connection.execute(
+            "UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = %s AND revoked_at IS NULL",
+            (employee_id,),
+        )
+        connection.execute(
+            "UPDATE pos_operator_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE employee_user_id = %s AND revoked_at IS NULL",
+            (employee_id,),
+        )
+        _sync_branch_managers(connection, tenant_id, state)
+        version = int(workspace["version"]) + 1
+        connection.execute(
+            "UPDATE operational_state SET version = %s, payload = %s, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s",
+            (version, Jsonb(state), tenant_id),
+        )
+        connection.execute(
+            """
+            INSERT INTO operational_events
+              (tenant_id, state_version, actor_user_id, actor_login, actor_role, branch_id, action, entity_type, entity_id, payload)
+            VALUES (%s, %s, %s, %s, %s, %s, 'employee.delete', 'employee', %s, %s)
+            """,
+            (tenant_id, version, user["id"], user["login"], user["role"], employee["branch_id"], str(employee_id), Jsonb({
+                "displayName": employee["display_name"], "branchId": employee["branch_id"],
+                "staffRole": employee["staff_role"], "login": employee["login"],
+            })),
+        )
+    return {"ok": True, "employee_id": employee_id, "version": version}
 
 
 def _tenant_record(connection: Connection, tenant_id: str) -> dict:
@@ -1866,7 +2141,7 @@ def update_tenant_owner_access(
             if not owner:
                 raise HTTPException(status_code=404, detail="Администратор компании не найден")
             duplicate = connection.execute(
-                "SELECT id FROM auth_users WHERE lower(login) = lower(%s) AND id <> %s",
+                "SELECT id FROM auth_users WHERE lower(login) = lower(%s) AND deleted_at IS NULL AND id <> %s",
                 (payload.owner_login, owner["id"]),
             ).fetchone()
             if duplicate:
@@ -1923,6 +2198,27 @@ def get_workspace(user: dict = Depends(current_user), connection: Connection = D
     return {"version": row["version"], "updatedAt": row["updated_at"], "state": visible_state(row["payload"], user)}
 
 
+@app.post("/api/v1/workspace/inventories/{inventory_id}/export", tags=["operations"])
+def export_inventory(
+    inventory_id: str, payload: dict, request: Request,
+    user: dict = Depends(current_user), connection: Connection = Depends(get_connection),
+) -> dict:
+    from .inventory_report import build_report, filename, workbook
+    _check_origin(request)
+    tenant_id = _tenant_user(user)
+    if user.get("role") not in {"owner", "branch"}:
+        raise HTTPException(status_code=403, detail="Инвентаризация недоступна")
+    _authorize_staff_action(user, "inventory.save")
+    state = visible_state(_workspace_row(connection, tenant_id)["payload"], user)
+    try:
+        report = build_report(state, inventory_id, payload.get("items"))
+    except LookupError as error:
+        raise HTTPException(status_code=404, detail=str(error)) from error
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    return {"xlsx": workbook(report), "filename": filename(report)}
+
+
 @app.post("/api/v1/workspace/actions", tags=["operations"])
 def workspace_action(
     command: WorkspaceActionInput, request: Request, user: dict = Depends(current_user),
@@ -1930,29 +2226,34 @@ def workspace_action(
     connection: Connection = Depends(get_connection),
 ) -> dict:
     _check_origin(request)
-    if command.action == "sale.create" and request.headers.get("X-Ashkana-Client") != "pos":
+    if command.action in {"sale.create", "sale.import"} and request.headers.get("X-Ashkana-Client") != "pos":
         raise HTTPException(status_code=403, detail="Продажи проводятся через терминал с кассиром и сменой")
     tenant_id = _tenant_user(user)
     locked_workspace = _workspace_row(connection, tenant_id, for_update=True)
     acting_user = user
+    previous_operation = None
+    replayable_operations = {"supply.create", "batch.create", "pos.cash.movement"}
     pos_actions = {
+        "work.shift.open", "work.shift.close",
         "pos.receiving.accept", "pos.receiving.reject", "pos.serving.writeoff", "pos.serving.surplus",
-        "sale.create", "sale.refund", "pos.order.save", "pos.order.remove",
+        "sale.import", "sale.create", "sale.refund", "pos.order.save", "pos.order.remove",
         "pos.customer.upsert", "pos.cash.movement", "supply.create", "pos.order.status",
         "batch.create", "batch.transfer", "batch.close", "batch.release", "batch.serve", "batch.serve_many",
     }
     if (command.action in pos_actions or command.action.startswith("custody.") or command.action.startswith("production.shift.")) and request.headers.get("X-Ashkana-Client") == "pos":
         operator = _current_pos_operator(connection, user, ashkana_pos_operator)
         shift = _current_pos_shift(connection, user)
-        from .workspace import sale_replay
+        from .workspace import operation_replay, sale_replay
         replay_user = {**user, "id": operator["id"], "register_id": user["id"]}
         try:
             previous_sale = sale_replay(locked_workspace["payload"], replay_user, command.payload) if command.action == "sale.create" else None
+            if command.action in replayable_operations:
+                previous_operation = operation_replay(locked_workspace["payload"], replay_user, command.action, command.payload)
         except WorkspaceError as error:
             raise HTTPException(status_code=error.status_code, detail=str(error)) from error
         if command.action == "sale.create" and not command.payload.get("requestId"):
             raise HTTPException(status_code=422, detail="Обновите терминал: не указан идентификатор оплаты")
-        if not shift and not previous_sale and operator.get("staff_role") != "production":
+        if not shift and not previous_sale and not previous_operation and operator.get("staff_role") != "production" and not command.action.startswith("work.shift."):
             raise HTTPException(status_code=409, detail="Сначала откройте кассовую смену")
         acting_user = {
             **user,
@@ -1966,6 +2267,17 @@ def workspace_action(
             "shift_id": shift["id"] if shift else None,
         }
     _authorize_staff_action(acting_user, command.action)
+    if command.action in replayable_operations:
+        from .workspace import operation_replay
+        try:
+            previous_operation = operation_replay(locked_workspace["payload"], acting_user, command.action, command.payload)
+        except WorkspaceError as error:
+            raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        if previous_operation:
+            entity_type, entity_id = previous_operation
+            return {"version": locked_workspace["version"],
+                    "state": visible_state(locked_workspace["payload"], user if request.headers.get("X-Ashkana-Client") == "pos" else acting_user),
+                    "entity": {"type": entity_type, "id": entity_id}}
     if command.action in {"batch.release", "batch.transfer", "custody.send", "custody.handover"}:
         recipient_id = str(command.payload.get("recipientId", ""))
         recipients = _production_recipients(connection, str(tenant_id), str(acting_user.get("branch_id") or command.payload.get("branchId", "")))
@@ -1979,7 +2291,7 @@ def workspace_action(
         with connection.transaction():
             row = _workspace_row(connection, tenant_id, for_update=True)
             state = row["payload"]
-            if acting_user.get("staff_role") == "production" and not command.action.startswith("production.shift."):
+            if acting_user.get("staff_role") == "production" and not command.action.startswith(("production.shift.", "work.shift.")):
                 kitchen_shift = production_shifts.current(state, str(acting_user.get("branch_id")))
                 if not kitchen_shift or str(kitchen_shift["employeeId"]) != str(acting_user["id"]):
                     raise HTTPException(status_code=409, detail="Сначала примите смену производства")
@@ -1989,7 +2301,17 @@ def workspace_action(
                 active_count = sum(branch.get("status") == "active" for branch in state["branches"])
                 if active_count >= int(user.get("max_branches") or 1):
                     raise HTTPException(status_code=409, detail="Достигнут лимит точек по тарифу компании")
+            if command.action.startswith("payroll."):
+                if acting_user.get("role") != "owner":
+                    raise HTTPException(403, "Зарплата доступна только владельцу компании")
+                acting_user = {**acting_user, "_payroll_employees": _payroll_roster(connection, tenant_id), "_workspace_version": int(row["version"])}
             entity_type, entity_id = apply_action(state, acting_user, command.action, command.payload)
+            if command.action == "supply.create" and command.payload.get("photoId"):
+                from .supply_photos import PhotoStorageError, bind_supply
+                try:
+                    bind_supply(connection, state, acting_user, command.payload, entity_id)
+                except PhotoStorageError as error:
+                    raise HTTPException(status_code=error.status_code, detail=str(error)) from error
             if command.action == "branch.upsert":
                 _update_branch_account(connection, tenant_id, command.payload, state)
             version = int(row["version"]) + 1
@@ -2067,7 +2389,7 @@ def _load_graph(connection: Connection, tenant_id: str) -> tuple[dict[str, dict]
     for card in cards.values():
         output_to_card[card["output_item_id"]] = (
             card["yield_quantity"],
-            [(component["component_item_id"], component["net_quantity"]) for component in card["components"]],
+            [(component["component_item_id"], component["gross_quantity"]) for component in card["components"]],
         )
     try:
         costs = calculate_unit_costs(
@@ -2090,7 +2412,7 @@ def _card_response(connection: Connection, tenant_id: str, card_id: int) -> dict
     for component in card["components"]:
         item = items[component["component_item_id"]]
         unit_cost = costs.get(item["id"], Decimal("0"))
-        line_cost = unit_cost * component["net_quantity"]
+        line_cost = unit_cost * component["gross_quantity"]
         total_cost += line_cost
         components.append({
             "id": component["id"],
@@ -2325,9 +2647,89 @@ def terminal_sales_report(start: datetime, end: datetime, cashier: str = '', pro
     state = _workspace_row(connection, str(user['tenant_id']))['payload']
     try:
         require_manager(state, operator, 'reports')
-        report = build_report(state, user['branch_id'], start, end, cashier)
+        # Include retained and moved accounts: historical receipt ownership is
+        # an immutable user ID, independent of a reused login or current branch.
+        cashier_accounts = connection.execute(
+            'SELECT id, display_name, is_active, deleted_at FROM auth_users WHERE tenant_id = %s',
+            (user['tenant_id'],),
+        ).fetchall()
+        report = build_report(state, user['branch_id'], start, end, cashier, cashier_accounts)
     except PermissionError as error:
         raise HTTPException(status_code=403, detail=str(error)) from error
     except ValueError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return {**report, 'xlsx': workbook(report, products)}
+
+
+@app.post('/api/v1/pos/sales-import/preview', tags=['pos'])
+def preview_sales_import(payload: dict, request: Request, ashkana_pos_operator: str | None = Cookie(default=None), user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    _check_origin(request)
+    operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+    acting = {**user, **operator, 'role': 'branch', 'branch_id': user['branch_id']}
+    _authorize_staff_action(acting, 'sale.import')
+    if user.get('plan_code') == 'restaurant':
+        raise HTTPException(status_code=403, detail='Импорт списывает блюда с раздачи столовой')
+    from .sales_import import preview
+    state = _workspace_row(connection, str(user['tenant_id']))['payload']
+    try:
+        return preview(state, user['branch_id'], payload.get('file'))
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+from .onboarding_requests import install as install_onboarding_requests
+install_onboarding_requests(app, current_user, get_connection, _check_origin, _platform_owner, get_settings)
+
+
+def _payroll_roster(connection, tenant_id):
+    return [dict(row) for row in connection.execute("SELECT id, display_name, staff_role, branch_id, is_active, deleted_at FROM auth_users WHERE tenant_id = %s AND role = 'branch' AND staff_role <> 'pos_terminal' ORDER BY display_name", (tenant_id,)).fetchall()]
+
+
+@app.get('/api/v1/payroll', tags=['payroll'])
+def payroll_context(start: str | None = None, end: str | None = None, user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    if user.get('role') != 'owner':
+        raise HTTPException(403, 'Зарплата доступна только владельцу компании')
+    from . import payroll
+    from .company_settings import company_settings
+    tenant_id = _tenant_user(user)
+    row = _workspace_row(connection, tenant_id)
+    state = row['payload']
+    current = payroll.today(state)
+    default_end = current - timedelta(days=1)
+    first = start or default_end.replace(day=1).isoformat()
+    last = end or default_end.isoformat()
+    roster = _payroll_roster(connection, tenant_id)
+    try:
+        calculated = payroll.report(state, first, last, roster)
+    except WorkspaceError as error:
+        raise HTTPException(error.status_code, str(error)) from error
+    data = payroll.data(state)
+    runs = []
+    for run in data.get('runs', []):
+        runs.append({**run, 'rows': [{**r, 'paid': payroll.run_paid(state, run['id'], r['employeeId'])} for r in run['rows']]})
+    from copy import deepcopy
+    from .workspace import _ensure_finance
+    finance = _ensure_finance(deepcopy(state))
+    return {**calculated, 'version': row['version'], 'companyToday': current.isoformat(), 'currency': company_settings(state)['general']['currency'], 'timezone': str(payroll.zone(state)), 'employees': roster, 'policies': data.get('policies', []), 'runs': runs, 'payments': data.get('payments', []), 'events': data.get('events', [])[-300:], 'workShifts': data.get('workShifts', [])[-200:], 'balances': payroll.balances(state), 'accounts': [a for a in finance.get('accounts', []) if a.get('status') == 'active' and a.get('type') in {'bank', 'safe'}], 'categories': sorted({str(i.get('category', '')) for key in ('products', 'recipes') for i in state.get(key, [])})}
+
+
+@app.get('/api/v1/pos/work-shift', tags=['payroll'])
+def current_work_shift(ashkana_pos_operator: str | None = Cookie(default=None), user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    from .payroll import current_shift
+    operator = _current_pos_operator(connection, user, ashkana_pos_operator)
+    state = _workspace_row(connection, _tenant_user(user))['payload']
+    return {'shift': current_shift(state, operator['id'])}
+
+
+@app.get('/api/v1/pnl', tags=['finance'])
+def pnl_report(start: str, end: str, branch: str = 'all', user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    if user.get('role') != 'owner':
+        raise HTTPException(403, 'P&L доступен только владельцу компании')
+    from .pnl import report
+    state = _workspace_row(connection, _tenant_user(user))['payload']
+    try:
+        return report(state, start, end, None if branch == 'all' else branch)
+    except WorkspaceError as error:
+        raise HTTPException(error.status_code, str(error)) from error
+
+from .offline_pos import install as install_offline_pos
+install_offline_pos(app)

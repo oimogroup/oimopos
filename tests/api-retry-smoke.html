@@ -1,0 +1,262 @@
+<!doctype html>
+<html lang="en">
+<head><meta charset="utf-8"><title>API retry smoke test</title></head>
+<body>
+<pre id="results">RUNNING</pre>
+<script>
+  const checks = [];
+  function check(name, condition) {
+    checks.push(`${condition ? 'PASS' : 'FAIL'}:${name}`);
+    document.querySelector('#results').textContent = checks.join('|');
+    if (!condition) throw new Error(name);
+  }
+  function jsonResponse(body, status = 200) {
+    return new Response(JSON.stringify(body), {status, headers: {'Content-Type': 'application/json'}});
+  }
+  async function rejected(promise) {
+    try { await promise; } catch (error) { return error; }
+    throw new Error('Expected request to fail');
+  }
+
+  async function run() {
+    try {
+      // Fetch only a static asset. The evaluated client receives a fake fetch and
+      // fake location, so neither its primary nor fallback URL reaches a server.
+      const response = await fetch('../api-client.js', {cache: 'no-store'});
+      if (!response.ok) throw new Error('Cannot load api-client.js');
+      const source = await response.text();
+      const loadClient = new Function('window', 'location', 'sessionStorage', 'fetch', 'crypto', 'TextEncoder', source);
+
+      function fixture(browserCrypto = crypto) {
+        const data = new Map();
+        const storage = {
+          getItem: key => data.has(key) ? data.get(key) : null,
+          setItem: (key, value) => data.set(key, String(value)),
+          removeItem: key => data.delete(key),
+        };
+        const test = {calls: [], effects: [], committed: new Map(), storage, data};
+        test.commit = call => {
+          const body = call.body;
+          if (!body?.payload?.requestId) throw new Error('Protected operation missing requestId');
+          const key = body.action + ':' + body.payload.requestId;
+          const previous = test.committed.get(key);
+          if (previous) {
+            if (JSON.stringify(previous.payload) !== JSON.stringify(body.payload)) throw new Error('Request ID reused with changed payload');
+            return previous.result;
+          }
+          const result = {entity: {type: body.action, id: 'effect-' + (test.effects.length + 1)}};
+          test.effects.push(body);
+          test.committed.set(key, {payload: body.payload, result});
+          return result;
+        };
+        test.respond = call => jsonResponse(test.commit(call));
+        test.fetch = async (url, options = {}) => {
+          const call = {url, options, body: options.body ? JSON.parse(options.body) : null};
+          test.calls.push(call);
+          if (!String(url).startsWith('http://api-retry.invalid')) throw new Error('Unexpected API destination');
+          return test.respond(call, test.calls.length - 1);
+        };
+        test.reload = () => {
+          const sandbox = {};
+          loadClient(sandbox, {
+            protocol: 'http:', hostname: 'api-retry.invalid', origin: 'http://api-retry.invalid:8000',
+            pathname: '/pos', search: '',
+          }, storage, test.fetch, browserCrypto, TextEncoder);
+          test.api = sandbox.AshkanaApi;
+          return test.api;
+        };
+        test.reload();
+        return test;
+      }
+
+      const payloads = {
+        'supply.create': {supplierId: 'supplier-test', items: [{itemId: 'rice', quantity: 2, price: 100}]},
+        'batch.create': {recipeId: 'recipe-test', weight: 1},
+        'pos.cash.movement': {type: 'deposit', amount: 1000},
+      };
+      for (const [actionName, payload] of Object.entries(payloads)) {
+        const test = fixture();
+        const original = JSON.stringify(payload);
+        test.respond = (call, index) => {
+          const result = test.commit(call);
+          if (index === 0) throw new TypeError('Committed, but response was lost');
+          return jsonResponse(result);
+        };
+        const result = await test.api.action(actionName, payload);
+        check(actionName + '-fallback-uses-another-base', test.calls.length === 2 && test.calls[0].url !== test.calls[1].url);
+        check(actionName + '-same-request-id-after-lost-reply', Boolean(test.calls[0].body.payload.requestId) && test.calls[0].body.payload.requestId === test.calls[1].body.payload.requestId);
+        check(actionName + '-one-business-effect', test.effects.length === 1 && result.entity.id === 'effect-1');
+        check(actionName + '-does-not-mutate-caller-payload', JSON.stringify(payload) === original);
+        check(actionName + '-retry-flag-not-sent-to-fetch', test.calls.every(call => !('retrySafe' in call.options)));
+      }
+
+      {
+        const test = fixture();
+        const first = test.api.action('batch.create', {recipeId: 'same', weight: 1});
+        const second = test.api.action('batch.create', {weight: 1, recipeId: 'same'});
+        check('concurrent-equivalent-payloads-share-promise', first === second);
+        await Promise.all([first, second]);
+        check('concurrent-submit-one-request-one-effect', test.calls.length === 1 && test.effects.length === 1);
+        const firstId = test.calls[0].body.payload.requestId;
+        await test.api.action('batch.create', {recipeId: 'same', weight: 1});
+        check('acknowledged-success-allows-new-identical-operation', test.effects.length === 2 && test.calls[1].body.payload.requestId !== firstId);
+      }
+
+      {
+        const test = fixture();
+        const payload = payloads['pos.cash.movement'];
+        test.respond = call => { test.commit(call); throw new TypeError('All responses lost'); };
+        const error = await rejected(test.api.action('pos.cash.movement', payload));
+        const originalId = test.calls[0].body.payload.requestId;
+        check('all-bases-failure-reports-error-with-one-effect', error.status === 0 && test.calls.length === 2 && test.effects.length === 1);
+        check('failed-operation-id-remains-in-session-storage', [...test.data.keys()].some(key => key.startsWith('oimo-pending-operation-')));
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('pos.cash.movement', payload);
+        check('manual-retry-reuses-id-and-existing-effect', test.calls[2].body.payload.requestId === originalId && test.effects.length === 1);
+        check('acknowledgment-clears-pending-session-id', ![...test.data.keys()].some(key => key.startsWith('oimo-pending-operation-')));
+      }
+
+      {
+        const test = fixture();
+        const payload = payloads['supply.create'];
+        test.respond = call => { test.commit(call); throw new TypeError('Network unavailable'); };
+        await rejected(test.api.action('supply.create', payload));
+        const originalId = test.calls[0].body.payload.requestId;
+        test.reload(); // A fresh client closure sharing only persistent session storage.
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('supply.create', payload);
+        check('reloaded-client-recovers-pending-id-from-session-storage', test.calls[2].body.payload.requestId === originalId && test.effects.length === 1);
+      }
+
+      {
+        const test = fixture();
+        test.respond = () => { throw new TypeError('No acknowledgment'); };
+        await rejected(test.api.action('batch.create', {recipeId: 'changed', weight: 1}));
+        const originalId = test.calls[0].body.payload.requestId;
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('batch.create', {recipeId: 'changed', weight: 2});
+        check('changed-payload-gets-new-request-id', test.calls[2].body.payload.requestId !== originalId && test.calls[2].body.payload.weight === 2);
+      }
+
+      {
+        const test = fixture();
+        const payload = payloads['pos.cash.movement'];
+        test.api.setOperationActor(701);
+        test.respond = call => { test.commit(call); throw new TypeError('First cashier response lost'); };
+        await rejected(test.api.action('pos.cash.movement', payload));
+        const firstCashierId = test.calls[0].body.payload.requestId;
+        test.api.setOperationActor(702);
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('pos.cash.movement', payload);
+        check('different-cashier-does-not-inherit-pending-operation', test.calls[2].body.payload.requestId !== firstCashierId && test.effects.length === 2);
+        test.api.setOperationActor(701);
+        await test.api.action('pos.cash.movement', payload);
+        check('original-cashier-can-recover-own-pending-operation', test.calls[3].body.payload.requestId === firstCashierId && test.effects.length === 2);
+      }
+
+      {
+        const test = fixture();
+        const payload = payloads['batch.create'];
+        test.storage.setItem('ashkana-auth-session-v1', JSON.stringify({tenantId: 'tenant-a', branchId: 'b1', registerId: 801, login: 'first'}));
+        test.respond = call => { test.commit(call); throw new TypeError('Previous terminal response lost'); };
+        await rejected(test.api.action('batch.create', payload));
+        const previousTerminalId = test.calls[0].body.payload.requestId;
+        test.storage.setItem('ashkana-auth-session-v1', JSON.stringify({tenantId: 'tenant-b', branchId: 'b2', registerId: 802, login: 'second'}));
+        test.reload();
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('batch.create', payload);
+        check('different-auth-session-does-not-inherit-pending-operation', test.calls[2].body.payload.requestId !== previousTerminalId && test.effects.length === 2);
+      }
+
+      {
+        const test = fixture();
+        test.respond = (call, index) => {
+          const result = test.commit(call);
+          return index === 0 ? new Response('<html>Proxy error</html>', {status: 200, headers: {'Content-Type': 'text/html'}}) : jsonResponse(result);
+        };
+        await test.api.action('batch.create', payloads['batch.create']);
+        check('invalid-success-body-retries-with-same-id', test.calls.length === 2 && test.effects.length === 1 && test.calls[0].body.payload.requestId === test.calls[1].body.payload.requestId);
+      }
+
+      {
+        const test = fixture();
+        test.respond = () => { throw new TypeError('Write may have committed'); };
+        const error = await rejected(test.api.action('supplier.upsert', {name: 'Unsafe to repeat'}));
+        check('unprotected-action-never-automatically-retried', error.status === 0 && test.calls.length === 1);
+        await rejected(test.api.createEmployee({name: 'Also unsafe to repeat'}));
+        check('unprotected-non-action-post-never-automatically-retried', test.calls.length === 2);
+      }
+
+      {
+        const test = fixture();
+        test.respond = (_call, index) => {
+          if (index === 0) throw new TypeError('Primary API unavailable');
+          return jsonResponse({version: 7});
+        };
+        const result = await test.api.workspace();
+        check('get-still-falls-back', result.version === 7 && test.calls.length === 2 && test.calls[0].url !== test.calls[1].url);
+        check('fixture-no-real-api-network-calls', test.calls.every(call => call.url.includes('api-retry.invalid')));
+      }
+
+      {
+        // Plain HTTP on a LAN tablet has getRandomValues but not SubtleCrypto
+        // or randomUUID; pending IDs still need to survive lost responses.
+        const test = fixture({getRandomValues: array => crypto.getRandomValues(array)});
+        test.respond = call => { test.commit(call); throw new TypeError('LAN response lost'); };
+        await rejected(test.api.action('pos.cash.movement', payloads['pos.cash.movement']));
+        check('lan-http-crypto-fallback-generated-request-id', test.calls.length === 2 && typeof test.calls[0].body.payload.requestId === 'string' && test.calls[0].body.payload.requestId.length >= 20);
+        const originalId = test.calls[0].body.payload.requestId;
+        test.reload();
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('pos.cash.movement', payloads['pos.cash.movement']);
+        check('lan-http-reload-reuses-pending-id-once', test.calls[2].body.payload.requestId === originalId && test.effects.length === 1);
+      }
+
+      {
+        const test = fixture();
+        test.storage.setItem = () => { throw new DOMException('Storage quota exceeded', 'QuotaExceededError'); };
+        test.respond = () => jsonResponse({id: 19});
+        const employee = await test.api.createEmployee({name: 'Confirmed employee'});
+        check('storage-write-failure-keeps-successful-mutation-confirmed', employee.id === 19 && test.calls.length === 1);
+        const workspace = await test.api.workspace();
+        check('storage-write-failure-does-not-retry-successful-read', workspace.id === 19 && test.calls.length === 2);
+      }
+
+      {
+        const test = fixture();
+        for (const method of ['getItem', 'setItem', 'removeItem']) test.storage[method] = () => { throw new DOMException('Storage access denied', 'SecurityError'); };
+        test.reload();
+        test.api.clearEndpoint();
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('supply.create', payloads['supply.create']);
+        check('blocked-storage-still-allows-protected-operation', test.calls.length === 1 && test.effects.length === 1);
+        test.respond = call => { test.commit(call); throw new TypeError('Lost response'); };
+        await rejected(test.api.action('batch.create', payloads['batch.create']));
+        const requestId = test.calls[1].body.payload.requestId;
+        test.respond = call => jsonResponse(test.commit(call));
+        await test.api.action('batch.create', payloads['batch.create']);
+        check('blocked-storage-retry-keeps-in-memory-id', test.calls.at(-1).body.payload.requestId === requestId && test.effects.length === 2);
+      }
+
+      {
+        const test = fixture();
+        test.storage.setItem('ashkana-api-base-v1', 'https://old-endpoint.invalid/api/v1');
+        test.reload();
+        test.respond = () => jsonResponse({ok: true});
+        await test.api.login('test', 'fake-password');
+        check('stale-endpoint-never-receives-credentials', test.calls.length === 1 && test.calls[0].url.startsWith('http://api-retry.invalid:8000/'));
+      }
+
+      window.__apiRetrySmoke = {done: true, failures: 0, checks: checks.length};
+      document.querySelector('#results').dataset.complete = 'true';
+    } catch (error) {
+      checks.push('ERROR:' + (error.stack || error.message));
+      document.querySelector('#results').textContent = checks.join('|');
+      document.querySelector('#results').dataset.complete = 'true';
+      window.__apiRetrySmoke = {done: true, failures: 1, checks: checks.length};
+    }
+  }
+  run();
+</script>
+</body>
+</html>

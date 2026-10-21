@@ -1,0 +1,15 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Work time checks</title><pre id="results">RUNNING</pre><button id="workShiftButton">Рабочее время</button><dialog id="workTimeDialog"><button id="workTimeClose">×</button><p id="workTimeEmployee"></p><p id="workTimeState"></p><p id="workTimeError"></p><button id="workTimeRefresh">Обновить</button><button id="workTimeAction">Начать</button></dialog><script>
+let activeOperator={id:1,name:'Официант'};let shift=null,requests=[];
+window.AshkanaApi={currentWorkShift:async()=>({shift}),action:async(action)=>{requests.push(action);shift=action==='work.shift.open'?{id:'s1',openedAt:'2026-10-21T09:00:00Z'}:null;return {ok:true};}};
+</script><script src="/work-time.js"></script><script>
+(async()=>{
+ const out=[],check=(n,v)=>out.push(`${v?'PASS':'FAIL'}:${n}`),q=s=>document.querySelector(s),pause=()=>new Promise(r=>setTimeout(r,10));
+ try{
+  q('#workShiftButton').click();for(let i=0;i<30&&q('#workTimeAction').disabled;i++)await pause();check('clock-can-open-without-cash-shift',q('#workTimeAction').textContent.includes('Начать'));
+  q('#workTimeAction').click();for(let i=0;i<30&&q('#workTimeClose').disabled;i++)await pause();check('clock-in-is-separate-action',requests[0]==='work.shift.open'&&q('#workTimeState').textContent.includes('начат'));
+  q('#workTimeClose').click();check('closing-dialog-does-not-end-day',!!shift);q('#workShiftButton').click();for(let i=0;i<30&&q('#workTimeAction').disabled;i++)await pause();
+  q('#workTimeAction').click();for(let i=0;i<30&&q('#workTimeClose').disabled;i++)await pause();check('clock-out-is-explicit',requests[1]==='work.shift.close'&&!shift);
+  activeOperator={id:2,name:'Другой сотрудник'};q('#workTimeAction').click();await pause();check('stale-operator-cannot-clock-another-person',requests.length===2&&q('#workTimeError').textContent.includes('PIN'));
+ }catch(e){check('runtime:'+e.stack,false);}q('#results').textContent=out.join('|');
+})();
+</script></html>
