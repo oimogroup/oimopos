@@ -72,6 +72,9 @@ def install(app):
                 )
                 from .mailer import enqueue_welcome
                 enqueue_welcome(connection, tenant, payload.name, payload.email)
+                from .account_access import send_link
+                owner=connection.execute("SELECT * FROM auth_users WHERE tenant_id=%s AND role='owner'",(tenant['id'],)).fetchone()
+                send_link(connection,owner,'verify')
             # Login validates the account and trial even on an old request replay.
             result = main.login(LoginInput(login=payload.email, password=payload.password), response, request, connection)
         return {**result, 'redirect': '/admin'}

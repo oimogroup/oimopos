@@ -199,6 +199,12 @@
     updateTenant: (tenantId, payload) => request(`/platform/tenants/${encodeURIComponent(tenantId)}`, { method: "PUT", body: JSON.stringify(payload) }),
     updateTenantOwner: (tenantId, payload) => request(`/platform/tenants/${encodeURIComponent(tenantId)}/owner-access`, { method: "PUT", body: JSON.stringify(payload) }),
     platformEvents: (limit = 100) => request(`/platform/events?limit=${encodeURIComponent(limit)}`),
+    forgotPassword: email => request('/auth/password/forgot', {method:'POST',body:JSON.stringify({email})}),
+    resetPassword: (token,password) => request('/auth/password/reset', {method:'POST',body:JSON.stringify({token,password})}),
+    verifyEmail: token => request('/auth/email/verify', {method:'POST',body:JSON.stringify({token})}),
+    emailStatus: () => request('/auth/email'),
+    operationsStatus: () => request('/platform/operations'),
+    sendVerificationEmail: () => request('/auth/email/send', {method:'POST',body:'{}'}),
     clearEndpoint: () => {
       activeBase = "";
       try { sessionStorage.removeItem("ashkana-api-base-v1"); } catch (_) { /* The in-memory endpoint was cleared. */ }

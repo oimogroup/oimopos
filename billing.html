@@ -8,6 +8,7 @@
     <p id="statusMessage" class="notice" role="status" aria-live="polite">Загружаем подписку…</p>
     <div id="billingContent" hidden>
       <aside id="testNotice" class="notice" hidden>Тестовый режим. Платежи проверяют подключение Freedom Pay и не продлевают настоящий доступ.</aside>
+      <aside id="emailNotice" class="notice" hidden>Перед оплатой подтвердите email аккаунта. <a href="/account?verify=1">Подтвердить email →</a></aside>
       <section class="plan-card" aria-labelledby="planName">
         <div><p class="eyebrow">Текущий тариф</p><h2 id="planName"></h2><p id="accessStatus"></p><p id="branchLimit" class="muted"></p></div>
         <div class="payment"><label class="period-label" for="billingPeriod">Срок подписки</label><select id="billingPeriod"><option value="monthly">Месяц</option><option value="annual">Год · 12 месяцев</option></select><div class="price" id="planPrice"></div><p class="muted" id="periodDescription">Разовая оплата за календарный месяц</p>

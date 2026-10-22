@@ -51,6 +51,7 @@
   function render() {
     const sub=data.subscription;
     $('#billingContent').hidden=false; $('#testNotice').hidden=!data.testing;
+    $('#emailNotice').hidden=data.emailVerified!==false;
     $('#companyName').textContent=session.tenantName || 'Ваш аккаунт';
     $('#planName').textContent=data.plan?.name || sub.plan_code;
     $('#planPrice').textContent=selectedPrice()!=null && Number(selectedPrice())>0 ? amount(selectedPrice()) : 'Уточните стоимость';

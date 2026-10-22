@@ -34,7 +34,7 @@ async def cloud_headers(request, call_next):
     response.headers["X-Content-Type-Options"] = "nosniff"
     response.headers["X-Frame-Options"] = "SAMEORIGIN"
     response.headers["Referrer-Policy"] = "no-referrer"
-    response.headers["Cache-Control"] = "no-store" if request.url.path.startswith(("/api/", "/health", "/legal/")) or request.url.path.endswith(".html") or request.url.path in {"/pos", "/admin", "/login", "/platform", "/billing"} else "no-cache"
+    response.headers["Cache-Control"] = "no-store" if request.url.path.startswith(("/api/", "/health", "/legal/")) or request.url.path.endswith(".html") or request.url.path in {"/pos", "/admin", "/login", "/platform", "/billing", "/account"} else "no-cache"
     return response
 
 
@@ -44,7 +44,7 @@ def home():
 
 
 PUBLIC = Path(__file__).resolve().parents[1] / "public"
-PAGES = {"pos": "index.html", "admin": "admin.html", "login": "login.html", "platform": "platform.html", "billing": "billing.html"}
+PAGES = {"pos": "index.html", "admin": "admin.html", "login": "login.html", "platform": "platform.html", "billing": "billing.html", "account": "account.html"}
 
 
 def page_response(filename):

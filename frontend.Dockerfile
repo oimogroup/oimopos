@@ -12,6 +12,7 @@ COPY receipt-printing.js /usr/share/nginx/html/
 COPY vendor /usr/share/nginx/html/vendor/
 COPY landing.html landing.css landing.js favicon.svg /usr/share/nginx/html/
 COPY billing.html billing.css billing.js platform-billing.js pos-supply-photo.js /usr/share/nginx/html/
+COPY account.html account.css account.js /usr/share/nginx/html/
 COPY docs/program-process-flow.html /usr/share/nginx/html/docs/program-process-flow.html
 COPY docs/user-guide /usr/share/nginx/html/docs/user-guide/
 

@@ -41,7 +41,7 @@ try:
     print('PASS upgrade and repeated migrations preserve the original monthly quote',flush=True)
     image=subprocess.check_output(['docker','compose','images','-q','api'],cwd=ROOT,text=True).strip()
     environment['BILLING_TEST_DATABASE_URL']=environment['DATABASE_URL'];environment['DATABASE_URL']=''
-    run(['docker','run','--rm','--network',network,'-e','DATABASE_URL','-e','BILLING_TEST_DATABASE_URL','-v',str(ROOT/'backend')+':/app:ro',image,'python','-m','pytest','tests/test_billing_integration.py','-q','-p','no:cacheprovider'],env=environment)
+    run(['docker','run','--rm','--network',network,'-e','DATABASE_URL','-e','BILLING_TEST_DATABASE_URL','-v',str(ROOT/'backend')+':/app:ro',image,'python','-m','pytest','tests/test_billing_integration.py','tests/test_account_access_integration.py','tests/test_service_reliability_integration.py','-q','-s','-p','no:cacheprovider'],env=environment)
 finally:
     subprocess.run(['docker','rm','-f','-v',database],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)
     subprocess.run(['docker','network','rm',network],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL)

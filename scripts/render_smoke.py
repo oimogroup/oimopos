@@ -22,7 +22,7 @@ try:
    break
   except Exception: time.sleep(1)
  else: raise RuntimeError('health failed')
- for path in ['/','/login','/admin','/pos','/platform','/billing','/legal/offer','/legal/privacy','/legal/refunds','/legal/payment','/legal/contacts','/login.html','/admin.html','/index.html','/platform.html','/oimo.css','/app.js']:
+ for path in ['/','/login','/account','/account.js','/admin','/pos','/platform','/billing','/legal/offer','/legal/privacy','/legal/refunds','/legal/payment','/legal/contacts','/login.html','/admin.html','/index.html','/platform.html','/oimo.css','/app.js']:
   with urllib.request.urlopen('http://127.0.0.1:18080'+path) as r: assert r.status==200
  for path in ['/.env','/database/init/002_seed.sql','/tests/pos-ui-smoke.html','/app/main.py']:
   try: urllib.request.urlopen('http://127.0.0.1:18080'+path); raise AssertionError(path)
@@ -156,9 +156,9 @@ try:
  print('PASS both public trial formats, automatic secure login, empty isolated workspace, retry without duplicate or trial extension, fixed server limits')
  print('PASS terminal login rename, new login works, previous login rejected, company-code fallback and live terminal sessions preserved; workspace unchanged and duplicate login rejected')
  counts=run(['docker','exec',db,'psql','-U','postgres','-Atc',"SELECT count(*) FROM email_outbox WHERE status='pending' AND attempts=0"]).stdout.strip()
- assert counts=='2',counts
+ assert counts=='4',counts
  assert api('/platform/mail')['configured'] is False
- assert api('/platform/mail')['counts']['pending']==2
+ assert api('/platform/mail')['counts']['pending']==4
  try:
   api('/platform/mail/test',{})
   raise AssertionError('SMTP test accepted without a configured password')
@@ -172,14 +172,16 @@ sent=[]
 mailer.send_message=lambda row,settings: sent.append(row['dedup_key'])
 assert mailer.deliver_one(pool,cfg)
 assert mailer.deliver_one(pool,cfg)
+assert mailer.deliver_one(pool,cfg)
+assert mailer.deliver_one(pool,cfg)
 assert not mailer.deliver_one(pool,cfg)
-assert len(sent)==2 and len(set(sent))==2
+assert len(sent)==4 and len(set(sent))==4
 with pool.connection() as c:
- assert c.execute("SELECT count(*) AS total FROM email_outbox WHERE status='sent' AND attempts=1").fetchone()['total']==2
+ assert c.execute("SELECT count(*) AS total FROM email_outbox WHERE status='sent' AND attempts=1").fetchone()['total']==4
 pool.close()
 '''
  run(['docker','exec',web,'python','-c',probe])
- assert api('/platform/mail')['counts']['sent']==2
+ assert api('/platform/mail')['counts']['sent']==4
  print('PASS welcome emails queued atomically without retry duplicates; disabled SMTP keeps queue; real database claims and completion with mocked transport (no external mail)')
  # Expiry blocks existing sessions as well as replayed signup requests.
  run(['docker','exec',db,'psql','-U','postgres','-c',"UPDATE tenant_subscriptions SET trial_ends_at = now() - interval '1 day' WHERE tenant_id IN (SELECT tenant_id FROM trial_registrations)"])

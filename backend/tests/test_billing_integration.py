@@ -17,7 +17,7 @@ from fastapi.testclient import TestClient
 from pydantic import SecretStr
 import pytest
 
-from app import main, billing, freedompay as fp, legal, mailer
+from app import main, billing, freedompay as fp, legal, mailer, account_access
 from app.config import Settings
 from app.schemas import TenantCreate
 
@@ -31,7 +31,7 @@ def system(monkeypatch):
                  cors_origins='https://oimo.example',session_cookie_secure=True,freedompay_enabled=True,
                  freedompay_merchant_id='123',freedompay_secret_key=SecretStr('test-secret'),freedompay_test_mode=False,
                  seller_legal_name='TEST SELLER ONLY',seller_tax_id='TEST-INN',seller_address='Test address',seller_phone='Test phone',seller_bank_details='Test bank',smtp_password=SecretStr(''))
-    for module in (main,billing,legal,mailer): monkeypatch.setattr(module,'get_settings',lambda:cfg)
+    for module in (main,billing,legal,mailer,account_access): monkeypatch.setattr(module,'get_settings',lambda:cfg)
     def connect(): return psycopg.connect(DSN,row_factory=dict_row)
     def dependency():
         with connect() as connection: yield connection
@@ -63,7 +63,9 @@ def system(monkeypatch):
     client=TestClient(main.app,base_url='https://oimo.example',headers={'Origin':'https://oimo.example'})
     company_id=uuid4().hex[:16];email=company_id+'@example.com';password='Test-password-'+company_id
     with connect() as connection:
+        connection.execute('DELETE FROM auth_rate_limits')
         tenant=main._provision_tenant(TenantCreate(name='Test '+company_id,slug='t-'+company_id,owner_name='Test Owner',email=email,phone='996555123456',owner_password=password,register_password='Test-terminal-'+company_id,plan_code='canteen',max_branches=1,trial_days=14,service_modes=['counter'],location_name='Test',location_address='Test'),{'id':None,'login':'test'},connection)
+        connection.execute("UPDATE auth_users SET email_verified_at=now() WHERE tenant_id=%s AND role='owner'",(tenant['id'],))
         user=connection.execute('SELECT * FROM auth_users WHERE tenant_id=%s AND role=%s',(tenant['id'],'owner')).fetchone()
     logged=client.post('/api/v1/auth/login',json={'login':email,'password':password})
     assert logged.status_code==200,logged.text
@@ -242,6 +244,8 @@ def test_unknown_initialization_is_not_repeated_and_tariff_change_requires_revie
     assert response.json()['status']=='creating'
     assert checkout(system,identifier).json()['id']==response.json()['id'] and len(system.calls)==1
     assert checkout(system).json()['id']==response.json()['id'] and len(system.calls)==1
+    with system.connect() as connection: connection.execute("UPDATE subscription_payments SET expires_at=now()-interval '1 hour' WHERE id=%s",(response.json()['id'],))
+    assert checkout(system).json()['id']==response.json()['id'] and len(system.calls)==1
     system.state['timeout']=False
     with system.connect() as connection: connection.execute("UPDATE subscription_payments SET status='failed' WHERE id=%s",(response.json()['id'],))
     order=checkout(system).json();before=subscription(system)
@@ -251,3 +255,21 @@ def test_unknown_initialization_is_not_repeated_and_tariff_change_requires_revie
         row=connection.execute('SELECT status,applied_at FROM subscription_payments WHERE id=%s',(order['id'],)).fetchone()
         assert row=={'status':'review','applied_at':None}
     assert subscription(system)['current_period_ends_at']==before['current_period_ends_at']
+
+
+def test_background_reconciliation_restores_missed_notification_without_new_charge(system):
+    from app import payment_reconciliation
+    from types import SimpleNamespace
+    pool=SimpleNamespace(connection=system.connect)
+    order=checkout(system).json()
+    with system.connect() as connection:
+        connection.execute('UPDATE subscription_payments SET checked_at=now() WHERE id<>%s',(order['id'],))
+    system.state[order['id']].update(pg_payment_status='success',pg_captured='1')
+    before=subscription(system)
+    assert payment_reconciliation.reconcile_one(pool,system.cfg) is True
+    after=subscription(system)
+    assert after['current_period_ends_at']==billing.next_month(before['trial_ends_at'])
+    with system.connect() as connection:
+        assert connection.execute('SELECT status FROM subscription_payments WHERE id=%s',(order['id'],)).fetchone()['status']=='paid'
+    assert sum(path in ('init_payment','init_payment.php') for path,_ in system.calls)==1
+    assert callback(system,order).status_code==200 and subscription(system)==after

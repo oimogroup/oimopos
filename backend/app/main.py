@@ -111,11 +111,15 @@ async def lifespan(_: FastAPI):
     _ensure_operational_data()
     from .mailer import start_worker
     mail_stop, mail_thread = start_worker(pool)
+    from .payment_reconciliation import start_worker as start_payment_worker
+    payment_stop,payment_thread=start_payment_worker(pool)
     try:
         yield
     finally:
         mail_stop.set()
+        payment_stop.set()
         await asyncio.to_thread(mail_thread.join, 20)
+        await asyncio.to_thread(payment_thread.join, 20)
         close_pool()
 
 
@@ -215,6 +219,7 @@ def _user_session(user: dict, state: dict | None = None) -> dict:
         "subscriptionStatus": user.get("subscription_status"),
         "trialEndsAt": user.get("trial_ends_at"), "maxBranches": user.get("max_branches"),
         "currentPeriodEndsAt": user.get("current_period_ends_at"), "billingRequired": bool(_subscription_issue(user)),
+        "emailVerified": bool(user.get("email_verified_at")),
     }
     if user["role"] == "owner":
         return {
@@ -285,7 +290,7 @@ def current_user(
         raise HTTPException(status_code=401, detail="Требуется вход")
     row = connection.execute(
         """
-        SELECT u.id, u.login, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name, u.is_active, u.account_version,
+        SELECT u.id, u.login, u.email_verified_at, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name, u.is_active, u.account_version,
                s.id AS session_id, s.expires_at AS session_expires_at,
                t.name AS tenant_name, t.slug AS tenant_slug, t.status AS tenant_status,
                subscription.plan_code, subscription.status AS subscription_status, subscription.max_branches,
@@ -311,7 +316,7 @@ def current_user(
             raise HTTPException(403, 'В браузере активирована другая касса. Вернитесь к исходной кассе для отправки её чеков.')
     if row.get("staff_role") == "production" and request.headers.get("x-ashkana-client", "").lower() != "pos" and request.url.path not in {"/api/v1/auth/me", "/api/v1/auth/logout"}:
         raise HTTPException(status_code=403, detail="Сотруднику производства доступен только терминал")
-    _validate_tenant_access(row, allow_billing=request.url.path in {"/api/v1/auth/me", "/api/v1/auth/logout"} or request.url.path.startswith("/api/v1/billing"))
+    _validate_tenant_access(row, allow_billing=request.url.path in {"/api/v1/auth/me", "/api/v1/auth/logout", "/api/v1/auth/email", "/api/v1/auth/email/send"} or request.url.path.startswith("/api/v1/billing"))
     if row["role"] == "branch":
         state = _workspace_row(connection, row["tenant_id"])["payload"]
         branch = next((entry for entry in state["branches"] if entry.get("id") == row["branch_id"]), None)
@@ -387,12 +392,11 @@ def _update_branch_account(connection: Connection, tenant_id: str, payload: dict
         connection.execute("UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = %s AND revoked_at IS NULL", (existing["id"],))
 
 
-@app.post("/api/v1/auth/login", tags=["auth"])
 def login(payload: LoginInput, response: Response, request: Request, connection: Connection = Depends(get_connection)) -> dict:
     _check_origin(request)
     user = connection.execute(
         """
-        SELECT u.id, u.login, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
+        SELECT u.id, u.login, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
                u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
                t.status AS tenant_status, subscription.plan_code,
                subscription.status AS subscription_status, subscription.max_branches,
@@ -408,7 +412,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
     if not user or not user["is_active"] or not verify_password(payload.password, user["password_hash"]):
         candidates = connection.execute(
             """
-            SELECT u.id, u.login, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
+            SELECT u.id, u.login, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
                    u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
                    t.status AS tenant_status, subscription.plan_code,
                    subscription.status AS subscription_status, subscription.max_branches,
@@ -448,7 +452,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
             register_params.append(user["branch_id"])
         terminal_user = connection.execute(
             f"""
-            SELECT u.id, u.login, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
+            SELECT u.id, u.login, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
                    u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
                    t.status AS tenant_status, subscription.plan_code,
                    subscription.status AS subscription_status, subscription.max_branches,
@@ -1752,11 +1756,13 @@ def update_employee(
                 UPDATE auth_users
                 SET display_name = %s, phone = %s, login = %s, branch_id = %s, staff_role = %s, access_permissions = %s,
                     password_hash = %s, pin_hash = %s, pin_failed_attempts = 0, pin_locked_until = NULL,
-                    is_active = %s, account_version = %s, updated_at = CURRENT_TIMESTAMP
+                    is_active = %s, account_version = %s,
+                    email_verified_at = CASE WHEN lower(login) = lower(%s) THEN email_verified_at ELSE NULL END,
+                    updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 """,
                 (payload.display_name, payload.phone, target_login, payload.branch_id, target_role, Jsonb(permissions),
-                 password_hash, pin_hash, payload.is_active, account_version, employee_id),
+                 password_hash, pin_hash, payload.is_active, account_version, target_login, employee_id),
             )
             _store_employee_pin(connection, employee_id, tenant_id, payload.pin)
             if access_changed:
@@ -2209,12 +2215,14 @@ def update_tenant_owner_access(
                 """
                 UPDATE auth_users
                 SET login = %s, display_name = %s, password_hash = %s, account_version = %s,
+                    email_verified_at = CASE WHEN lower(login) = lower(%s) THEN email_verified_at ELSE NULL END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 """,
-                (payload.owner_login, payload.owner_name, password_hash, version, owner["id"]),
+                (payload.owner_login, payload.owner_name, password_hash, version, payload.owner_login, owner["id"]),
             )
             if access_changed:
+                connection.execute('UPDATE auth_action_tokens SET consumed_at=now() WHERE user_id=%s AND consumed_at IS NULL',(owner['id'],))
                 connection.execute(
                     "UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = %s AND revoked_at IS NULL",
                     (owner["id"],),
@@ -2798,3 +2806,9 @@ install_mailer(app)
 
 from .billing import install as install_billing
 install_billing(app)
+
+from .account_access import install as install_account_access
+install_account_access(app)
+
+from .operations import install as install_operations
+install_operations(app)

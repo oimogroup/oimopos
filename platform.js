@@ -338,6 +338,7 @@ async function bootstrap() {
     await loadConnectionRequests();
     await loadMailStatus();
     await window.OimoBillingPanel?.load();
+    await loadOperations();
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       sessionStorage.removeItem(sessionKey);
@@ -390,6 +391,25 @@ $("#openEventsButton").addEventListener("click", openEvents);
 $("#signOutButton").addEventListener("click", signOut);
 
 bootstrap();
+
+async function loadOperations() {
+  if(typeof window.AshkanaApi.operationsStatus!=='function')return;
+  const root=$('#operationsStatus'),state=$('#serviceState span');
+  try{
+    const data=await window.AshkanaApi.operationsStatus();root.replaceChildren();
+    const rows=[['База данных',data.database?'Доступна':'Недоступна'],
+      ['Доступ к аккаунтам','Восстановление пароля, подтверждение email и лимит входа включены'],
+      ['Почта',data.email.configured?'SMTP настроен. Доставку подтвердите тестовым письмом.':'SMTP не настроен. Письма ожидают в очереди.'],
+      ['Очередь писем',`Ожидают: ${data.email.counts.pending || 0}; ошибки: ${data.email.counts.failed || 0}`],
+      ['Реквизиты продавца',data.seller.complete?'Заполнены':'Заполните реквизиты в Environment Render'],
+      ['Freedom Pay',data.payments.configured?(data.payments.testing?'Тестовый режим. Нужна проверка с провайдером.':'Боевые настройки заполнены. Подтвердите контрольную оплату и возврат.'):'Подключение не завершено'],
+      ['Заказы на сверку',String(data.payments.needsReview)],
+      ['Проверки на рабочем сервере','Восстановление базы, нагрузка и физическое оборудование требуют отдельного подтверждения.']];
+    for(const [label,value] of rows){const row=document.createElement('p'),b=document.createElement('b');b.textContent=label+': ';row.append(b,document.createTextNode(value));root.append(row);}
+    state.textContent=data.email.configured&&data.seller.complete&&data.payments.configured?'Сервер доступен':'Требуется настройка';
+  }catch(error){root.textContent='Не удалось проверить состояние. '+error.message;state.textContent='Состояние не проверено';}
+}
+$('#operationsRefresh').addEventListener('click',loadOperations);
 
 async function loadPlans() {
   plans = await window.AshkanaApi.plans();

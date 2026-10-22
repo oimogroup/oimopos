@@ -43,11 +43,11 @@ def login_url(settings):
     return ''
 
 
-def enqueue(connection, *, dedup_key, recipient, subject, body, tenant_id=None):
+def enqueue(connection, *, dedup_key, recipient, subject, body, tenant_id=None, expires_at=None):
     connection.execute(
-        '''INSERT INTO email_outbox (tenant_id, dedup_key, recipient, subject, body)
-           VALUES (%s,%s,%s,%s,%s) ON CONFLICT (dedup_key) DO NOTHING''',
-        (tenant_id, dedup_key, recipient, subject, body),
+        '''INSERT INTO email_outbox (tenant_id, dedup_key, recipient, subject, body, expires_at)
+           VALUES (%s,%s,%s,%s,%s,%s) ON CONFLICT (dedup_key) DO NOTHING''',
+        (tenant_id, dedup_key, recipient, subject, body, expires_at),
     )
 
 
@@ -105,11 +105,13 @@ def deliver_one(pool, settings):
         return False
     lock_token = uuid4()
     with pool.connection() as connection, connection.transaction():
+        connection.execute("UPDATE email_outbox SET status='failed',attempts=6,last_error='LinkExpired',lock_token=NULL,locked_until=NULL WHERE (status='pending' OR (status='sending' AND locked_until<now())) AND expires_at<=now()")
         connection.execute("UPDATE email_outbox SET status='failed', lock_token=NULL, locked_until=NULL, last_error='DeliveryInterrupted' WHERE status='sending' AND locked_until < now() AND attempts >= 6")
         row = connection.execute(
             '''SELECT * FROM email_outbox WHERE attempts < 6 AND
                ((status = 'pending' AND next_attempt_at <= now()) OR
                 (status = 'sending' AND locked_until < now()))
+               AND (expires_at IS NULL OR expires_at>now())
                ORDER BY id LIMIT 1 FOR UPDATE SKIP LOCKED''',
         ).fetchone()
         if not row:
@@ -189,5 +191,5 @@ def install(app):
         main._check_origin(request)
         main._platform_owner(user)
         with connection.transaction():
-            connection.execute("UPDATE email_outbox SET status='pending', attempts=0, next_attempt_at=now(), last_error='' WHERE status='failed'")
+            connection.execute("UPDATE email_outbox SET status='pending', attempts=0, next_attempt_at=now(), last_error='' WHERE status='failed' AND (expires_at IS NULL OR expires_at>now())")
         return {'ok': True}

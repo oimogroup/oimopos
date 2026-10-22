@@ -6956,6 +6956,11 @@ async function initializeApplication() {
       trialNotice.append(link);
     }
   }
+  if (trialNotice && currentRole === 'owner' && currentSession.emailVerified === false) {
+    trialNotice.hidden=false;
+    const link=document.createElement('a');link.href='/account?verify=1';link.textContent='Подтвердить email аккаунта';
+    trialNotice.append(document.createTextNode(' · '),link);
+  }
   renderAll();
   routeInitialWorkspace();
 }

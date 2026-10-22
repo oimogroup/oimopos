@@ -186,14 +186,16 @@ def install(app):
         unlimited=sub['status']=='active' and not sub['current_period_ends_at']
         return {'subscription':dict(sub),'plan':dict(plan) if plan else None,'orders':[public_order(row) for row in orders],
                 'refundRequests':[dict(row) for row in refund_requests],'serverTime':now(),'termsVersion':legal.version(settings),'testing':settings.freedompay_test_mode,
-                'canPay':not readiness(settings) and bool(plan and (plan['monthly_price']>0 or plan['annual_price']>0)) and not unlimited,
-                'message':'Доступ включён администратором без даты окончания. Для изменения подписки свяжитесь с поддержкой.' if unlimited else 'Онлайн-оплата пока недоступна. Свяжитесь с поддержкой.' if readiness(settings) else '',
+                'emailVerified':bool(user.get('email_verified_at')),
+                'canPay':not readiness(settings) and bool(user.get('email_verified_at')) and bool(plan and (plan['monthly_price']>0 or plan['annual_price']>0)) and not unlimited,
+                'message':'Доступ включён администратором без даты окончания. Для изменения подписки свяжитесь с поддержкой.' if unlimited else 'Онлайн-оплата пока недоступна. Свяжитесь с поддержкой.' if readiness(settings) else 'Подтвердите email перед оплатой подписки.' if not user.get('email_verified_at') else '',
                 'supportEmail':settings.seller_support_email}
 
     @app.post('/api/v1/billing/checkout',tags=['billing'])
     def checkout(payload:CheckoutInput,request:Request,user=Depends(main.current_user),connection=Depends(main.get_connection)):
         main._check_origin(request);owner(user);settings=get_settings()
         if readiness(settings): raise HTTPException(503,'Онлайн-оплата пока недоступна. Свяжитесь с поддержкой.')
+        if not user.get('email_verified_at'): raise HTTPException(403,'Подтвердите email аккаунта перед оплатой подписки.')
         if payload.terms_version!=legal.version(settings): raise HTTPException(409,'Условия обновились. Обновите страницу и ознакомьтесь с ними перед оплатой.')
         months=12 if payload.billing_period=='annual' else 1
         with connection.transaction():
@@ -203,7 +205,7 @@ def install(app):
                 if previous['period_months']!=months: raise HTTPException(409,'Этот запрос уже использован для другого срока подписки. Обновите страницу.')
                 return public_order(previous)
             if sub['status']=='active' and not sub['current_period_ends_at']: raise HTTPException(409,'Доступ уже включён без ограничения срока. Обратитесь в поддержку.')
-            active=connection.execute("SELECT * FROM subscription_payments WHERE tenant_id=%s AND status IN ('creating','pending','review') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",(user['tenant_id'],)).fetchone()
+            active=connection.execute("SELECT * FROM subscription_payments WHERE tenant_id=%s AND status IN ('creating','pending','review') ORDER BY created_at DESC LIMIT 1",(user['tenant_id'],)).fetchone()
             if active:
                 if active['period_months']!=months:
                     period='год' if active['period_months']==12 else 'месяц'
