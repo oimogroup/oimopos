@@ -3,7 +3,7 @@
 Run via scripts/billing_smoke.py. Never point BILLING_TEST_DATABASE_URL at a user DB.
 """
 from concurrent.futures import ThreadPoolExecutor
-from datetime import timedelta
+from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import os
 from types import SimpleNamespace
@@ -91,8 +91,9 @@ def test_checkout_server_price_legal_consent_and_replay(system):
     assert checkout(system,amount=1).status_code==422
     assert checkout(system,terms_accepted=False).status_code==422
     assert checkout(system,terms_version='outdated-terms').status_code==409
+    assert checkout(system,billing_period='weekly').status_code==422
     response=checkout(system,identifier);assert response.status_code==200,response.text
-    order=response.json();assert Decimal(str(order['amount']))>0 and order['currency']=='KGS'
+    order=response.json();assert Decimal(str(order['amount']))==3500 and order['currency']=='KGS' and order['period_months']==1
     assert checkout(system,identifier).json()['id']==order['id']
     assert checkout(system).json()['id']==order['id']
     assert len(system.calls)==1 and system.calls[0][1]['pg_user_contact_email']==system.user['login']
@@ -100,6 +101,60 @@ def test_checkout_server_price_legal_consent_and_replay(system):
     with system.connect() as connection:
         row=connection.execute('SELECT terms_snapshot FROM subscription_payments WHERE id=%s',(order['id'],)).fetchone()
         assert row['terms_snapshot']['seller']['seller_legal_name']=='TEST SELLER ONLY'
+        assert row['terms_snapshot']['period']=='calendar-month'
+
+
+def test_annual_quote_freezes_price_and_term_and_duplicate_callback_extends_once(system):
+    # A future paid period, leap day and remaining trial must all be respected.
+    paid_until=datetime(2028,2,29,14,30,tzinfo=timezone.utc)
+    with system.connect() as connection:
+        connection.execute("UPDATE tenant_subscriptions SET status='active',current_period_ends_at=%s WHERE tenant_id=%s",(paid_until,system.tenant))
+    identifier=uuid4();overview=system.client.get('/api/v1/billing').json()
+    response=checkout(system,identifier,billing_period='annual',price_version=overview['plan']['updated_at'])
+    assert response.status_code==200,response.text
+    order=response.json();assert Decimal(str(order['amount']))==42000 and order['period_months']==12
+    assert system.calls[0][1]['pg_amount']=='42000.00' and '12 months' in system.calls[0][1]['pg_description']
+    assert checkout(system,identifier).status_code==409
+    assert checkout(system).status_code==409  # No accidental monthly order alongside the annual quote.
+    assert len(system.calls)==1
+    with system.connect() as connection:
+        original=connection.execute('SELECT * FROM platform_plans WHERE code=%s',('canteen',)).fetchone()
+        # Price changes affect new orders; this quote retains its amount and term.
+        connection.execute("UPDATE platform_plans SET annual_price=43000,monthly_price=3600,updated_at=clock_timestamp() WHERE code='canteen'")
+    try:
+        replay=checkout(system,identifier,billing_period='annual',price_version=overview['plan']['updated_at'])
+        assert replay.status_code==200 and Decimal(str(replay.json()['amount']))==42000
+        with ThreadPoolExecutor(max_workers=4) as executor:
+            responses=list(executor.map(lambda _:callback(system,order),range(4)))
+        assert all(response.status_code==200 for response in responses)
+        assert len({response.content for response in responses})==1
+        assert subscription(system)['current_period_ends_at']==datetime(2029,2,28,14,30,tzinfo=timezone.utc)
+        with system.connect() as connection:
+            saved=connection.execute('SELECT * FROM subscription_payments WHERE id=%s',(order['id'],)).fetchone()
+            assert saved['terms_snapshot']['period']=='calendar-year' and saved['terms_snapshot']['period_months']==12
+            assert saved['service_starts_at']==paid_until
+            assert connection.execute('SELECT count(*) AS n FROM email_outbox WHERE dedup_key=%s',('subscription:'+order['id'],)).fetchone()['n']==1
+        # After completion a new purchase must acknowledge the updated catalogue price.
+        assert checkout(system,billing_period='annual',price_version=overview['plan']['updated_at']).status_code==409
+        fresh=system.client.get('/api/v1/billing').json()
+        assert Decimal(str(checkout(system,billing_period='annual',price_version=fresh['plan']['updated_at']).json()['amount']))==43000
+    finally:
+        with system.connect() as connection:
+            connection.execute('UPDATE platform_plans SET monthly_price=%s,annual_price=%s,updated_at=%s WHERE code=%s',(original['monthly_price'],original['annual_price'],original['updated_at'],'canteen'))
+
+
+@pytest.mark.parametrize('plan,period,expected',[('canteen','annual',42000),('restaurant','monthly',4000),('restaurant','annual',48000)])
+def test_each_plan_uses_server_price_and_preserves_trial(system,plan,period,expected):
+    with system.connect() as connection:
+        connection.execute('UPDATE tenant_subscriptions SET plan_code=%s WHERE tenant_id=%s',(plan,system.tenant))
+    before=subscription(system)
+    order=checkout(system,billing_period=period).json()
+    assert Decimal(str(order['amount']))==expected and order['period_months']==(12 if period=='annual' else 1)
+    assert callback(system,order).status_code==200
+    with system.connect() as connection:
+        saved=connection.execute('SELECT * FROM subscription_payments WHERE id=%s',(order['id'],)).fetchone()
+    assert saved['service_starts_at']==before['trial_ends_at']
+    assert saved['service_ends_at']==billing.add_months(before['trial_ends_at'],12 if period=='annual' else 1)
 
 
 def test_parallel_checkout_creates_one_provider_order_and_disabled_mode_cannot_charge(system):
@@ -143,7 +198,7 @@ def test_success_capture_currency_and_duplicate_notifications(system):
 
 
 def test_test_mode_never_grants_live_service_and_status_can_reconcile_bound_payment(system):
-    system.cfg.freedompay_test_mode=True;before=subscription(system);order=checkout(system).json()
+    system.cfg.freedompay_test_mode=True;before=subscription(system);order=checkout(system,billing_period='annual').json()
     assert callback(system,order).status_code==200 and subscription(system)==before
     system.cfg.freedompay_test_mode=False
     assert callback(system,order).status_code==200 and subscription(system)==before

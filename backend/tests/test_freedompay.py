@@ -101,6 +101,8 @@ def test_payment_matches_amount_currency_order_mode_and_bound_id():
 
 def test_calendar_month_and_expired_billing_access():
     assert billing.next_month(datetime(2028,1,31,tzinfo=timezone.utc))==datetime(2028,2,29,tzinfo=timezone.utc)
+    assert billing.add_months(datetime(2028,2,29,13,45,tzinfo=timezone.utc),12)==datetime(2029,2,28,13,45,tzinfo=timezone.utc)
+    assert billing.add_months(datetime(2026,12,31,tzinfo=timezone.utc),12)==datetime(2027,12,31,tzinfo=timezone.utc)
     user={'role':'owner','tenant_status':'active','subscription_status':'active','current_period_ends_at':datetime(2020,1,1,tzinfo=timezone.utc)}
     with pytest.raises(HTTPException): main._validate_tenant_access(user)
     main._validate_tenant_access(user,allow_billing=True)

@@ -34,7 +34,7 @@ def install(app, current_user, get_connection, check_origin, platform_owner, set
     @app.get('/api/v1/public/plans', tags=['public'])
     def public_plans(connection=Depends(get_connection)):
         return [dict(row) for row in connection.execute(
-            "SELECT code, name, monthly_price FROM platform_plans WHERE code IN ('canteen', 'restaurant') ORDER BY monthly_price, code"
+            "SELECT code, name, monthly_price, annual_price FROM platform_plans WHERE code IN ('canteen', 'restaurant') ORDER BY monthly_price, code"
         ).fetchall()]
 
     @app.post('/api/v1/public/connection-requests', status_code=201, tags=['public'])

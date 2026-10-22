@@ -1932,10 +1932,10 @@ def update_plan(code: str, payload: PlanPriceUpdate, request: Request, user: dic
     _check_origin(request)
     _platform_owner(user)
     with connection.transaction():
-        row = connection.execute("UPDATE platform_plans SET monthly_price = %s, updated_at = CURRENT_TIMESTAMP WHERE code = %s RETURNING *", (payload.monthly_price, code)).fetchone()
+        row = connection.execute("UPDATE platform_plans SET monthly_price = %s, annual_price = COALESCE(%s, annual_price), updated_at = CURRENT_TIMESTAMP WHERE code = %s RETURNING *", (payload.monthly_price, payload.annual_price, code)).fetchone()
         if not row:
             raise HTTPException(status_code=404, detail="Тариф не найден")
-        connection.execute("INSERT INTO platform_events (actor_user_id, actor_login, action, payload) VALUES (%s, %s, 'plan.update', %s)", (user["id"], user["login"], Jsonb({"planCode": code, "monthlyPrice": str(payload.monthly_price)})))
+        connection.execute("INSERT INTO platform_events (actor_user_id, actor_login, action, payload) VALUES (%s, %s, 'plan.update', %s)", (user["id"], user["login"], Jsonb({"planCode": code, "monthlyPrice": str(row['monthly_price']), "annualPrice": str(row['annual_price'])})))
     return dict(row)
 
 

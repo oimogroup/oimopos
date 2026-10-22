@@ -22,22 +22,30 @@
   const submit = document.getElementById('connectionSubmit');
   document.querySelectorAll('[data-plan-choice]').forEach(link => link.addEventListener('click', () => { form.elements.plan.value = link.dataset.planChoice; }));
   document.getElementById('year').textContent = String(new Date().getFullYear());
+  let catalogue=[];
+  const pricingPeriod=document.getElementById('pricingPeriod');
+  function renderPrices() {
+    const annual=pricingPeriod.value==='annual';
+    for (const code of ['canteen','restaurant']) {
+      const plan=catalogue.find(item=>item.code===code), raw=plan?.[annual?'annual_price':'monthly_price'];
+      const price=Number(raw), available=raw!=null && Number.isFinite(price) && price>0;
+      const node=document.querySelector(`[data-price="${code}"]`);
+      node.textContent=available?new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(price):'По запросу';
+      node.classList.toggle('price-unavailable',!available);
+      document.querySelector(`[data-price-unit="${code}"]`).textContent=available?(annual?'сом / год':'сом / месяц'):'';
+    }
+  }
+  pricingPeriod.addEventListener('change',renderPrices);
   async function loadPlans() {
     try {
       const response = await fetch('/api/v1/public/plans', {credentials:'omit'});
       if (!response.ok) throw new Error();
-      const plans = await response.json();
-      for (const code of ['canteen','restaurant']) {
-        const plan = plans.find(item => item.code === code);
-        const price = Number(plan?.monthly_price);
-        if (!plan || !Number.isFinite(price) || price < 0) throw new Error();
-        document.querySelector(`[data-price="${code}"]`).textContent = new Intl.NumberFormat('ru-RU',{maximumFractionDigits:2}).format(price);
-        document.querySelector(`[data-price-unit="${code}"]`).textContent = 'сом / месяц';
-      }
+      catalogue = await response.json();
+      if(!Array.isArray(catalogue)) catalogue=[];
     } catch (_) {
-      document.querySelectorAll('[data-price]').forEach(node => { node.textContent = 'По запросу'; node.classList.add('price-unavailable'); });
-      document.querySelectorAll('[data-price-unit]').forEach(node => { node.textContent = ''; });
+      catalogue=[];
     }
+    renderPrices();
   }
   loadPlans();
   let pending = null;

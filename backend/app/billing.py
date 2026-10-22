@@ -31,10 +31,14 @@ def money(value):
         raise ValueError('Некорректная сумма') from exc
 
 
-def next_month(value):
-    year=value.year+(value.month==12)
-    month=1 if value.month==12 else value.month+1
+def add_months(value, months):
+    year, month = divmod(value.year * 12 + value.month - 1 + months, 12)
+    month += 1
     return value.replace(year=year,month=month,day=min(value.day,calendar.monthrange(year,month)[1]))
+
+
+def next_month(value):
+    return add_months(value, 1)
 
 
 def base_url(settings):
@@ -63,7 +67,7 @@ def event(connection,order_id,kind,details=None):
 
 
 def public_order(row):
-    return {key:row.get(key) for key in ('id','plan_code','amount','currency','testing','status','provider_payment_id','checkout_url','created_at','expires_at','applied_at','service_starts_at','service_ends_at','refund_amount','review_reason','terms_version')}
+    return {key:row.get(key) for key in ('id','plan_code','period_months','amount','currency','testing','status','provider_payment_id','checkout_url','created_at','expires_at','applied_at','service_starts_at','service_ends_at','refund_amount','review_reason','terms_version')}
 
 
 def validate_payment(order,values,settings,*,bound_status=False):
@@ -123,7 +127,7 @@ def settle(connection,order_id,values,settings,*,source='result',ack=False):
                     candidates=[now()]
                     for key in ('trial_ends_at','current_period_ends_at'):
                         if subscription.get(key): candidates.append(subscription[key])
-                    start=max(candidates);end=next_month(start)
+                    start=max(candidates);end=add_months(start,order['period_months'])
                     connection.execute("UPDATE tenant_subscriptions SET status='active',current_period_ends_at=%s,updated_at=now() WHERE tenant_id=%s",(end,order['tenant_id']))
                     applied=True
                     from .mailer import enqueue
@@ -148,6 +152,8 @@ class CheckoutInput(BaseModel):
     request_id: UUID
     terms_accepted: Literal[True]
     terms_version: str=Field(min_length=10,max_length=100)
+    billing_period: Literal['monthly','annual']='monthly'
+    price_version: datetime | None=None
 
 
 class RefundInput(BaseModel):
@@ -180,7 +186,7 @@ def install(app):
         unlimited=sub['status']=='active' and not sub['current_period_ends_at']
         return {'subscription':dict(sub),'plan':dict(plan) if plan else None,'orders':[public_order(row) for row in orders],
                 'refundRequests':[dict(row) for row in refund_requests],'serverTime':now(),'termsVersion':legal.version(settings),'testing':settings.freedompay_test_mode,
-                'canPay':not readiness(settings) and bool(plan and plan['monthly_price']>0) and not unlimited,
+                'canPay':not readiness(settings) and bool(plan and (plan['monthly_price']>0 or plan['annual_price']>0)) and not unlimited,
                 'message':'Доступ включён администратором без даты окончания. Для изменения подписки свяжитесь с поддержкой.' if unlimited else 'Онлайн-оплата пока недоступна. Свяжитесь с поддержкой.' if readiness(settings) else '',
                 'supportEmail':settings.seller_support_email}
 
@@ -189,26 +195,36 @@ def install(app):
         main._check_origin(request);owner(user);settings=get_settings()
         if readiness(settings): raise HTTPException(503,'Онлайн-оплата пока недоступна. Свяжитесь с поддержкой.')
         if payload.terms_version!=legal.version(settings): raise HTTPException(409,'Условия обновились. Обновите страницу и ознакомьтесь с ними перед оплатой.')
+        months=12 if payload.billing_period=='annual' else 1
         with connection.transaction():
             sub=subscription(connection,user['tenant_id'],True)
             previous=connection.execute('SELECT * FROM subscription_payments WHERE tenant_id=%s AND request_id=%s',(user['tenant_id'],payload.request_id)).fetchone()
-            if previous: return public_order(previous)
+            if previous:
+                if previous['period_months']!=months: raise HTTPException(409,'Этот запрос уже использован для другого срока подписки. Обновите страницу.')
+                return public_order(previous)
             if sub['status']=='active' and not sub['current_period_ends_at']: raise HTTPException(409,'Доступ уже включён без ограничения срока. Обратитесь в поддержку.')
             active=connection.execute("SELECT * FROM subscription_payments WHERE tenant_id=%s AND status IN ('creating','pending','review') AND expires_at>now() ORDER BY created_at DESC LIMIT 1",(user['tenant_id'],)).fetchone()
-            if active: return public_order(active)
+            if active:
+                if active['period_months']!=months:
+                    period='год' if active['period_months']==12 else 'месяц'
+                    raise HTTPException(409,f'У вас есть незавершённый заказ на {period}. Проверьте его статус в истории оплат перед выбором другого срока.')
+                return public_order(active)
             plan=connection.execute('SELECT * FROM platform_plans WHERE code=%s FOR SHARE',(sub['plan_code'],)).fetchone()
-            if not plan or plan['monthly_price']<=0: raise HTTPException(409,'Уточните тариф у владельца платформы')
+            price=plan['annual_price' if months==12 else 'monthly_price'] if plan else 0
+            if price<=0: raise HTTPException(409,'Оплата за выбранный срок недоступна. Уточните тариф у владельца платформы')
+            if payload.price_version is not None and payload.price_version!=plan['updated_at']:
+                raise HTTPException(409,'Цена тарифа обновилась. Обновите страницу и проверьте сумму перед оплатой.')
             order_id='oimo-'+uuid4().hex
             connection.execute('''INSERT INTO subscription_payments
-              (id,tenant_id,owner_user_id,request_id,plan_code,amount,currency,max_branches,merchant_id,testing,expires_at,terms_version,terms_snapshot)
-              VALUES (%s,%s,%s,%s,%s,%s,'KGS',%s,%s,%s,now()+interval '30 minutes',%s,%s)''',
-              (order_id,user['tenant_id'],user['id'],payload.request_id,sub['plan_code'],plan['monthly_price'],sub['max_branches'],settings.freedompay_merchant_id,settings.freedompay_test_mode,legal.version(settings),Jsonb(legal.snapshot(settings))))
-            event(connection,order_id,'created',{'actor':user['id'],'termsVersion':legal.version(settings)})
+              (id,tenant_id,owner_user_id,request_id,plan_code,amount,currency,max_branches,merchant_id,testing,expires_at,terms_version,terms_snapshot,period_months)
+              VALUES (%s,%s,%s,%s,%s,%s,'KGS',%s,%s,%s,now()+interval '30 minutes',%s,%s,%s)''',
+              (order_id,user['tenant_id'],user['id'],payload.request_id,sub['plan_code'],price,sub['max_branches'],settings.freedompay_merchant_id,settings.freedompay_test_mode,legal.version(settings),Jsonb(legal.snapshot(settings,months)),months))
+            event(connection,order_id,'created',{'actor':user['id'],'termsVersion':legal.version(settings),'periodMonths':months})
         # Persist the order BEFORE the external call. Unknown responses must be reconciled, never recharged.
         order=connection.execute('SELECT * FROM subscription_payments WHERE id=%s',(order_id,)).fetchone()
         contact=connection.execute('SELECT contact_email FROM tenants WHERE id=%s',(user['tenant_id'],)).fetchone()
         connection.commit()
-        values={'pg_order_id':order_id,'pg_amount':format(order['amount'],'.2f'),'pg_currency':'KGS','pg_description':'Oimo subscription 1 month',
+        values={'pg_order_id':order_id,'pg_amount':format(order['amount'],'.2f'),'pg_currency':'KGS','pg_description':f'Oimo subscription {order["period_months"]} months',
                 'pg_user_id':user['tenant_id'],'pg_user_contact_email':contact['contact_email'],'pg_testing_mode':'1' if order['testing'] else '0',
                 'pg_lifetime':'1800','pg_postpone_payment':'0','pg_request_method':'POST','pg_language':'ru',
                 'pg_result_url':base_url(settings)+'/api/v1/billing/freedompay/result','pg_check_url':base_url(settings)+'/api/v1/billing/freedompay/check',

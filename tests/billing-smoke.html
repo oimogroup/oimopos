@@ -5,7 +5,7 @@
   const [source,code]=await Promise.all([fetch('/billing').then(r=>r.text()),fetch('/billing.js').then(r=>r.text())]);
   const stub=`<script>
    window.__payloads=[];window.__refunds=[];
-   window.__data={subscription:{status:'trialing',trial_ends_at:'2020-01-01T00:00:00Z',max_branches:1},plan:{name:'Столовая',monthly_price:3500},orders:[{id:'order-one',amount:3500,currency:'KGS',status:'pending',created_at:'2026-10-22T06:00:00Z',expires_at:'2099-01-01T00:00:00Z',testing:false,checkout_url:'javascript:alert(1)',review_reason:'<img src=x onerror=alert(1)>'}],refundRequests:[],serverTime:'2026-10-22T07:00:00Z',termsVersion:'terms-test-version',testing:false,canPay:true,supportEmail:'support@oimopos.com'};
+   window.__data={subscription:{status:'trialing',trial_ends_at:'2020-01-01T00:00:00Z',max_branches:1},plan:{name:'Столовая',monthly_price:3500,annual_price:42000,updated_at:'2026-10-22T07:00:00Z'},orders:[{id:'order-one',amount:3500,currency:'KGS',period_months:1,status:'pending',created_at:'2026-10-22T06:00:00Z',expires_at:'2099-01-01T00:00:00Z',testing:false,checkout_url:'javascript:alert(1)',review_reason:'<img src=x onerror=alert(1)>'}],refundRequests:[],serverTime:'2026-10-22T07:00:00Z',termsVersion:'terms-test-version',testing:false,canPay:true,supportEmail:'support@oimopos.com'};
    window.AshkanaApi={me:async()=>({session:{role:'owner',tenantId:'billing-test',tenantName:'Тестовая компания'}}),billing:async()=>structuredClone(window.__data),
     subscriptionCheckout:async payload=>{window.__payloads.push(payload);return {...window.__data.orders[0],status:'creating',checkout_url:null};},
     refreshSubscriptionPayment:async id=>{window.__data.orders[0]={...window.__data.orders[0],status:'paid',applied_at:'2026-10-22T07:00:00Z',service_starts_at:'2026-10-22T07:00:00Z',service_ends_at:'2026-11-22T07:00:00Z'};window.__data.subscription={status:'active',current_period_ends_at:'2099-01-01T00:00:00Z',max_branches:1};return {};},
@@ -26,16 +26,25 @@
   q('#termsAccepted').checked=true;q('#payButton').click();await pause();q('#payButton').click();await pause();
   check('unknown-create-reuses-id',w.__payloads.length===2&&w.__payloads[0].request_id===w.__payloads[1].request_id);
   check('checkout-does-not-send-client-price',!('amount' in w.__payloads[0])&&w.__payloads[0].terms_version==='terms-test-version'&&w.__payloads[0].terms_accepted===true);
+  check('monthly-period-and-price-version-sent',w.__payloads[0].billing_period==='monthly'&&w.__payloads[0].price_version===w.__data.plan.updated_at);
+  q('#billingPeriod').value='annual';q('#billingPeriod').dispatchEvent(new w.Event('change'));
+  check('annual-full-price-and-consent-reset',q('#planPrice').textContent.replace(/\s/g,'')==='42000сом'&&q('#periodDescription').textContent.includes('12')&&!q('#termsAccepted').checked&&q('#payButton').textContent==='Оплатить год');
+  q('#termsAccepted').checked=true;q('#payButton').click();await pause();q('#payButton').click();await pause();
+  check('annual-request-is-separate-and-retry-stable',w.__payloads[2].billing_period==='annual'&&w.__payloads[2].request_id!==w.__payloads[0].request_id&&w.__payloads[2].request_id===w.__payloads[3].request_id);
+  w.__data.orders[0].period_months=12;
   [...d.querySelectorAll('#orders button')].find(b=>b.textContent==='Проверить оплату').click();await pause();
   check('verified-state-shows-paid-period',q('#orders').textContent.includes('Период:')&&!q('#workspaceLink').hidden);
+  check('history-shows-annual-term',q('#orders').textContent.includes('За год'));
   [...d.querySelectorAll('#orders button')].find(b=>b.textContent==='Запросить возврат').click();await pause();
   check('refund-dialog-explains-request',q('#refundDialog').open&&q('#refundDialog').textContent.includes('ещё не означает возврат'));
   q('#refundReason').value='Возврат за неиспользованный период';q('#refundForm button[type=submit]').click();await pause();
   check('refund-request-recorded-once',w.__refunds.length===1&&w.__refunds[0].id==='order-one'&&q('#orders').textContent.includes('рассматривается'));
+  w.__data.plan.annual_price=0;q('#reload').click();await pause();
+  check('unavailable-period-cannot-be-purchased',q('#payButton').disabled&&q('#planPrice').textContent.includes('Уточните'));
   w.__data.testing=true;w.__data.canPay=false;w.__data.message='Онлайн-оплата пока недоступна.';q('#reload').click();await pause();
   check('disabled-merchant-no-checkout',q('#checkoutForm').hidden&&q('#availability').textContent.includes('недоступна'));
   check('test-mode-explained',!q('#testNotice').hidden&&q('#testNotice').textContent.includes('не продлевают'));
-  w.sessionStorage.removeItem('oimo-subscription-request-billing-test');w.sessionStorage.removeItem('ashkana-auth-session-v1');
+  for(const key of ['oimo-subscription-request-billing-test','oimo-subscription-request-billing-test-order','oimo-subscription-request-billing-test-annual','oimo-subscription-request-billing-test-annual-order','ashkana-auth-session-v1'])w.sessionStorage.removeItem(key);
  }catch(error){check('runtime:'+error.stack,false);}
  document.body.dataset.done='true';
 })();

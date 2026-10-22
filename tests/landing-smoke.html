@@ -8,11 +8,15 @@
   if(width>=320&&width<=1440)frame.style.width=width+'px';
   const response=await fetch('/');const source=await response.text();
   check('root-is-public-landing',response.ok&&source.includes('id="connectionForm"')&&source.includes('<title>Oimo — касса'));
-  const stub=`<script>window.__posts=[];window.__outcome='offline';window.fetch=async(url,options={})=>{if(url==='/api/v1/public/plans')return new Response(JSON.stringify([{code:'canteen',monthly_price:2100},{code:'restaurant',monthly_price:3600}]),{headers:{'Content-Type':'application/json'}});if(url==='/api/v1/public/register'){window.__posts.push(JSON.parse(options.body));if(window.__outcome==='offline')throw new TypeError('Failed to fetch');return new Response(JSON.stringify({session:{role:'owner',subscriptionStatus:'trialing'},redirect:'/admin'}),{status:201,headers:{'Content-Type':'application/json'}});}throw new Error('Unexpected request '+url);};<\/script>`;
+  const stub=`<script>window.__posts=[];window.__outcome='offline';window.fetch=async(url,options={})=>{if(url==='/api/v1/public/plans')return new Response(JSON.stringify([{code:'canteen',monthly_price:3500,annual_price:42000},{code:'restaurant',monthly_price:4000,annual_price:48000}]),{headers:{'Content-Type':'application/json'}});if(url==='/api/v1/public/register'){window.__posts.push(JSON.parse(options.body));if(window.__outcome==='offline')throw new TypeError('Failed to fetch');return new Response(JSON.stringify({session:{role:'owner',subscriptionStatus:'trialing'},redirect:'/admin'}),{status:201,headers:{'Content-Type':'application/json'}});}throw new Error('Unexpected request '+url);};<\/script>`;
   await new Promise(resolve=>{frame.addEventListener('load',resolve,{once:true});frame.srcdoc=source.replace('<head>','<head><base href="/">'+stub);});
   const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s);
   await pause();
-  check('pricing-from-server',q('[data-price="canteen"]').textContent.replace(/\s/g,'')==='2100'&&q('[data-price="restaurant"]').textContent.replace(/\s/g,'')==='3600');
+  check('pricing-from-server',q('[data-price="canteen"]').textContent.replace(/\s/g,'')==='3500'&&q('[data-price="restaurant"]').textContent.replace(/\s/g,'')==='4000');
+  q('#pricingPeriod').value='annual';q('#pricingPeriod').dispatchEvent(new w.Event('change'));
+  check('annual-total-from-server',q('[data-price="canteen"]').textContent.replace(/\s/g,'')==='42000'&&q('[data-price="restaurant"]').textContent.replace(/\s/g,'')==='48000'&&q('[data-price-unit="canteen"]').textContent==='сом / год');
+  q('#pricingPeriod').value='monthly';q('#pricingPeriod').dispatchEvent(new w.Event('change'));
+  check('monthly-price-restored',q('[data-price="canteen"]').textContent.replace(/\s/g,'')==='3500');
   check('initial-preview',!q('#preview-pos').hidden&&q('#preview-stock').hidden);
   q('#tab-stock').click();check('switch-preview',!q('#preview-stock').hidden&&q('#preview-pos').hidden&&q('#tab-stock').getAttribute('aria-selected')==='true');
   q('#tab-stock').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));check('keyboard-preview',!q('#preview-finance').hidden&&d.activeElement===q('#tab-finance'));

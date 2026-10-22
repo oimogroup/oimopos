@@ -6,7 +6,9 @@ No live provider calls, real credentials, emails or changes to the user's DB.
 import os
 from pathlib import Path
 import secrets
+import shutil
 import subprocess
+import tempfile
 import time
 
 ROOT=Path(__file__).resolve().parents[1]
@@ -21,8 +23,22 @@ try:
     for _ in range(40):
         if subprocess.run(['docker','exec',database,'pg_isready','-U','postgres'],stdout=subprocess.DEVNULL,stderr=subprocess.DEVNULL).returncode==0:break
         time.sleep(1)
+    # Upgrade a real pre-annual database with an existing one-month quote.
+    with tempfile.TemporaryDirectory(prefix='oimo-pre-annual-') as temporary:
+        legacy=Path(temporary)/'database';shutil.copytree(ROOT/'database',legacy)
+        apply=legacy/'migrations/apply.sql'
+        prefix,marker,_=apply.read_text().partition("SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '021_annual_subscriptions')")
+        assert marker
+        apply.write_text(prefix)
+        run(['docker','run','--rm','--network',network,'-e','DATABASE_URL','-v',str(legacy)+':/app/database:ro','oimo-render-check','python','/app/render_migrate.py'],env=environment,stdout=subprocess.DEVNULL)
+    legacy_sql="""INSERT INTO subscription_payments
+      (id,tenant_id,request_id,plan_code,amount,max_branches,merchant_id,testing,expires_at,terms_version,terms_snapshot)
+      VALUES ('pre-annual-quote','tenant-ashkana','11111111-1111-4111-8111-111111111111','canteen',2000,1,'123',true,now()+interval '1 hour','legacy','{"period":"calendar-month"}');"""
+    run(['docker','exec','-i',database,'psql','-U','postgres','-v','ON_ERROR_STOP=1'],input=legacy_sql,text=True,stdout=subprocess.DEVNULL)
     for _ in range(2): run(['docker','run','--rm','--network',network,'-e','DATABASE_URL','oimo-render-check','python','/app/render_migrate.py'],env=environment,stdout=subprocess.DEVNULL)
-    print('PASS fresh and repeated billing migrations',flush=True)
+    preserved=run(['docker','exec',database,'psql','-U','postgres','-Atc',"SELECT amount || ':' || period_months FROM subscription_payments WHERE id='pre-annual-quote'"],text=True,stdout=subprocess.PIPE).stdout.strip()
+    assert preserved=='2000.00:1',preserved
+    print('PASS upgrade and repeated migrations preserve the original monthly quote',flush=True)
     image=subprocess.check_output(['docker','compose','images','-q','api'],cwd=ROOT,text=True).strip()
     environment['BILLING_TEST_DATABASE_URL']=environment['DATABASE_URL'];environment['DATABASE_URL']=''
     run(['docker','run','--rm','--network',network,'-e','DATABASE_URL','-e','BILLING_TEST_DATABASE_URL','-v',str(ROOT/'backend')+':/app:ro',image,'python','-m','pytest','tests/test_billing_integration.py','-q','-p','no:cacheprovider'],env=environment)

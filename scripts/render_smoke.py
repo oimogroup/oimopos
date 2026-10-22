@@ -80,6 +80,13 @@ try:
  headers['Cookie']=platform_cookie
  print('PASS deletion confirmation, complete account removal, second tenant isolation and audit')
  print('PASS startup, health, frontend, private files not served, login and Secure cookie')
+ public_plans=api('/public/plans')
+ assert {row['code']:(float(row['monthly_price']),float(row['annual_price'])) for row in public_plans}=={'canteen':(3500,42000),'restaurant':(4000,48000)}
+ updated=api('/platform/plans/canteen',{'monthly_price':'3501.50','annual_price':'42001.50'},'PUT')
+ assert float(updated['monthly_price'])==3501.50 and float(updated['annual_price'])==42001.50
+ assert any(event['action']=='plan.update' for event in api('/platform/events'))
+ api('/platform/plans/canteen',{'monthly_price':'3500','annual_price':'42000'},'PUT')
+ print('PASS monthly and annual public prices, platform price editing and audit')
  # Public registrations must create isolated trials and authenticated owner sessions.
  public_headers={'Content-Type':'application/json','Origin':env['RENDER_EXTERNAL_URL']}
  def signup(data, expected=201):

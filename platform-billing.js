@@ -12,7 +12,7 @@
       const body=$('#platformPaymentRows');body.replaceChildren();
       for(const order of data.orders) {
         const row=document.createElement('tr');
-        for(const value of [order.tenantName,order.id,`${order.amount} KGS${order.testing?' · тест':''}`,labels[order.status],date(order.service_ends_at),`${order.refund_amount} KGS`]) row.append(text('td',value));
+        for(const value of [order.tenantName,order.id,`${order.amount} KGS · ${order.period_months===12?'год':'месяц'}${order.testing?' · тест':''}`,labels[order.status],date(order.service_ends_at),`${order.refund_amount} KGS`]) row.append(text('td',value));
         const cell=document.createElement('td'), button=text('button','Проверить');button.type='button';button.className='secondary-button';
         button.addEventListener('click',async()=>{button.disabled=true;try{await api.platformRefreshPayment(order.id);await load();status('Статус получен от провайдера.');}catch(error){status(error.message);}finally{button.disabled=false;}});
         cell.append(button);row.append(cell);body.append(row);

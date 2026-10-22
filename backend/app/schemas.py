@@ -231,3 +231,4 @@ class TenantOwnerAccessUpdate(BaseModel):
 
 class PlanPriceUpdate(BaseModel):
     monthly_price: Annotated[Decimal, Field(ge=0, le=9999999999, max_digits=12, decimal_places=2)]
+    annual_price: Annotated[Decimal, Field(ge=0, le=9999999999, max_digits=12, decimal_places=2)] | None = None

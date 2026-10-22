@@ -70,8 +70,9 @@ def test_restaurant_cannot_consume_ingredients_twice_using_batches():
 
 
 @pytest.mark.parametrize('value',['-1','NaN','Infinity','10000000000','2.001'])
-def test_price_validation(value):
-    with pytest.raises(ValidationError): PlanPriceUpdate(monthly_price=value)
+@pytest.mark.parametrize('field',['monthly_price','annual_price'])
+def test_price_validation(value,field):
+    with pytest.raises(ValidationError): PlanPriceUpdate(**{'monthly_price':3500,field:value})
 
 
 def test_only_platform_owner_can_read_or_change_prices(monkeypatch):
@@ -89,10 +90,10 @@ def test_price_save_is_persistent_and_audited(monkeypatch):
         def transaction(self): return nullcontext()
         def execute(self,sql,params):
             self.calls.append((sql,params))
-            return SimpleNamespace(fetchone=lambda:{'code':'canteen','monthly_price':params[0]})
+            return SimpleNamespace(fetchone=lambda:{'code':'canteen','monthly_price':params[0],'annual_price':params[1]})
     connection=Connection()
-    result=main.update_plan('canteen',PlanPriceUpdate(monthly_price='2499.50'),None,{'id':1,'login':'owner','role':'platform_owner'},connection)
-    assert result['monthly_price']==Decimal('2499.50')
+    result=main.update_plan('canteen',PlanPriceUpdate(monthly_price='3499.50',annual_price='41994'),None,{'id':1,'login':'owner','role':'platform_owner'},connection)
+    assert result['monthly_price']==Decimal('3499.50') and result['annual_price']==Decimal('41994')
     assert any('platform_events' in sql for sql,_ in connection.calls)
 
 

@@ -4,13 +4,13 @@
 <body>
   <main>
     <header><a class="brand" href="/">Oimo<span>Подписка</span></a><nav><a id="workspaceLink" href="/admin">В аккаунт</a><button id="logout" type="button" class="text-button">Выйти</button></nav></header>
-    <p class="eyebrow" id="companyName">Ваш аккаунт</p><h1>Подписка и оплата</h1><p class="intro">Один платёж — месяц работы. Автоматических списаний нет.</p>
+    <p class="eyebrow" id="companyName">Ваш аккаунт</p><h1>Подписка и оплата</h1><p class="intro">Оплатите месяц или сразу год. Автоматических списаний нет.</p>
     <p id="statusMessage" class="notice" role="status" aria-live="polite">Загружаем подписку…</p>
     <div id="billingContent" hidden>
       <aside id="testNotice" class="notice" hidden>Тестовый режим. Платежи проверяют подключение Freedom Pay и не продлевают настоящий доступ.</aside>
       <section class="plan-card" aria-labelledby="planName">
         <div><p class="eyebrow">Текущий тариф</p><h2 id="planName"></h2><p id="accessStatus"></p><p id="branchLimit" class="muted"></p></div>
-        <div class="payment"><div class="price" id="planPrice"></div><p class="muted">Разовая оплата за календарный месяц</p>
+        <div class="payment"><label class="period-label" for="billingPeriod">Срок подписки</label><select id="billingPeriod"><option value="monthly">Месяц</option><option value="annual">Год · 12 месяцев</option></select><div class="price" id="planPrice"></div><p class="muted" id="periodDescription">Разовая оплата за календарный месяц</p>
           <form id="checkoutForm"><label class="consent"><input type="checkbox" id="termsAccepted" required><span>Принимаю <a href="/legal/offer" target="_blank" rel="noopener">условия использования</a>, <a href="/legal/refunds" target="_blank" rel="noopener">правила возврата</a> и <a href="/legal/privacy" target="_blank" rel="noopener">обработки данных</a>.</span></label><button class="primary" id="payButton" type="submit" disabled>Оплатить месяц</button></form>
           <p class="muted" id="availability"></p><small>Оплата на защищённой странице Freedom Pay. Номер карты и CVC вводятся там.</small>
         </div>

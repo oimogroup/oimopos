@@ -397,6 +397,7 @@ async function loadPlans() {
     <h3>${escapeHtml(plan.name)}</h3>
     <p>${plan.code === "canteen" ? "Приготовление партиями → передача на раздачу → продажа порций. Учёт выпуска и остатков." : "Заказы по столам, печать по цехам. Приготовление по заказу, списание ингредиентов по техкарте при оплате."}</p>
     <label>Цена в месяц, сом<input name="price" type="number" min="0" max="9999999999" step="0.01" value="${Number(plan.monthly_price)}" required></label>
+    <label>Цена за год, сом<input name="annualPrice" type="number" min="0" max="9999999999" step="0.01" value="${Number(plan.annual_price)}" required></label>
     <button type="submit" class="primary-button">Сохранить цену</button><span class="plan-save-status" role="status"></span>
   </form>`).join("");
   ["#tenantPlan", "#settingsTenantPlan"].forEach(id => {
@@ -413,7 +414,7 @@ $("#planCards").addEventListener("submit", async event => {
   const button = form.querySelector("button");
   button.disabled = true;
   try {
-    const result = await window.AshkanaApi.updatePlan(form.dataset.plan, {monthly_price: form.elements.price.value});
+    const result = await window.AshkanaApi.updatePlan(form.dataset.plan, {monthly_price: form.elements.price.value, annual_price: form.elements.annualPrice.value});
     plans = plans.map(plan => plan.code === result.code ? result : plan);
     form.querySelector(".plan-save-status").textContent = "Цена сохранена";
     await loadPlans();
