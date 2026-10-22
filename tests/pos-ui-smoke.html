@@ -179,15 +179,16 @@
           }
           if (!preview) {
             const mobileWin=frame.contentWindow,mobileDoc=frame.contentDocument;
-            check('mobile-starts-at-orders',mobileDoc.body.dataset.posView==='orders');
+            check('mobile-starts-with-products',mobileDoc.body.dataset.posView==='catalog');
+            mobileWin.mobilePosView('orders');
             mobileDoc.querySelector('#mobileNewOrder').click();
-            check('mobile-new-order-opens-receipt',mobileDoc.body.dataset.posView==='receipt');
+            check('mobile-new-order-opens-products',mobileDoc.body.dataset.posView==='catalog');
             mobileDoc.querySelector('#mobileAddItems').click();
             check('mobile-add-opens-categories',mobileDoc.body.dataset.posView==='catalog');
             mobileWin.addProduct('p1');
             mobileDoc.querySelector('#mobileReturnReceipt').click();
             mobileDoc.querySelector('#mobileFlowBack').click();
-            check('mobile-back-preserves-draft',mobileDoc.body.dataset.posView==='orders'&&mobileDoc.querySelector('#orderItems').textContent.includes('Вода'));
+            check('mobile-back-preserves-draft',mobileDoc.body.dataset.posView==='catalog'&&mobileDoc.querySelector('#orderItems').textContent.includes('Вода'));
             mobileWin.startNewOrder();
 
             const win = frame.contentWindow;

@@ -5812,7 +5812,7 @@ function defaultRoleRoute() {
 
 function renderOwnerPointContext() {
   if (currentRole !== "owner") return;
-  $("#ownerScopeNavLabel").textContent = "Доступ";
+  $("#ownerScopeNavLabel").textContent = "Организация";
 }
 
 function renderOwnerObjectSelector() {
@@ -5894,6 +5894,7 @@ function renderMobileWorkspaceNavigation() {
   const choices = mobileWorkspaceChoices();
   container.classList.toggle("hidden", choices.length < 2);
   select.innerHTML = choices.map((choice) => `<option value="${escapeHtml(choice.value)}"${choice.selected ? " selected" : ""}>${escapeHtml(choice.label)}</option>`).join("");
+  window.OimoMobileAdmin?.refresh();
 }
 
 function setOwnerNavSection(section, open) {
@@ -7129,4 +7130,138 @@ $('#inventorySelectionList').addEventListener('change', renderInventorySelection
   extraFilters?.addEventListener('change', updateExtraFilterCount);
   document.querySelector('#resetIngredientFilters')?.addEventListener('click', updateExtraFilterCount);
   updateExtraFilterCount();
+}
+
+// Reuse the role-filtered navigation in a native modal on small screens.
+(() => {
+  const phone = matchMedia('(max-width:700px)');
+  const sidebar = document.querySelector('#appSidebar');
+  const anchor = document.createComment('Desktop navigation');
+  sidebar.before(anchor);
+  const dialog = document.createElement('dialog');
+  dialog.id = 'mobileAdminDialog';
+  dialog.className = 'mobile-admin-dialog';
+  dialog.setAttribute('aria-label', 'Разделы Oimo');
+  document.body.append(dialog);
+  const close = document.createElement('button');
+  close.type = 'button'; close.className = 'mobile-admin-close icon-button';
+  close.setAttribute('aria-label', 'Закрыть разделы');
+  close.innerHTML = uiIcon('close');
+  sidebar.querySelector('.admin-brand').append(close);
+  const logout = document.createElement('button');
+  logout.type = 'button'; logout.className = 'mobile-admin-signout';
+  logout.innerHTML = uiIcon('logout') + 'Выйти из аккаунта';
+  logout.onclick = () => document.querySelector('#signOutButton').click();
+  sidebar.querySelector('.sidebar-bottom').append(logout);
+  const navigation = document.createElement('nav');
+  navigation.className = 'mobile-admin-navigation';
+  navigation.setAttribute('aria-label', 'Основные разделы');
+  const destinations = [
+    ['dashboard', 'Главная', 'home'], ['reports', 'Продажи', 'chart'],
+    ['inventory', 'Склад', 'inventory'], ['finance', 'Финансы', 'wallet']
+  ];
+  navigation.innerHTML = destinations.map(([view, label, icon]) => `<button type="button" data-mobile-admin-view="${view}">${uiIcon(icon)}<span>${label}</span></button>`).join('') +
+    `<button type="button" data-mobile-admin-more aria-controls="mobileAdminDialog" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg><span>Ещё</span></button>`;
+  document.querySelector('.admin-shell').append(navigation);
+  const menu = document.querySelector('#mobileAdminMenu');
+  const more = navigation.querySelector('[data-mobile-admin-more]');
+  let opener = menu;
+  const open = source => {
+    if (!phone.matches || dialog.open) return;
+    opener = source || menu;
+    dialog.showModal();
+    menu.setAttribute('aria-expanded', 'true'); more.setAttribute('aria-expanded', 'true');
+    close.focus();
+  };
+  const dismiss = () => { if (dialog.open) dialog.close(); };
+  menu.onclick = () => open(menu); more.onclick = () => open(more); close.onclick = dismiss;
+  dialog.addEventListener('click', event => { if (event.target === dialog) dismiss(); });
+  dialog.addEventListener('close', () => {
+    menu.setAttribute('aria-expanded', 'false'); more.setAttribute('aria-expanded', 'false');
+    if (phone.matches) opener.focus({preventScroll:true});
+  });
+  // A group expands in the drawer. A destination closes it after its own handler.
+  sidebar.addEventListener('click', event => {
+    const command = event.target.closest('button,a');
+    if (command && !command.hasAttribute('data-nav-section') && command !== close) dismiss();
+  });
+  navigation.addEventListener('click', event => {
+    const button = event.target.closest('[data-mobile-admin-view]');
+    if (!button || !canAccessView(button.dataset.mobileAdminView)) return;
+    const view = button.dataset.mobileAdminView;
+    const roleNav = sidebar.querySelector(`.role-navigation[data-role-navigation="${currentRole}"]`);
+    const target = currentRole === 'owner' ? {
+      dashboard:'[data-view="dashboard"]', reports:'[data-owner-analytics-tab="sales"]',
+      inventory:'[data-owner-stock-tab="overview"]', finance:'[data-owner-finance-tab="pnl"]'
+    }[view] : view === 'inventory' ? '[data-role-route="inventory/overview"]' : `[data-view="${view}"]`;
+    roleNav?.querySelector(target)?.click();
+    refresh();
+  });
+  function refresh() {
+    const view = document.querySelector('.admin-view.active')?.id.replace('view-', '');
+    let primary = false;
+    navigation.querySelectorAll('[data-mobile-admin-view]').forEach(button => {
+      const allowed = canAccessView(button.dataset.mobileAdminView);
+      button.hidden = !allowed;
+      const active = allowed && button.dataset.mobileAdminView === view;
+      button.classList.toggle('active', active);
+      if (active) { button.setAttribute('aria-current', 'page'); primary = true; }
+      else button.removeAttribute('aria-current');
+    });
+    more.classList.toggle('active', !primary);
+    if (!primary) more.setAttribute('aria-current', 'page'); else more.removeAttribute('aria-current');
+  }
+  function layout() {
+    dismiss();
+    if (phone.matches) dialog.append(sidebar);
+    else anchor.after(sidebar);
+    refresh();
+  }
+  phone.addEventListener('change', layout);
+  new MutationObserver(refresh).observe(document.querySelector('#breadcrumbTitle'), {childList:true});
+  window.OimoMobileAdmin = {open:() => open(menu), close:dismiss, refresh};
+  layout();
+})();
+
+// Compact records show the useful summary first; full data stays in the same row.
+(() => {
+  const registries = {productsTable:[0,4,6,7],recipesTable:[0,3,5,7,8],employeesTable:[0,1,4,5],registersTable:[0,1,4,5]};
+  for (const [id, summary] of Object.entries(registries)) {
+    const body = document.getElementById(id), table = body.closest('table');
+    table.classList.add('mobile-record-table');
+    function label() {
+      const headings = [...table.querySelectorAll('thead th')].map(cell => cell.textContent.trim());
+      [...body.rows].forEach((row, index) => {
+        if (row.cells.length < 2 || row.querySelector('[data-mobile-record-toggle]')) return;
+        row.id ||= `mobile-record-${id}-${index}`;
+        [...row.cells].forEach((cell, column) => {
+          cell.dataset.mobileLabel = headings[column] || '';
+          cell.classList.toggle('mobile-record-extra', !summary.includes(column));
+        });
+        const button = document.createElement('button');
+        button.type = 'button'; button.className = 'mobile-record-toggle';
+        button.dataset.mobileRecordToggle = ''; button.textContent = 'Подробнее';
+        button.setAttribute('aria-expanded', 'false'); button.setAttribute('aria-controls', row.id);
+        row.lastElementChild.append(button);
+      });
+    }
+    table.addEventListener('click', event => {
+      const toggle = event.target.closest('[data-mobile-record-toggle]');
+      if (!toggle) return;
+      const expanded = toggle.closest('tr').classList.toggle('mobile-record-expanded');
+      toggle.setAttribute('aria-expanded', String(expanded));
+      toggle.textContent = expanded ? 'Свернуть' : 'Подробнее';
+    });
+    new MutationObserver(label).observe(body, {childList:true});
+    label();
+  }
+})();
+
+// Keep long access forms scrollable while their Save/Cancel actions stay visible.
+for (const id of ['employeeModal', 'registerModal']) {
+  const editor = document.querySelector(`#${id} > .admin-modal`);
+  const footer = editor.querySelector(':scope > .modal-actions');
+  const body = document.createElement('div'); body.className = 'mobile-access-editor-body';
+  [...editor.children].filter(child => child.tagName !== 'HEADER' && child !== footer).forEach(child => body.append(child));
+  editor.insertBefore(body, footer);
 }

@@ -1,0 +1,65 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Mobile workflows</title><pre id="results">RUNNING</pre><script>
+(async()=>{
+ const checks=[],check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');};
+ const pause=(ms=80)=>new Promise(resolve=>setTimeout(resolve,ms));
+ const frame=async url=>{const f=document.createElement('iframe');f.style.cssText='width:390px;height:844px;border:0';const loaded=new Promise(resolve=>f.onload=resolve);f.src=url;document.body.append(f);await loaded;await pause(300);return f;};
+ const visible=el=>!!(el?.getBoundingClientRect().width&&el.getBoundingClientRect().height);
+ try{
+  let f=await frame('/admin?test=1'),w=f.contentWindow,d=f.contentDocument,q=s=>d.querySelector(s);
+  for(const width of [320,390,430]){
+   f.style.width=width+'px';await pause();
+   check('owner-full-width-'+width,q('.admin-main').getBoundingClientRect().left===0&&d.documentElement.scrollWidth<=width+1);
+   check('owner-labelled-bottom-navigation-'+width,visible(q('.mobile-admin-navigation'))&&[...q('.mobile-admin-navigation').querySelectorAll('button')].filter(visible).length===5);
+  }
+  q('[data-mobile-admin-view="reports"]').click();await pause();
+  check('sales-one-tap',q('#view-reports').classList.contains('active')&&q('[data-mobile-admin-view="reports"]').getAttribute('aria-current')==='page');
+  q('[data-mobile-admin-more]').click();await pause();
+  check('menu-opens-native-modal',q('#mobileAdminDialog').open&&q('#mobileAdminMenu').getAttribute('aria-expanded')==='true'&&visible(q('#mobileAdminDialog .nav-item')));
+  q('[data-mobile-admin-view="reports"]').focus();
+  check('modal-keeps-background-inert',q('#mobileAdminDialog').contains(d.activeElement));
+  q('[data-nav-section="access"]').click();q('[data-owner-access-view="employees"]').click();await pause();
+  check('named-menu-destination-closes-drawer',!q('#mobileAdminDialog').open&&q('#view-employees').classList.contains('active')&&q('[data-mobile-admin-more]').getAttribute('aria-expanded')==='false');
+  w.eval("employees=[{id:42,display_name:'Demo staff',login:'same-login',staff_role:'cashier',branch_id:'b1',is_active:true,has_pin:true}];renderEmployees();");await pause();
+  const row=q('#employeesTable tr');
+  check('employee-summary-card-fits',row&&row.getBoundingClientRect().right<=431&&!visible(row.cells[2]));
+  row.querySelector('[data-mobile-record-toggle]').click();
+  check('employee-full-details-expand',visible(row.cells[2])&&row.querySelector('[data-mobile-record-toggle]').getAttribute('aria-expanded')==='true');
+  q('#addEmployeeButton').click();await pause();
+  const save=q('#saveEmployeeButton').getBoundingClientRect();
+  check('employee-editor-keeps-save-visible',save.height>=44&&save.top>=0&&save.bottom<=844&&q('.mobile-access-editor-body').scrollHeight>q('.mobile-access-editor-body').clientHeight);
+  q('#employeeModal [data-close="employeeModal"]').click();
+  q('#mobileAdminMenu').click();q('.mobile-admin-close').click();await pause();
+  check('drawer-close-restores-focus',d.activeElement===q('#mobileAdminMenu'));
+  f.style.width='1440px';await pause();
+  check('desktop-sidebar-restored',q('#appSidebar').parentElement===q('.admin-shell')&&visible(q('#appSidebar'))&&!visible(q('.mobile-admin-navigation')));
+  f.style.width='390px';await pause();
+  check('resize-back-to-phone',q('#appSidebar').parentElement===q('#mobileAdminDialog')&&!q('#mobileAdminDialog').open&&q('.admin-main').getBoundingClientRect().left===0);
+  f.remove();f=await frame('/admin?test=1&role=branch');w=f.contentWindow;d=f.contentDocument;q=s=>d.querySelector(s);
+  check('branch-navigation-respects-permissions',[...q('.mobile-admin-navigation').querySelectorAll('[data-mobile-admin-view]')].filter(visible).every(button=>w.canAccessView(button.dataset.mobileAdminView))&&!visible(q('[data-mobile-admin-view="finance"]')));
+  f.remove();f=await frame('/tests/pos-ui-smoke.html?preview=catalog');await pause(1200);const child=f.contentDocument.querySelector('iframe');w=child.contentWindow;d=child.contentDocument;q=s=>d.querySelector(s);
+  check('pos-starts-at-menu',d.body.dataset.posView==='catalog'&&q('#mobileReturnReceipt').disabled);
+  w.addProduct('p1');await pause();
+  check('live-cart-total-during-selection',!q('#mobileReturnReceipt').disabled&&q('#mobileReturnReceipt').textContent.includes('40'));
+  q('#mobileReturnReceipt').click();await pause();
+  check('receipt-one-tap',d.body.dataset.posView==='receipt'&&visible(q('#payButton')));
+  q('[data-quantity-action="plus"]').click();await pause();
+  check('quantity-recalculates',q('#totalAmount').textContent.includes('80'));
+  q('#mobileFlowBack').click();await pause();
+  check('back-keeps-selection',d.body.dataset.posView==='catalog'&&q('#mobileReturnReceipt').textContent.includes('80'));
+  q('#mobileReturnReceipt').click();q('#payButton').click();await pause();
+  check('menu-to-receipt-to-payment',!q('#paymentModal').classList.contains('hidden')&&q('#modalTotal').textContent.includes('80'));
+  w.closePayment();q('#mobileOrderOptions').click();q('#mobileClearOrder').click();await pause();
+  check('clear-requires-confirmation',q('#mobileClearOrderDialog').open&&q('#totalAmount').textContent.includes('80'));
+  q('#mobileClearOrderDialog [value="cancel"]').click();await pause();
+  check('cancel-clear-keeps-items',q('#totalAmount').textContent.includes('80'));
+  q('#mobileClearOrder').click();q('#mobileClearOrderDialog [value="clear"]').click();await pause();
+  check('confirm-clear-returns-to-menu',d.body.dataset.posView==='catalog'&&q('#mobileReturnReceipt').disabled);
+  w.addProduct('p1');q('#mobileReturnReceipt').click();q('#mobileOrderOptions').click();q('#mobileClearOrder').click();q('#mobileClearOrderDialog').requestClose();await pause();
+  check('escape-after-previous-confirm-does-not-clear',q('#totalAmount').textContent.includes('40'));
+  w.startNewOrder();w.mobilePosView('orders');q('#mobileNewOrder').click();
+  check('new-order-skips-empty-receipt',d.body.dataset.posView==='catalog');
+  f.remove();
+ }catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

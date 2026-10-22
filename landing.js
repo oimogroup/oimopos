@@ -1,5 +1,11 @@
 (() => {
   'use strict';
+  const mobileMenu = document.querySelector('.site-mobile-menu');
+  mobileMenu?.addEventListener('click', event => { if (event.target.closest('a')) mobileMenu.open = false; });
+  document.addEventListener('click', event => { if (mobileMenu && !mobileMenu.contains(event.target)) mobileMenu.open = false; });
+  document.addEventListener('keydown', event => {
+    if (event.key === 'Escape' && mobileMenu?.open) { mobileMenu.open = false; mobileMenu.querySelector('summary').focus(); }
+  });
   const tabs = [...document.querySelectorAll('[data-preview]')];
   const selectTab = (tab, focus = false) => {
     for (const item of tabs) {

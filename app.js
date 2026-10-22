@@ -289,7 +289,7 @@ function renderCart() {
   renderProducts();
 
   if (!items.length) {
-    $("#orderItems").innerHTML = `<div class="empty-order"><div class="tray-icon">${posIcon("tray")}</div><strong>${workspaceState?.serviceMode === "restaurant" ? "Заказ пока пуст" : "Поднос пока пуст"}</strong><span>Выберите блюда в каталоге справа</span></div>`;
+    $("#orderItems").innerHTML = `<div class="empty-order"><div class="tray-icon">${posIcon("tray")}</div><strong>${workspaceState?.serviceMode === "restaurant" ? "Заказ пока пуст" : "Поднос пока пуст"}</strong><span>Добавьте блюда из меню</span></div>`;
     return;
   }
 
@@ -524,7 +524,7 @@ function startNewOrder() {
   renderCart();
   renderHistory();
   renderOpenOrders();
-  window.mobilePosView?.("orders");
+  window.mobilePosView?.("catalog");
 }
 
 function closeDrawer(selector) {
@@ -2713,7 +2713,8 @@ $('#reportPrint').onclick = () => {
   navigation.addEventListener('click', event => {
     const button = event.target.closest('[data-pos-view]');
     if (!button) return;
-    document.body.dataset.posView = button.dataset.posView;
+    if (window.mobilePosView) window.mobilePosView(button.dataset.posView);
+    else document.body.dataset.posView = button.dataset.posView;
     navigation.querySelectorAll('button').forEach(item => item.setAttribute('aria-pressed', String(item === button)));
   });
   const refresh = () => {
@@ -2731,46 +2732,80 @@ for (const [id, label] of Object.entries({openOrdersButton:'Заказы',histor
   document.getElementById(id).setAttribute('title', label);
 }
 
-// Mobile workflow: orders → receipt → catalogue → payment.
+// Phone sales start with products; the live receipt is always one tap away.
 (() => {
-  const workspace=document.querySelector('.workspace');
-  const home=document.createElement('section');home.id='mobileOrdersHome';
-  home.innerHTML='<h2>Заказы</h2><div id="mobileOrderList"></div><button id="mobileNewOrder" type="button" class="pay-button">Новый заказ</button>';
+  const workspace = document.querySelector('.workspace');
+  const home = document.createElement('section'); home.id = 'mobileOrdersHome';
+  home.innerHTML = '<header><h2>Открытые заказы</h2><button id="mobileOrdersBack" type="button">К меню</button></header><div id="mobileOrderList"></div><button id="mobileNewOrder" type="button" class="pay-button">Новый заказ</button>';
   workspace.before(home);
-  const header=document.createElement('div');header.className='mobile-flow-header';
-  header.innerHTML='<button type="button" id="mobileFlowBack" aria-label="Назад">‹</button><strong id="mobileFlowTitle">Чек</strong><button type="button" id="mobileFlowClient">Клиент</button><button type="button" id="mobileOrderOptions" aria-label="Действия с заказом" aria-expanded="false">⋯</button>';
+  const header = document.createElement('div'); header.className = 'mobile-flow-header';
+  header.innerHTML = '<button type="button" id="mobileFlowBack" aria-label="К выбору блюд">‹</button><strong id="mobileFlowTitle" tabindex="-1">Меню</strong><button type="button" id="mobileFlowClient">Гость</button><button type="button" id="mobileOrderOptions" aria-label="Действия с заказом" aria-controls="mobileOrderActions" aria-expanded="false">⋯</button>';
   workspace.before(header);
-  const add=document.createElement('button');add.id='mobileAddItems';add.type='button';add.textContent='+ Добавить товар';
+  const add = document.createElement('button'); add.id = 'mobileAddItems'; add.type = 'button'; add.textContent = '+ Добавить блюда';
   document.querySelector('.order-footer').before(add);
-  const back=document.createElement('button');back.id='mobileReturnReceipt';back.type='button';back.className='pay-button';back.textContent='Вернуться к заказу';workspace.after(back);
-  window.mobilePosView=view=>{
-    document.body.dataset.posView=view;
-    document.querySelector('#mobileFlowTitle').textContent=view==='catalog'?'Выбор товаров':document.querySelector('#orderTitle').textContent;
-    document.querySelector('#mobileFlowClient').hidden=view!=='receipt';
-    document.querySelector('#mobileOrderOptions').hidden=view!=='receipt';
-    home.classList.toggle('production-hidden',workspace.classList.contains('hidden'));
-  };
-  const refresh=()=>{
-    document.querySelector('#mobileNewOrder').textContent=cart.size?'Продолжить заказ':'Новый заказ';
-    document.querySelector('#mobileOrderList').innerHTML=(cart.size?'<button type="button" data-current-draft>Текущий заказ · '+escapeHtml(document.querySelector('#totalAmount').textContent)+'</button>':'')+(posState.openOrders||[]).map(order=>`<button type="button" data-mobile-order="${escapeHtml(order.id)}"><strong>${escapeHtml(order.label||order.number)}</strong><span>${money(orderTotal(order))}</span><small>${escapeHtml((order.items||[]).map(item=>item.name||products.find(p=>p.id===String(item.id))?.name||'Товар').join(', '))}</small></button>`).join('')||'<p class="history-empty">Открытых заказов нет</p>';
-    home.classList.toggle('production-hidden',workspace.classList.contains('hidden'));
-    header.classList.toggle('production-hidden',workspace.classList.contains('hidden'));
-    back.classList.toggle('production-hidden',workspace.classList.contains('hidden'));
-  };
-  home.addEventListener('click',event=>{
-    const order=event.target.closest('[data-mobile-order]');if(order){loadOpenOrder(order.dataset.mobileOrder);return;}
-    if(event.target.closest('#mobileNewOrder,[data-current-draft]'))mobilePosView('receipt');
+  const receipt = document.createElement('button'); receipt.id = 'mobileReturnReceipt'; receipt.type = 'button'; receipt.className = 'pay-button';
+  receipt.setAttribute('aria-label', 'Проверить чек'); workspace.after(receipt);
+  const actions = document.querySelector('.order-context'); actions.id = 'mobileOrderActions';
+  const clear = document.createElement('button'); clear.id = 'mobileClearOrder'; clear.type = 'button'; clear.textContent = 'Очистить текущий чек';
+  actions.append(clear);
+  const confirmation = document.createElement('dialog'); confirmation.id = 'mobileClearOrderDialog';
+  confirmation.className = 'mobile-clear-dialog'; confirmation.setAttribute('aria-labelledby', 'mobileClearTitle');
+  confirmation.innerHTML = '<form method="dialog"><h2 id="mobileClearTitle">Очистить чек?</h2><p>Все выбранные позиции будут удалены из текущего чека.</p><footer><button value="cancel" type="submit" autofocus>Оставить чек</button><button value="clear" type="submit" class="danger-button">Очистить</button></footer></form>';
+  document.body.append(confirmation);
+  clear.onclick = () => { if (cart.size) { confirmation.returnValue = 'cancel'; confirmation.showModal(); } };
+  confirmation.addEventListener('close', () => {
+    if (confirmation.returnValue !== 'clear') return;
+    document.querySelector('#clearOrderButton').click();
+    window.mobilePosView('catalog');
   });
-  add.onclick=()=>{activeCategory=null;document.querySelector('#searchInput').value='';renderProducts();mobilePosView('catalog');};
-  back.onclick=()=>mobilePosView('receipt');
-  document.querySelector('#mobileFlowBack').onclick=()=>mobilePosView(document.body.dataset.posView==='catalog'?'receipt':'orders');
-  document.querySelector('#mobileOrderOptions').onclick=()=>{const expanded=document.body.classList.toggle('mobile-order-options');document.querySelector('#mobileOrderOptions').setAttribute('aria-expanded',String(expanded));};
-  document.querySelector('#mobileFlowClient').onclick=()=>document.querySelector('#customerButton').click();
-  document.querySelector('#openOrdersButton').addEventListener('click',()=>{if(matchMedia('(max-width:700px)').matches){closeDrawer('#openOrdersDrawer');refresh();mobilePosView('orders');}});
-  new MutationObserver(refresh).observe(document.querySelector('#openOrdersList'),{childList:true});
-  new MutationObserver(refresh).observe(document.querySelector('#totalAmount'),{childList:true});
-  new MutationObserver(refresh).observe(workspace,{attributes:true,attributeFilter:['class']});
-  mobilePosView('orders');refresh();
+  window.mobilePosView = view => {
+    if (!['catalog', 'receipt', 'orders'].includes(view)) return;
+    document.body.dataset.posView = view;
+    document.body.classList.remove('mobile-order-options');
+    document.querySelector('#mobileOrderOptions').setAttribute('aria-expanded', 'false');
+    document.querySelector('#mobileFlowTitle').textContent = view === 'catalog' ? 'Меню' : document.querySelector('#orderTitle').textContent;
+    document.querySelector('#mobileFlowClient').hidden = view !== 'receipt';
+    document.querySelector('#mobileOrderOptions').hidden = view !== 'receipt';
+    document.querySelector('#mobileFlowBack').hidden = view === 'catalog';
+    home.classList.toggle('production-hidden', workspace.classList.contains('hidden'));
+    if (matchMedia('(max-width:700px)').matches && document.activeElement?.closest('button')) document.querySelector('#mobileFlowTitle').focus({preventScroll:true});
+  };
+  const refresh = () => {
+    const total = document.querySelector('#totalAmount').textContent;
+    const count = document.querySelector('#itemCount').textContent;
+    document.querySelector('#mobileFlowClient').textContent = currentCustomer?.name || 'Гость';
+    receipt.disabled = !cart.size;
+    receipt.setAttribute('aria-label', cart.size ? `Проверить чек: ${count} поз., ${total}` : 'Добавьте блюда в заказ');
+    receipt.innerHTML = cart.size ? `<span>Проверить чек<small>${escapeHtml(count)} поз.</small></span><strong>${escapeHtml(total)} →</strong>` : '<span>Добавьте блюда в заказ</span>';
+    document.querySelector('#mobileNewOrder').textContent = cart.size ? 'Продолжить текущий заказ' : 'Новый заказ';
+    document.querySelector('#mobileOrderList').innerHTML = (cart.size ? `<button type="button" data-current-draft><strong>Текущий заказ</strong><span>${escapeHtml(total)}</span><small>${escapeHtml(count)} поз. · ещё не оплачен</small></button>` : '') +
+      (posState.openOrders || []).map(order => `<button type="button" data-mobile-order="${escapeHtml(order.id)}"><strong>${escapeHtml(order.label || order.number)}</strong><span>${money(orderTotal(order))}</span><small>${escapeHtml((order.items || []).map(item => item.name || products.find(p => p.id === String(item.id))?.name || 'Товар').join(', '))}</small></button>`).join('') || '<div class="mobile-orders-empty"><strong>Открытых заказов нет</strong><p>Выберите блюда в меню, чтобы создать первый заказ.</p></div>';
+    home.classList.toggle('production-hidden', workspace.classList.contains('hidden'));
+    header.classList.toggle('production-hidden', workspace.classList.contains('hidden'));
+    receipt.classList.toggle('production-hidden', workspace.classList.contains('hidden'));
+  };
+  home.addEventListener('click', event => {
+    const order = event.target.closest('[data-mobile-order]');
+    if (order) { loadOpenOrder(order.dataset.mobileOrder); return; }
+    if (event.target.closest('#mobileNewOrder,[data-current-draft]')) window.mobilePosView(cart.size ? 'receipt' : 'catalog');
+    if (event.target.closest('#mobileOrdersBack')) window.mobilePosView('catalog');
+  });
+  add.onclick = () => window.mobilePosView('catalog');
+  receipt.onclick = () => window.mobilePosView('receipt');
+  document.querySelector('#mobileFlowBack').onclick = () => window.mobilePosView('catalog');
+  document.querySelector('#mobileOrderOptions').onclick = () => {
+    const expanded = document.body.classList.toggle('mobile-order-options');
+    document.querySelector('#mobileOrderOptions').setAttribute('aria-expanded', String(expanded));
+  };
+  document.querySelector('#mobileFlowClient').onclick = () => document.querySelector('#customerButton').click();
+  document.querySelector('#openOrdersButton').addEventListener('click', () => {
+    if (!matchMedia('(max-width:700px)').matches) return;
+    closeDrawer('#openOrdersDrawer'); refresh(); window.mobilePosView('orders');
+  });
+  new MutationObserver(refresh).observe(document.querySelector('#openOrdersList'), {childList:true});
+  new MutationObserver(refresh).observe(document.querySelector('#totalAmount'), {childList:true});
+  new MutationObserver(refresh).observe(workspace, {attributes:true,attributeFilter:['class']});
+  window.mobilePosView('catalog'); refresh();
 })();
 
 

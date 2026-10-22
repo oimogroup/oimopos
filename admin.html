@@ -2,11 +2,12 @@
 <html lang="ru">
   <head>
     <meta charset="UTF-8" />
-    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
     <link rel="stylesheet" href="admin.css?v=pnl-1" />
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=clear-ux-1" />
+    <link rel="stylesheet" href="mobile-ux.css?v=1" />
   </head>
   <body data-ui="admin">
     <svg class="ui-icon-sprite" aria-hidden="true">
@@ -43,7 +44,7 @@
       <symbol id="ui-arrow" viewBox="0 0 24 24"><path d="M5 12h14m-5-5 5 5-5 5"/></symbol>
     </svg>
     <div class="admin-shell">
-      <aside class="sidebar">
+      <aside class="sidebar" id="appSidebar">
         <div class="admin-brand">
           <span class="admin-brand-mark">o</span>
           <div><b>Oimo</b><small id="workspaceLabel">Управление системой</small></div>
@@ -90,8 +91,8 @@
             <button data-owner-finance-tab="categories" type="button">Категории</button>
           </div>
 
-          <p id="ownerScopeNavLabel">Доступ</p>
-          <button class="nav-item" data-nav-section="access" type="button" aria-controls="accessNavSubmenu" aria-expanded="false"><svg class="ui-icon"><use href="#ui-users"/></svg>Доступ <svg class="ui-icon nav-chevron"><use href="#ui-chevron"/></svg></button>
+          <p id="ownerScopeNavLabel">Организация</p>
+          <button class="nav-item" data-nav-section="access" type="button" aria-controls="accessNavSubmenu" aria-expanded="false"><svg class="ui-icon"><use href="#ui-users"/></svg>Заведения и команда <svg class="ui-icon nav-chevron"><use href="#ui-chevron"/></svg></button>
           <div class="nav-submenu" id="accessNavSubmenu">
             <button data-owner-access-view="branches" type="button">Заведения</button>
             <button data-owner-access-view="registers" type="button">Кассы</button>
@@ -129,6 +130,7 @@
 
       <section class="admin-main">
         <header class="admin-topbar">
+          <button class="mobile-admin-menu icon-button" id="mobileAdminMenu" type="button" aria-label="Открыть разделы" aria-controls="mobileAdminDialog" aria-expanded="false"><svg class="ui-icon" viewBox="0 0 24 24" aria-hidden="true"><path d="M4 6h16M4 12h16M4 18h16"/></svg></button>
           <div class="breadcrumbs"><span>Oimo</span><b>/</b><strong id="breadcrumbTitle">Главная</strong></div>
           <div class="topbar-tools">
             <div class="notification-center" id="notificationCenter">
@@ -149,6 +151,7 @@
         <main class="admin-content">
           <p id="trialNotice" class="trial-notice" role="status" hidden></p>
           <div class="mobile-workspace-navigation hidden" id="mobileWorkspaceNavigation">
+            <label for="mobileWorkspaceSelect">В этом разделе</label>
             <select id="mobileWorkspaceSelect" aria-label="Подраздел текущего раздела"></select>
           </div>
           <section class="admin-view active getting-started" id="view-dashboard">
