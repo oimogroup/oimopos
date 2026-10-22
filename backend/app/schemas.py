@@ -155,6 +155,7 @@ class PosRegisterCreate(BaseModel):
     name: NonEmptyText
     branch_id: ItemId
     password: Annotated[str, StringConstraints(min_length=8, max_length=200)]
+    login: Annotated[AccountLogin, Field(max_length=64)] | None = None
 
 
 class PosRegisterUpdate(BaseModel):
@@ -162,6 +163,7 @@ class PosRegisterUpdate(BaseModel):
     branch_id: ItemId
     password: Annotated[str, StringConstraints(min_length=8, max_length=200)] | None = None
     is_active: bool = True
+    login: Annotated[AccountLogin, Field(max_length=64)] | None = None
 
 
 class PosShiftOpen(BaseModel):

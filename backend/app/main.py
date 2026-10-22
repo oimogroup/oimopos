@@ -352,7 +352,7 @@ def _update_branch_account(connection: Connection, tenant_id: str, payload: dict
             INSERT INTO auth_users (login, password_hash, role, staff_role, tenant_id, branch_id, display_name)
             VALUES (%s, %s, 'branch', 'pos_terminal', %s, %s, %s)
             """,
-            (f"register-{uuid4().hex}@pos", hash_password(password), tenant_id, branch_id, "Основная касса"),
+            (f"kassa-{uuid4().hex[:12]}", hash_password(password), tenant_id, branch_id, "Основная касса"),
         )
         return
     should_be_active = branch.get("status") == "active"
@@ -727,7 +727,8 @@ def _pos_register_record(connection: Connection, tenant_id: str, register_id: in
     row = connection.execute(
         """
         SELECT account.id, account.display_name AS name, account.branch_id, account.is_active,
-               account.created_at, account.updated_at, tenant.slug AS account_login,
+               account.created_at, account.updated_at, account.login AS account_login,
+               tenant.slug AS company_login,
                latest.created_at AS last_login_at, latest.last_seen_at,
                COALESCE(latest.user_agent, '') AS device_label,
                COALESCE(latest.remote_address, '') AS remote_address,
@@ -787,6 +788,22 @@ def list_pos_registers(
     return [_pos_register_record(connection, str(user["tenant_id"]), register_id) for register_id in ids]
 
 
+def _validate_register_login(connection: Connection, user: dict, login: str | None, register_id: int = 0) -> None:
+    if login is None:
+        return
+    if user['role'] != 'owner':
+        raise HTTPException(403, 'Изменять логин кассы может только владелец компании')
+    connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('account-login:'+login,))
+    if connection.execute(
+        'SELECT id FROM tenants WHERE lower(slug) = %s AND id <> %s LIMIT 1',
+        (login, user['tenant_id']),
+    ).fetchone() or connection.execute(
+        'SELECT id FROM auth_users WHERE lower(login) = %s AND id <> %s AND deleted_at IS NULL LIMIT 1',
+        (login, register_id),
+    ).fetchone():
+        raise HTTPException(409, 'Этот логин уже используется. Выберите другой.')
+
+
 @app.post("/api/v1/pos/registers", status_code=status.HTTP_201_CREATED, tags=["pos"])
 def create_pos_register(
     payload: PosRegisterCreate,
@@ -805,6 +822,7 @@ def create_pos_register(
             if not branch or branch.get("status") != "active":
                 raise HTTPException(status_code=422, detail="Выберите действующую точку")
             _ensure_register_password_unique(connection, tenant_id, payload.password)
+            _validate_register_login(connection, user, payload.login)
             row = connection.execute(
                 """
                 INSERT INTO auth_users
@@ -812,13 +830,15 @@ def create_pos_register(
                 VALUES (%s, %s, 'branch', 'pos_terminal', %s, %s, %s)
                 RETURNING id
                 """,
-                (f"register-{uuid4().hex}@pos", hash_password(payload.password), tenant_id,
+                (payload.login or f"kassa-{uuid4().hex[:12]}", hash_password(payload.password), tenant_id,
                  payload.branch_id, payload.name),
             ).fetchone()
             _record_register_event(connection, user, "pos_register.create", int(row["id"]), {
-                "name": payload.name, "branchId": payload.branch_id,
+                "name": payload.name, "branchId": payload.branch_id, "login": payload.login,
             })
     except UniqueViolation as error:
+        if 'auth_users_login' in (error.diag.constraint_name or ''):
+            raise HTTPException(409, 'Этот логин уже используется. Выберите другой.') from error
         raise HTTPException(status_code=409, detail="На этой точке уже есть касса с таким названием") from error
     return _pos_register_record(connection, tenant_id, int(row["id"]))
 
@@ -853,6 +873,7 @@ def update_pos_register(
             if not existing:
                 raise HTTPException(status_code=404, detail="Касса не найдена")
             _assert_managed_branch(user, existing["branch_id"])
+            _validate_register_login(connection, user, payload.login, register_id)
             if not existing["is_active"] and payload.is_active and not payload.password:
                 raise HTTPException(status_code=422, detail="Для повторного включения кассы задайте новый пароль")
             if payload.password:
@@ -878,11 +899,17 @@ def update_pos_register(
                     "UPDATE auth_sessions SET revoked_at = CURRENT_TIMESTAMP WHERE user_id = %s AND revoked_at IS NULL",
                     (register_id,),
                 )
+            if payload.login is not None:
+                connection.execute('UPDATE auth_users SET login = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s AND tenant_id = %s',
+                                   (payload.login, register_id, tenant_id))
             _record_register_event(connection, user, "pos_register.update", register_id, {
                 "name": payload.name, "branchId": payload.branch_id,
                 "isActive": payload.is_active, "passwordChanged": bool(payload.password),
+                "login": payload.login,
             })
     except UniqueViolation as error:
+        if 'auth_users_login' in (error.diag.constraint_name or ''):
+            raise HTTPException(409, 'Этот логин уже используется. Выберите другой.') from error
         raise HTTPException(status_code=409, detail="На этой точке уже есть касса с таким названием") from error
     return _pos_register_record(connection, tenant_id, register_id)
 
@@ -1952,6 +1979,9 @@ def _provision_tenant(payload: TenantCreate, user: dict, connection: Connection)
     state["logisticsState"]["branchCosts"][branch_id] = {str(item["id"]): 0 for item in inventory_items}
     try:
         with connection.transaction():
+            connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('account-login:'+payload.slug,))
+            if connection.execute('SELECT id FROM auth_users WHERE lower(login) = %s AND deleted_at IS NULL LIMIT 1', (payload.slug,)).fetchone():
+                raise HTTPException(409, 'Код компании уже используется как логин. Выберите другой.')
             connection.execute(
                 """
                 INSERT INTO tenants
@@ -1984,7 +2014,7 @@ def _provision_tenant(payload: TenantCreate, user: dict, connection: Connection)
                 INSERT INTO auth_users (login, password_hash, role, staff_role, tenant_id, branch_id, display_name)
                 VALUES (%s, %s, 'branch', 'pos_terminal', %s, %s, 'Основная касса')
                 """,
-                (f"register-{uuid4().hex}@pos", hash_password(payload.register_password), tenant_id, branch_id),
+                (f"kassa-{uuid4().hex[:12]}", hash_password(payload.register_password), tenant_id, branch_id),
             )
             connection.execute(
                 """

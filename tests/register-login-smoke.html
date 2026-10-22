@@ -1,0 +1,27 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Terminal login checks</title><pre id="results">RUNNING</pre><iframe id="app" title="Тест логина кассы" style="width:1200px;height:1000px;border:0"></iframe><script>
+(async()=>{
+ const rows=[],check=(name,ok)=>{rows.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=rows.join('|');};
+ try {
+  const frame=document.querySelector('#app');
+  await new Promise(resolve=>{frame.addEventListener('load',resolve,{once:true});frame.src='/admin?test=1';});
+  const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s);
+  w.eval(`currentSession.tenantSlug='trial-example';posRegisters=[{id:10,name:'Main',branch_id:'b1',account_login:'old-kassa',company_login:'trial-example',is_active:true}];window.__updates=[];AshkanaApi.updatePosRegister=async(id,payload)=>{window.__updates.push(payload);return {...posRegisters[0],...payload,account_login:payload.login||posRegisters[0].account_login};};openRegisterForm(10);`);
+  check('shows-terminal-login-instead-of-company-code',q('#registerLoginInput').value==='old-kassa');
+  check('owner-can-edit-login',!q('#registerLoginInput').readOnly);
+  q('#registerLoginInput').value='UTRO-KASSA1';
+  await w.saveRegister();
+  check('saves-normalized-login',w.__updates.length===1&&w.__updates[0].login==='utro-kassa1');
+  check('password-not-required-for-login-change',!('password' in w.__updates[0]));
+  check('table-shows-updated-login',q('#registersTable').textContent.includes('utro-kassa1'));
+  check('company-code-not-renamed',w.eval('currentSession.tenantSlug')==='trial-example');
+  w.openRegisterForm(10);q('#registerLoginInput').value='bad login';await w.saveRegister();
+  check('invalid-login-not-submitted',w.__updates.length===1&&!q('#registerModal').classList.contains('hidden'));
+  q('#registerLoginInput').value='utro-kassa1';
+  w.AshkanaApi.updatePosRegister=async()=>{throw new Error('Этот логин уже используется');};
+  await w.saveRegister();
+  check('occupied-login-remains-editable',!q('#registerModal').classList.contains('hidden')&&q('#adminToast').textContent.includes('уже используется'));
+  frame.remove();
+ }catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

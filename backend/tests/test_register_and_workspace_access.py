@@ -7,7 +7,8 @@ import pytest
 from fastapi import HTTPException, Request
 
 from app import main
-from app.schemas import PosRegisterUpdate, WorkspaceActionInput
+from app.schemas import PosRegisterCreate, PosRegisterUpdate, WorkspaceActionInput
+from pydantic import ValidationError
 from app.security import verify_password
 from app.workspace import apply_action, default_state, visible_state
 
@@ -22,10 +23,13 @@ REQUEST = Request({"type": "http", "path": "/api/v1/pos/registers/10",
 class RegisterConnection:
     def __init__(self, active=True):
         self.register = {"id": 10, "display_name": "Касса 1", "branch_id": "b1",
+                         "login": "old-kassa",
                          "password_hash": "previous-password-hash", "is_active": active,
                          "account_version": 3}
         self.revoked = []
         self.events = []
+        self.taken_login = False
+        self.taken_company_code = False
 
     def transaction(self):
         return nullcontext()
@@ -41,6 +45,14 @@ class RegisterConnection:
                                  is_active=active, account_version=version)
         elif "UPDATE auth_sessions" in query:
             self.revoked.append(params[0])
+        elif 'SELECT id FROM tenants WHERE lower(slug)' in query:
+            row = {'id':'other-tenant'} if self.taken_company_code else None
+        elif 'SELECT id FROM auth_users WHERE lower(login)' in query:
+            row = {'id':99} if self.taken_login else None
+        elif 'UPDATE auth_users SET login = %s' in query:
+            login, identity, tenant = params
+            assert identity == self.register['id'] and tenant == 'tenant-a'
+            self.register['login'] = login
         return SimpleNamespace(fetchone=lambda: row, fetchall=lambda: [])
 
 
@@ -75,6 +87,39 @@ def test_register_settings_save_without_employee_pin_fields(register_environment
     else:
         assert saved["password_hash"] == "previous-password-hash"
     assert connection.events[0][0] == "pos_register.update"
+
+
+def test_owner_can_change_terminal_login_without_changing_credentials_or_revoking_session(register_environment):
+    connection=RegisterConnection()
+    payload=PosRegisterUpdate(name='Касса 1',branch_id='b1',login=' UTRO-KASSA1 ')
+    saved=main.update_pos_register(10,payload,REQUEST,OWNER,connection)
+    assert saved['login']=='utro-kassa1'
+    assert saved['password_hash']=='previous-password-hash' and saved['account_version']==3
+    assert not connection.revoked
+    assert connection.events[-1][2]['login']=='utro-kassa1'
+
+
+@pytest.mark.parametrize('collision', ['taken_login','taken_company_code'])
+def test_register_login_cannot_use_other_user_or_company_code(register_environment,collision):
+    connection=RegisterConnection();setattr(connection,collision,True)
+    with pytest.raises(HTTPException) as error:
+        main.update_pos_register(10,PosRegisterUpdate(name='Касса 1',branch_id='b1',login='taken-name'),REQUEST,OWNER,connection)
+    assert error.value.status_code==409
+    assert connection.register['login']=='old-kassa' and not connection.events
+
+
+def test_manager_cannot_change_terminal_login(register_environment):
+    connection=RegisterConnection()
+    with pytest.raises(HTTPException) as error:
+        main.update_pos_register(10,PosRegisterUpdate(name='Касса 1',branch_id='b1',login='new-kassa'),REQUEST,BRANCH,connection)
+    assert error.value.status_code==403 and connection.register['login']=='old-kassa'
+
+
+@pytest.mark.parametrize('login',['ab','a'*65,'доставка','has space','<script>','x\ny'])
+def test_register_login_validation(login):
+    for schema in (PosRegisterCreate,PosRegisterUpdate):
+        with pytest.raises(ValidationError):
+            schema(name='Касса',branch_id='b1',login=login,password='safe-password')
 
 
 def test_disabled_register_still_requires_password_to_reactivate(register_environment):

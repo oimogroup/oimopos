@@ -108,6 +108,37 @@ try:
   workspace=api('/workspace')['state']
   assert not workspace['sales'] and not workspace['products'] and len(workspace['branches'])==1
   assert workspace['serviceMode']==plan
+  registers=api('/pos/registers')
+  terminal=registers[0]
+  assert terminal['company_login']==result['session']['tenantSlug']
+  assert terminal['account_login']!=terminal['company_login']
+  terminal_password=secrets.token_hex(16)
+  first_login='public-'+plan+'-main'
+  changed=api('/pos/registers/'+str(terminal['id']),{'name':terminal['name'],'branch_id':terminal['branch_id'],'login':first_login,'password':terminal_password},'PUT')
+  assert changed['account_login']==first_login
+  def terminal_login(login_value,expected=200):
+   req=urllib.request.Request('http://127.0.0.1:18080/api/v1/auth/login',data=json.dumps({'login':login_value,'password':terminal_password}).encode(),headers={**public_headers,'X-Ashkana-Client':'pos'})
+   try:
+    with urllib.request.urlopen(req) as r:
+     assert r.status==expected
+     return r.headers['Set-Cookie'].split(';')[0]
+   except urllib.error.HTTPError as error: assert error.code==expected
+  terminal_cookie=terminal_login(first_login)
+  second_login=first_login+'-renamed'
+  changed=api('/pos/registers/'+str(terminal['id']),{'name':terminal['name'],'branch_id':terminal['branch_id'],'login':second_login},'PUT')
+  assert changed['account_login']==second_login
+  req=urllib.request.Request('http://127.0.0.1:18080/api/v1/auth/me',headers={'Cookie':terminal_cookie,'X-Ashkana-Client':'pos'})
+  with urllib.request.urlopen(req) as r: assert json.load(r)['session']['registerId']==terminal['id']
+  terminal_login(first_login,401)
+  terminal_login(second_login)
+  terminal_login(terminal['company_login'])
+  assert api('/workspace')['state']==workspace
+  other_email='demo1@example.com'
+  try:
+   api('/pos/registers/'+str(terminal['id']),{'name':terminal['name'],'branch_id':terminal['branch_id'],'login':other_email},'PUT')
+   raise AssertionError('existing owner login accepted as terminal login')
+  except urllib.error.HTTPError as error: assert error.code==409
+  assert api('/pos/registers')[0]['account_login']==second_login
   trials.append((data,result,trial_cookie))
  headers['Cookie']=platform_cookie
  listed=api('/platform/tenants')
@@ -116,6 +147,7 @@ try:
   assert trial['subscription_status']=='trialing' and trial['max_branches']==1
   assert trial['branch_count']==1
  print('PASS both public trial formats, automatic secure login, empty isolated workspace, retry without duplicate or trial extension, fixed server limits')
+ print('PASS terminal login rename, new login works, previous login rejected, company-code fallback and live terminal sessions preserved; workspace unchanged and duplicate login rejected')
  counts=run(['docker','exec',db,'psql','-U','postgres','-Atc',"SELECT count(*) FROM email_outbox WHERE status='pending' AND attempts=0"]).stdout.strip()
  assert counts=='2',counts
  assert api('/platform/mail')['configured'] is False

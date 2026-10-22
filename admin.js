@@ -2444,7 +2444,7 @@ function renderRegisters() {
   $("#registersContextBar").classList.toggle("hidden", ownerMode);
   $("#registersPointName").textContent = branch?.name || "Моё заведение";
   $("#registersPointAddress").textContent = branch?.address || "Адрес не указан";
-  $("#registerAccountLogin").textContent = currentSession.tenantSlug || pointRegisters[0]?.account_login || "—";
+  $("#registerAccountLogin").textContent = currentSession.tenantSlug || pointRegisters[0]?.company_login || "—";
   $("#registersTable").innerHTML = pointRegisters.map((register) => {
     const registerBranch = branchById(register.branch_id);
     const lastSeen = register.last_seen_at
@@ -2478,7 +2478,11 @@ function openRegisterForm(registerId = null) {
   $("#registerBranchInput").value = activeBranch.id;
   $("#registerWarehouseInput").value = `Склад · ${activeBranch.name}`;
   $("#registerBranchInput").disabled = !ownerMode || Boolean(register);
-  $("#registerLoginInput").value = currentSession.tenantSlug || register?.account_login || "";
+  $("#registerLoginInput").value = register?.account_login || (ownerMode ? `kassa-${Date.now().toString(36)}${Math.random().toString(36).slice(2,6)}` : "");
+  $("#registerLoginInput").readOnly = !ownerMode;
+  $("#registerLoginHint").textContent = ownerMode
+    ? "Логин для входа на эту кассу. От 3 до 64 символов: латинские буквы, цифры и . _ @ + -"
+    : "Логин назначается автоматически. Изменять его может владелец компании.";
   $("#registerPasswordInput").value = register ? "" : generateTemporaryPassword();
   $("#registerPasswordLabel").textContent = register ? "Новый пароль кассы" : "Пароль кассы *";
   $("#registerPasswordHint").textContent = register ? "Оставьте пустым, если пароль менять не нужно. Новый пароль завершит текущий сеанс." : "Пароль должен отличаться от паролей других касс.";
@@ -2508,12 +2512,19 @@ async function saveRegister() {
   if (!activeBranch || (currentRole !== "owner" && existing && existing.branch_id !== activeBranch.id)) { showToast("Касса относится к другому заведению"); return; }
   const name = $("#registerNameInput").value.trim();
   const password = $("#registerPasswordInput").value;
+  const registerLogin = $("#registerLoginInput").value.trim().toLowerCase();
+  if (currentRole === 'owner' && !/^[a-z0-9._@+-]{3,64}$/.test(registerLogin)) {
+    showToast('Укажите логин кассы: от 3 до 64 символов, латинские буквы, цифры и . _ @ + -');
+    $('#registerLoginInput').focus();
+    return;
+  }
   if (!name) { showToast("Укажите название кассы"); return; }
   if (!existing && password.length < 8) { showToast("Пароль кассы должен содержать не менее 8 символов"); return; }
   if (password && password.length < 8) { showToast("Новый пароль должен содержать не менее 8 символов"); return; }
   const payload = {
     name,
     branch_id: activeBranch.id,
+    ...(currentRole === 'owner' && (!existing || registerLogin !== existing.account_login) ? {login:registerLogin} : {}),
     ...(password ? { password } : {}),
     ...(existing ? { is_active: $("#registerActiveInput").checked } : {}),
   };

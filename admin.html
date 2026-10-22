@@ -428,7 +428,7 @@
           <section class="admin-view" id="view-registers">
             <div class="page-heading"><div><p>Настройки доступа</p><h1>Кассы</h1></div><button class="primary-button" id="addRegisterButton" type="button"><svg class="ui-icon"><use href="#ui-plus"/></svg>Добавить кассу</button></div>
             <div class="point-context-bar" id="registersContextBar"><span><svg class="ui-icon"><use href="#ui-store"/></svg></span><div><small>Кассы заведения</small><strong id="registersPointName">—</strong><p id="registersPointAddress">—</p></div></div>
-            <div class="register-account-note"><svg class="ui-icon"><use href="#ui-info"/></svg><div><strong>Логин аккаунта: <span id="registerAccountLogin">—</span></strong><small>У каждой кассы собственный пароль. После входа сотрудник выбирает своё имя и вводит личный PIN.</small></div></div>
+            <div class="register-account-note"><svg class="ui-icon"><use href="#ui-info"/></svg><div><strong>Код компании: <span id="registerAccountLogin">—</span></strong><small>Для входа можно использовать логин выбранной кассы или код компании и пароль этой кассы. Затем сотрудник вводит личный PIN.</small></div></div>
             <article class="panel table-panel employee-panel">
               <div class="table-scroll"><table class="data-table register-table"><thead><tr><th>Касса</th><th>Заведение</th><th>Устройство</th><th>Последняя активность</th><th>Состояние</th><th></th></tr></thead><tbody id="registersTable"></tbody></table></div>
               <div class="documents-empty hidden" id="registersEmpty"><svg class="ui-icon"><use href="#ui-cashier"/></svg><strong>Касс пока нет</strong><p>Добавьте кассу и выберите заведение, в котором она будет работать.</p></div>
@@ -665,7 +665,7 @@
           <label><span>Заведение *</span><select id="registerBranchInput" disabled></select><small>Выберите заведение, в котором будет работать касса.</small></label>
           <label><span>Тип кассы</span><input type="text" value="Стандартная касса" readonly /><small>Продажи, чеки, смены и вход сотрудников по PIN.</small></label>
           <label><span>Склад списания</span><input id="registerWarehouseInput" type="text" readonly /><small>Товары и ингредиенты списываются в выбранном заведении.</small></label>
-          <label><span>Логин аккаунта</span><input id="registerLoginInput" type="text" readonly /></label>
+          <label><span>Логин кассы</span><input id="registerLoginInput" type="text" minlength="3" maxlength="64" autocomplete="off" autocapitalize="none" spellcheck="false" placeholder="Например, utro-kassa1" /><small id="registerLoginHint">Логин для входа на эту кассу. От 3 до 64 символов: латинские буквы, цифры и . _ @ + -</small></label>
           <label><span id="registerPasswordLabel">Пароль кассы *</span><div class="employee-password-control"><input id="registerPasswordInput" type="text" minlength="8" maxlength="200" autocomplete="new-password" /><button class="secondary-action" id="generateRegisterPasswordButton" type="button">Создать</button></div><small id="registerPasswordHint">Пароль должен отличаться от паролей других касс.</small></label>
         </div>
         <div class="employee-permission-note"><svg class="ui-icon"><use href="#ui-info"/></svg><div><strong>Одна касса — одно устройство</strong><p>Если выполнить вход с этим паролем на другом устройстве, предыдущий сеанс кассы будет завершён.</p></div></div>
