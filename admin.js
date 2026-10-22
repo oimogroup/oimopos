@@ -6907,6 +6907,10 @@ async function initializeApplication() {
   if (!testMode) {
     try {
       const authResponse = await window.AshkanaApi.me();
+      if (authResponse.session.billingRequired && authResponse.session.role === 'owner') {
+        location.replace('/billing');
+        return;
+      }
       if (authResponse.session.role !== currentRole) {
         sessionStorage.setItem(authSessionKey, JSON.stringify(authResponse.session));
         location.replace(authResponse.session.route);
@@ -6946,7 +6950,10 @@ async function initializeApplication() {
     const end = new Date(currentSession.trialEndsAt);
     if (Number.isFinite(end.getTime())) {
       trialNotice.hidden = false;
-      trialNotice.textContent = `Пробный доступ до ${end.toLocaleDateString('ru-RU')}. Осталось дней: ${Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000))}. Для продолжения после пробного периода свяжитесь с командой Oimo. Автоматических списаний нет.`;
+      trialNotice.textContent = `Пробный доступ до ${end.toLocaleDateString('ru-RU')}. Осталось дней: ${Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000))}. `;
+      const link = document.createElement('a');
+      link.href = '/billing'; link.textContent = 'Подписка и оплата';
+      trialNotice.append(link);
     }
   }
   renderAll();

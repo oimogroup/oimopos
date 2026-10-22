@@ -31,6 +31,16 @@ services:
         value: oimogroup2027@gmail.com
       - key: SMTP_FROM_NAME
         value: Oimo
+      - key: FREEDOMPAY_ENABLED
+        value: "false"
+      - key: FREEDOMPAY_TEST_MODE
+        value: "true"
+      - key: FREEDOMPAY_API_BASE
+        value: https://api.freedompay.kg
+      - key: FREEDOMPAY_INIT_PATH
+        value: /init_payment
+      - key: SELLER_SUPPORT_EMAIL
+        value: support@oimopos.com
 databases:
   - name: oimo-db
     databaseName: oimo

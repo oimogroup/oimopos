@@ -22,7 +22,7 @@ try:
    break
   except Exception: time.sleep(1)
  else: raise RuntimeError('health failed')
- for path in ['/','/login','/admin','/pos','/platform','/login.html','/admin.html','/index.html','/platform.html','/oimo.css','/app.js']:
+ for path in ['/','/login','/admin','/pos','/platform','/billing','/legal/offer','/legal/privacy','/legal/refunds','/legal/payment','/legal/contacts','/login.html','/admin.html','/index.html','/platform.html','/oimo.css','/app.js']:
   with urllib.request.urlopen('http://127.0.0.1:18080'+path) as r: assert r.status==200
  for path in ['/.env','/database/init/002_seed.sql','/tests/pos-ui-smoke.html','/app/main.py']:
   try: urllib.request.urlopen('http://127.0.0.1:18080'+path); raise AssertionError(path)
@@ -182,7 +182,10 @@ pool.close()
    api('/workspace')
    raise AssertionError('expired trial still has access')
   except urllib.error.HTTPError as error: assert error.code==403
-  signup(data,403)
+  assert api('/auth/me')['session']['billingRequired']
+  assert api('/billing')['canPay'] is False
+  replay,_=signup(data)
+  assert replay['session']['route']=='/billing'
  headers['Cookie']=platform_cookie
  print('PASS trial expiry enforced for existing sessions and registration retries')
 except subprocess.CalledProcessError as e:

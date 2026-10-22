@@ -20,7 +20,7 @@ class Connection:
 @pytest.fixture
 def setup(monkeypatch):
     monkeypatch.setattr(main,'verify_password',lambda password,hashed:password=='test-password')
-    monkeypatch.setattr(main,'_validate_tenant_access',lambda user:None)
+    monkeypatch.setattr(main,'_validate_tenant_access',lambda user, **kw:None)
     monkeypatch.setattr(main,'_workspace_row',lambda conn,tenant:{'payload':{}})
     monkeypatch.setattr(main,'_user_session',lambda user,state:{'staffRole':user['staff_role'],'route':'index.html'})
     common={'role':'branch','tenant_id':'t1','branch_id':'b1','is_active':True,'password_hash':'hash','account_version':1,'access_permissions':{}}

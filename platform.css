@@ -280,3 +280,5 @@ button { cursor: pointer; }
 .platform-mail p { margin-top:12px; }
 .mail-actions { display:flex; flex-wrap:wrap; gap:10px; margin-top:14px; }
 #mailRecent { white-space:pre-line; font-size:12px; line-height:1.8; margin-top:12px; }
+/* Subscription payment review */
+.billing-panel{margin-top:22px}.billing-panel summary{cursor:pointer;padding:22px;font-weight:600}.billing-panel-content{padding:0 22px 22px;overflow-wrap:anywhere}.billing-panel-content td{max-width:240px;overflow-wrap:anywhere}.billing-refund{padding:20px 0;border-top:1px solid #e6e2e8}.billing-refund p{margin:7px 0}#resolveRefundDialog{max-width:540px;width:calc(100% - 32px);border:1px solid #e6e2e8;border-radius:16px;padding:26px}#resolveRefundDialog::backdrop{background:#302b3277}#resolveRefundDialog label{display:grid;gap:6px;margin:15px 0}#resolveRefundDialog input,#resolveRefundDialog select,#resolveRefundDialog textarea{font:inherit;padding:10px;border:1px solid #d9d0d9;border-radius:8px}#resolveRefundDialog footer{display:flex;justify-content:flex-end;gap:15px}

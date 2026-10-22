@@ -18,6 +18,6 @@ COPY pnl.js ./public/
 COPY receipt-printing.js ./public/
 COPY vendor ./public/vendor/
 COPY landing.html landing.css landing.js favicon.svg ./public/
-COPY pos-supply-photo.js ./public/
+COPY billing.html billing.css billing.js platform-billing.js pos-supply-photo.js ./public/
 USER app
 CMD ["sh", "-c", "exec uvicorn app.render_entry:app --host 0.0.0.0 --port ${PORT:-10000}"]

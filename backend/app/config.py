@@ -24,6 +24,18 @@ class Settings(BaseSettings):
     smtp_from: str = ""
     smtp_test_recipient: str = "oimogroup2027@gmail.com"
     public_app_url: str = ""
+    freedompay_enabled: bool = False
+    freedompay_merchant_id: str = ""
+    freedompay_secret_key: SecretStr = SecretStr("")
+    freedompay_test_mode: bool = True
+    freedompay_api_base: str = "https://api.freedompay.kg"
+    freedompay_init_path: str = "/init_payment"
+    seller_legal_name: str = ""
+    seller_tax_id: str = ""
+    seller_address: str = ""
+    seller_phone: str = ""
+    seller_bank_details: str = ""
+    seller_support_email: str = "support@oimopos.com"
 
     @property
     def allowed_origins(self) -> list[str]:

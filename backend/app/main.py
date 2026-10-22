@@ -214,12 +214,13 @@ def _user_session(user: dict, state: dict | None = None) -> dict:
         "serviceMode": "restaurant" if user.get("plan_code") == "restaurant" else "canteen",
         "subscriptionStatus": user.get("subscription_status"),
         "trialEndsAt": user.get("trial_ends_at"), "maxBranches": user.get("max_branches"),
+        "currentPeriodEndsAt": user.get("current_period_ends_at"), "billingRequired": bool(_subscription_issue(user)),
     }
     if user["role"] == "owner":
         return {
             "login": user["login"], "role": "owner", "name": user["display_name"],
             "roleLabel": "Администратор компании", "scope": user.get("tenant_name") or "Аккаунт", "initials": "АК",
-            "accountVersion": user["account_version"], "route": "/admin#dashboard", **tenant,
+            "accountVersion": user["account_version"], "route": "/billing" if tenant["billingRequired"] else "/admin#dashboard", **tenant,
         }
     branch = next((entry for entry in state["branches"] if entry["id"] == user["branch_id"]), None)
     if not branch or branch.get("status") != "active":
@@ -249,16 +250,28 @@ def _user_session(user: dict, state: dict | None = None) -> dict:
     }
 
 
-def _validate_tenant_access(user: dict) -> None:
+def _subscription_issue(user: dict) -> str:
+    if user.get('role') == 'platform_owner':
+        return ''
+    status = user.get('subscription_status')
+    if status == 'canceled':
+        return 'Подписка компании завершена'
+    if status == 'past_due':
+        return 'Требуется оплатить подписку компании'
+    end = user.get('trial_ends_at') if status == 'trialing' else user.get('current_period_ends_at') if status == 'active' else None
+    if end and end <= datetime.now(timezone.utc):
+        return 'Пробный период завершён. Требуется активировать подписку' if status == 'trialing' else 'Оплаченный период завершён. Требуется продлить подписку'
+    return ''
+
+
+def _validate_tenant_access(user: dict, *, allow_billing: bool = False) -> None:
     if user["role"] == "platform_owner":
         return
     if user.get("tenant_status") != "active":
         raise HTTPException(status_code=403, detail="Компания временно недоступна. Обратитесь к владельцу сервиса")
-    if user.get("subscription_status") == "canceled":
-        raise HTTPException(status_code=403, detail="Подписка компании завершена")
-    trial_ends_at = user.get("trial_ends_at")
-    if user.get("subscription_status") == "trialing" and trial_ends_at and trial_ends_at <= datetime.now(timezone.utc):
-        raise HTTPException(status_code=403, detail="Пробный период завершён. Требуется активировать подписку")
+    if issue := _subscription_issue(user):
+        if not (allow_billing and user.get('role') == 'owner'):
+            raise HTTPException(status_code=403, detail=issue)
 
 
 def current_user(
@@ -276,7 +289,7 @@ def current_user(
                s.id AS session_id, s.expires_at AS session_expires_at,
                t.name AS tenant_name, t.slug AS tenant_slug, t.status AS tenant_status,
                subscription.plan_code, subscription.status AS subscription_status, subscription.max_branches,
-               subscription.trial_ends_at
+               subscription.trial_ends_at, subscription.current_period_ends_at
         FROM auth_sessions s
         JOIN auth_users u ON u.id = s.user_id
         LEFT JOIN tenants t ON t.id = u.tenant_id
@@ -298,7 +311,7 @@ def current_user(
             raise HTTPException(403, 'В браузере активирована другая касса. Вернитесь к исходной кассе для отправки её чеков.')
     if row.get("staff_role") == "production" and request.headers.get("x-ashkana-client", "").lower() != "pos" and request.url.path not in {"/api/v1/auth/me", "/api/v1/auth/logout"}:
         raise HTTPException(status_code=403, detail="Сотруднику производства доступен только терминал")
-    _validate_tenant_access(row)
+    _validate_tenant_access(row, allow_billing=request.url.path in {"/api/v1/auth/me", "/api/v1/auth/logout"} or request.url.path.startswith("/api/v1/billing"))
     if row["role"] == "branch":
         state = _workspace_row(connection, row["tenant_id"])["payload"]
         branch = next((entry for entry in state["branches"] if entry.get("id") == row["branch_id"]), None)
@@ -383,7 +396,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
                u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
                t.status AS tenant_status, subscription.plan_code,
                subscription.status AS subscription_status, subscription.max_branches,
-               subscription.trial_ends_at
+               subscription.trial_ends_at, subscription.current_period_ends_at
         FROM auth_users u
         LEFT JOIN tenants t ON t.id = u.tenant_id
         LEFT JOIN tenant_subscriptions subscription ON subscription.tenant_id = u.tenant_id
@@ -399,7 +412,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
                    u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
                    t.status AS tenant_status, subscription.plan_code,
                    subscription.status AS subscription_status, subscription.max_branches,
-                   subscription.trial_ends_at
+                   subscription.trial_ends_at, subscription.current_period_ends_at
             FROM auth_users u
             JOIN tenants t ON t.id = u.tenant_id
             LEFT JOIN tenant_subscriptions subscription ON subscription.tenant_id = u.tenant_id
@@ -420,7 +433,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
     ) else None
     if user["role"] == "branch" and user.get("staff_role") != "pos_terminal" and not _has_admin_access(dict(user)) and not authenticated_operator:
         raise HTTPException(status_code=403, detail="Для сотрудника доступна только касса")
-    _validate_tenant_access(user)
+    _validate_tenant_access(user, allow_billing=requested_client != "pos")
     if requested_client == "pos" and user["staff_role"] != "pos_terminal":
         can_activate_register = user["role"] == "owner" or _has_permission(dict(user), "registers") or authenticated_operator is not None
         if not can_activate_register or not user.get("tenant_id"):
@@ -439,7 +452,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
                    u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
                    t.status AS tenant_status, subscription.plan_code,
                    subscription.status AS subscription_status, subscription.max_branches,
-                   subscription.trial_ends_at
+                   subscription.trial_ends_at, subscription.current_period_ends_at
             FROM auth_users u
             JOIN tenants t ON t.id = u.tenant_id
             LEFT JOIN tenant_subscriptions subscription ON subscription.tenant_id = u.tenant_id
@@ -2053,6 +2066,8 @@ def delete_tenant(
             raise HTTPException(404, "Компания не найдена")
         if payload.confirmation_name != tenant["name"]:
             raise HTTPException(400, "Введите точное название компании")
+        if connection.execute('SELECT id FROM subscription_payments WHERE tenant_id = %s LIMIT 1', (tenant_id,)).fetchone():
+            raise HTTPException(409, 'У аккаунта есть история платежей. Используйте архивирование для сохранения финансовой истории.')
         connection.execute("SELECT tenant_id FROM operational_state WHERE tenant_id = %s FOR UPDATE", (tenant_id,))
         # Child records must go first; sessions and PIN sessions cascade with users.
         for table in ("technical_card_components", "technical_cards", "catalog_items",
@@ -2780,3 +2795,6 @@ install_self_registration(app)
 
 from .mailer import install as install_mailer
 install_mailer(app)
+
+from .billing import install as install_billing
+install_billing(app)

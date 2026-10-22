@@ -27,6 +27,16 @@ def setup(monkeypatch):
     return state, terminal, operator, shift, lease, current, receipt
 
 
+@pytest.mark.parametrize('subscription_status,field',[('trialing','trial_ends_at'),('active','current_period_ends_at')])
+def test_offline_lease_stops_at_subscription_end(setup,subscription_status,field):
+    state,terminal,operator,shift,old,current,_=setup
+    end=current[0]+timedelta(minutes=30)
+    terminal.update(subscription_status=subscription_status,**{field:end})
+    new=offline.issue(state,terminal,operator,shift,old['token'])
+    assert new['token']!=old['token']
+    assert datetime.fromisoformat(new['expiresAt'])==end
+
+
 def test_receipt_saved_once_and_duplicate_response_is_stable(setup):
     state, terminal, _, _, _, _, receipt = setup
     row = receipt()

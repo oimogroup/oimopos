@@ -1,0 +1,42 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Billing interface checks</title><pre id="results">RUNNING</pre><iframe id="app" title="Изолированная проверка подписки" style="width:1100px;height:1000px;border:0"></iframe><script>
+(async()=>{
+ const results=[],check=(name,ok)=>{results.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=results.join('|');},pause=()=>new Promise(r=>setTimeout(r,50));
+ try {
+  const [source,code]=await Promise.all([fetch('/billing').then(r=>r.text()),fetch('/billing.js').then(r=>r.text())]);
+  const stub=`<script>
+   window.__payloads=[];window.__refunds=[];
+   window.__data={subscription:{status:'trialing',trial_ends_at:'2020-01-01T00:00:00Z',max_branches:1},plan:{name:'Столовая',monthly_price:3500},orders:[{id:'order-one',amount:3500,currency:'KGS',status:'pending',created_at:'2026-10-22T06:00:00Z',expires_at:'2099-01-01T00:00:00Z',testing:false,checkout_url:'javascript:alert(1)',review_reason:'<img src=x onerror=alert(1)>'}],refundRequests:[],serverTime:'2026-10-22T07:00:00Z',termsVersion:'terms-test-version',testing:false,canPay:true,supportEmail:'support@oimopos.com'};
+   window.AshkanaApi={me:async()=>({session:{role:'owner',tenantId:'billing-test',tenantName:'Тестовая компания'}}),billing:async()=>structuredClone(window.__data),
+    subscriptionCheckout:async payload=>{window.__payloads.push(payload);return {...window.__data.orders[0],status:'creating',checkout_url:null};},
+    refreshSubscriptionPayment:async id=>{window.__data.orders[0]={...window.__data.orders[0],status:'paid',applied_at:'2026-10-22T07:00:00Z',service_starts_at:'2026-10-22T07:00:00Z',service_ends_at:'2026-11-22T07:00:00Z'};window.__data.subscription={status:'active',current_period_ends_at:'2099-01-01T00:00:00Z',max_branches:1};return {};},
+    requestSubscriptionRefund:async(id,reason)=>{window.__refunds.push({id,reason});window.__data.refundRequests.push({order_id:id,status:'new'});return {ok:true};}};
+   window.fetch=()=>Promise.reject(new Error('Unexpected live API call'));
+  <\/script>`;
+  const frame=document.querySelector('#app');
+  const html=source.replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/g,'').replace('</body>',stub+'<script>'+code+'<\/script></body>').replace('<head>','<head><base href="/">');
+  await new Promise(resolve=>{frame.addEventListener('load',resolve,{once:true});frame.srcdoc=html;});
+  const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s);
+  for(let n=0;n<50&&q('#billingContent').hidden;n++)await pause();
+  check('company-price-and-expired-access-visible',q('#companyName').textContent==='Тестовая компания'&&q('#planPrice').textContent.includes('3')&&q('#accessStatus').textContent.includes('завершён'));
+  check('workspace-hidden-after-expiry',q('#workspaceLink').hidden);
+  check('no-card-data-fields',!q('input[name="card_number"]')&&!q('input[name="cvc"]'));
+  check('unsafe-checkout-url-not-linked',![...d.querySelectorAll('#orders a')].some(a=>a.href.startsWith('javascript:')));
+  check('provider-reason-rendered-as-text',!q('#orders img')&&q('#orders').textContent.includes('<img'));
+  q('#payButton').click();await pause();check('consent-required-before-checkout',w.__payloads.length===0);
+  q('#termsAccepted').checked=true;q('#payButton').click();await pause();q('#payButton').click();await pause();
+  check('unknown-create-reuses-id',w.__payloads.length===2&&w.__payloads[0].request_id===w.__payloads[1].request_id);
+  check('checkout-does-not-send-client-price',!('amount' in w.__payloads[0])&&w.__payloads[0].terms_version==='terms-test-version'&&w.__payloads[0].terms_accepted===true);
+  [...d.querySelectorAll('#orders button')].find(b=>b.textContent==='Проверить оплату').click();await pause();
+  check('verified-state-shows-paid-period',q('#orders').textContent.includes('Период:')&&!q('#workspaceLink').hidden);
+  [...d.querySelectorAll('#orders button')].find(b=>b.textContent==='Запросить возврат').click();await pause();
+  check('refund-dialog-explains-request',q('#refundDialog').open&&q('#refundDialog').textContent.includes('ещё не означает возврат'));
+  q('#refundReason').value='Возврат за неиспользованный период';q('#refundForm button[type=submit]').click();await pause();
+  check('refund-request-recorded-once',w.__refunds.length===1&&w.__refunds[0].id==='order-one'&&q('#orders').textContent.includes('рассматривается'));
+  w.__data.testing=true;w.__data.canPay=false;w.__data.message='Онлайн-оплата пока недоступна.';q('#reload').click();await pause();
+  check('disabled-merchant-no-checkout',q('#checkoutForm').hidden&&q('#availability').textContent.includes('недоступна'));
+  check('test-mode-explained',!q('#testNotice').hidden&&q('#testNotice').textContent.includes('не продлевают'));
+  w.sessionStorage.removeItem('oimo-subscription-request-billing-test');w.sessionStorage.removeItem('ashkana-auth-session-v1');
+ }catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

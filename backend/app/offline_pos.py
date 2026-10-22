@@ -36,10 +36,13 @@ def issue(state, terminal, operator, shift, existing_token=''):
         for row in rows:
             row.pop('image', None)
     catalog['companySettings'] = deepcopy(state.get('companySettings', {}))
+    expires=payroll.now()+timedelta(hours=24)
+    end=terminal.get('trial_ends_at') if terminal.get('subscription_status')=='trialing' else terminal.get('current_period_ends_at')
+    if end: expires=min(expires,payroll.clock(end.isoformat() if hasattr(end,'isoformat') else end))
     previous = next((g for g in state.get('offlinePos', {}).get('leases', []) if g['tokenHash'] == digest(existing_token)), None) if existing_token else None
-    if previous and previous['tenantId'] == str(terminal['tenant_id']) and str(previous['registerId']) == str(terminal['id']) and previous['operator'] == {k:operator.get(k) for k in ('id','login','display_name','staff_role','access_permissions','account_version')} and previous['shiftId'] == shift['id'] and previous['branchId'] == str(terminal['branch_id']) and previous.get('planCode') == terminal.get('plan_code') and previous['catalog'] == catalog and payroll.clock(previous['expiresAt']) > payroll.now()+timedelta(hours=1):
+    if previous and previous['tenantId'] == str(terminal['tenant_id']) and str(previous['registerId']) == str(terminal['id']) and previous['operator'] == {k:operator.get(k) for k in ('id','login','display_name','staff_role','access_permissions','account_version')} and previous['shiftId'] == shift['id'] and previous['branchId'] == str(terminal['branch_id']) and previous.get('planCode') == terminal.get('plan_code') and previous['catalog'] == catalog and payroll.now()+timedelta(hours=1) < payroll.clock(previous['expiresAt']) <= expires:
         return {'token':existing_token, 'id':previous['id'], 'issuedAt':previous['issuedAt'], 'expiresAt':previous['expiresAt'], 'shiftId':previous['shiftId'], 'registerId':previous['registerId'], 'operatorId':operator['id']}
-    lease = {'id': str(uuid4()), 'tokenHash': digest(token), 'tenantId': str(terminal['tenant_id']), 'registerId': terminal['id'], 'branchId': str(terminal['branch_id']), 'operator': {k: operator.get(k) for k in ('id', 'login', 'display_name', 'staff_role', 'access_permissions', 'account_version')}, 'shiftId': shift['id'], 'planCode':terminal.get('plan_code'), 'issuedAt': payroll.now().isoformat(), 'expiresAt': (payroll.now()+timedelta(hours=24)).isoformat(), 'catalog': catalog}
+    lease = {'id': str(uuid4()), 'tokenHash': digest(token), 'tenantId': str(terminal['tenant_id']), 'registerId': terminal['id'], 'branchId': str(terminal['branch_id']), 'operator': {k: operator.get(k) for k in ('id', 'login', 'display_name', 'staff_role', 'access_permissions', 'account_version')}, 'shiftId': shift['id'], 'planCode':terminal.get('plan_code'), 'issuedAt': payroll.now().isoformat(), 'expiresAt': expires.isoformat(), 'catalog': catalog}
     ensure(state)['leases'].append(lease)
     return {'token': token, 'id': lease['id'], 'issuedAt': lease['issuedAt'], 'expiresAt': lease['expiresAt'], 'shiftId': lease['shiftId'], 'registerId': lease['registerId'], 'operatorId': operator['id']}
 

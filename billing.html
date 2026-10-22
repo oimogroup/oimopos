@@ -1,0 +1,23 @@
+<!doctype html>
+<html lang="ru">
+<head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>Подписка и оплата · Oimo</title><link rel="icon" href="/favicon.svg"><link rel="stylesheet" href="/billing.css"><script defer src="/api-client.js"></script><script defer src="/billing.js"></script></head>
+<body>
+  <main>
+    <header><a class="brand" href="/">Oimo<span>Подписка</span></a><nav><a id="workspaceLink" href="/admin">В аккаунт</a><button id="logout" type="button" class="text-button">Выйти</button></nav></header>
+    <p class="eyebrow" id="companyName">Ваш аккаунт</p><h1>Подписка и оплата</h1><p class="intro">Один платёж — месяц работы. Автоматических списаний нет.</p>
+    <p id="statusMessage" class="notice" role="status" aria-live="polite">Загружаем подписку…</p>
+    <div id="billingContent" hidden>
+      <aside id="testNotice" class="notice" hidden>Тестовый режим. Платежи проверяют подключение Freedom Pay и не продлевают настоящий доступ.</aside>
+      <section class="plan-card" aria-labelledby="planName">
+        <div><p class="eyebrow">Текущий тариф</p><h2 id="planName"></h2><p id="accessStatus"></p><p id="branchLimit" class="muted"></p></div>
+        <div class="payment"><div class="price" id="planPrice"></div><p class="muted">Разовая оплата за календарный месяц</p>
+          <form id="checkoutForm"><label class="consent"><input type="checkbox" id="termsAccepted" required><span>Принимаю <a href="/legal/offer" target="_blank" rel="noopener">условия использования</a>, <a href="/legal/refunds" target="_blank" rel="noopener">правила возврата</a> и <a href="/legal/privacy" target="_blank" rel="noopener">обработки данных</a>.</span></label><button class="primary" id="payButton" type="submit" disabled>Оплатить месяц</button></form>
+          <p class="muted" id="availability"></p><small>Оплата на защищённой странице Freedom Pay. Номер карты и CVC вводятся там.</small>
+        </div>
+      </section>
+      <section aria-labelledby="historyTitle"><div class="section-heading"><h2 id="historyTitle">История оплат</h2><button class="text-button" id="reload" type="button">Обновить</button></div><p class="muted">Продление появится после подтверждения оплаты. Если деньги списаны, проверьте статус заказа перед повторной оплатой.</p><div id="orders"></div></section>
+      <footer><a href="/legal/payment">Как оплатить</a><a href="/legal/contacts">Контакты продавца</a><a id="supportLink" href="mailto:support@oimopos.com">Написать в поддержку</a></footer>
+    </div>
+  </main>
+  <dialog id="refundDialog"><form id="refundForm"><h2>Запросить возврат</h2><p>Мы рассмотрим обращение и ответим по email. Отправка запроса ещё не означает возврат денег.</p><label>Причина<textarea id="refundReason" minlength="8" maxlength="2000" rows="4" required></textarea></label><p id="refundMessage" role="status"></p><div class="dialog-actions"><button class="text-button" id="refundCancel" type="button">Отмена</button><button class="primary" type="submit">Отправить запрос</button></div></form></dialog>
+</body></html>

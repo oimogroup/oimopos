@@ -1,0 +1,32 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Platform billing checks</title><pre id="results">RUNNING</pre><iframe id="app" title="Тест контроля оплат" style="width:1200px;height:900px;border:0"></iframe><script>
+(async()=>{
+ const results=[],check=(name,ok)=>{results.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=results.join('|');},pause=()=>new Promise(r=>setTimeout(r,70));
+ try {
+  const [source,panel,code]=await Promise.all([fetch('/platform').then(r=>r.text()),fetch('/platform-billing.js').then(r=>r.text()),fetch('/platform.js').then(r=>r.text())]);
+  const stub=`<script>
+    window.__resolutions=[];window.__checks=0;
+    window.__billing={ready:false,missing:['FREEDOMPAY_SECRET_KEY'],testing:true,orders:[{id:'o1',tenantName:'<img src=x onerror=alert(1)>',amount:3500,testing:true,status:'review',refund_amount:0}],refundRequests:[{id:'r1',order_id:'o1',tenant_name:'Test',amount:3500,refund_amount:0,status:'new',reason:'Unused period'}]};
+    window.AshkanaApi={me:async()=>({session:{role:'platform_owner',name:'Owner',initials:'OO'}}),tenants:async()=>[],plans:async()=>[],connectionRequests:async()=>[],mailStatus:async()=>({configured:false,counts:{},recent:[]}),
+     platformBilling:async()=>structuredClone(window.__billing),platformRefreshPayment:async()=>{window.__checks++;window.__billing.refundRequests[0].refund_amount=3500;return{};},platformResolveRefund:async(id,payload)=>{window.__resolutions.push({id,...payload});window.__billing.refundRequests[0].status='approved';return{ok:true};}};
+    window.fetch=()=>Promise.reject(new Error('Unexpected live API call'));
+  <\/script>`;
+  const frame=document.querySelector('#app');
+  const html=source.replace(/<script[^>]*src="[^"]*"[^>]*><\/script>/g,'').replace('</body>',stub+'<script>'+panel+'<\/script><script>'+code.replaceAll('location.origin','new URL(document.baseURI).origin')+'<\/script></body>').replace('<head>','<head><base href="/">');
+  await new Promise(resolve=>{frame.addEventListener('load',resolve,{once:true});frame.srcdoc=html;});
+  const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s);
+  for(let i=0;i<50&&!q('#platformBillingStatus').textContent.includes('FREEDOMPAY_SECRET_KEY');i++)await pause();
+  check('missing-settings-actionable',q('#platformBillingStatus').textContent.includes('FREEDOMPAY_SECRET_KEY'));
+  check('payment-provider-notes-escaped',!q('#platformPaymentRows img')&&q('#platformPaymentRows').textContent.includes('<img'));
+  check('refunds-do-not-send-money-message',q('#platformBillingPanel').textContent.includes('сама деньги не перечисляет'));
+  q('#platformRefunds button').click();await pause();q('#refundResolution').value='Согласовано с клиентом';q('#refundAccessUntil').value='2026-10-22T10:00';q('#resolveRefundForm button[type=submit]').click();await pause();
+  check('cannot-approve-without-provider-refund',w.__resolutions.length===0&&q('#resolveRefundDialog').open&&q('#resolveRefundMessage').textContent.includes('возврат в Freedom Pay'));
+  q('#resolveRefundCancel').click();q('#platformPaymentRows button').click();await pause();
+  check('status-explicitly-reconciled',w.__checks===1);
+  q('#platformRefunds button').click();q('#refundResolution').value='Согласовано с клиентом';q('#refundAccessUntil').value='2026-10-22T10:00';q('#resolveRefundForm button[type=submit]').click();await pause();
+  check('confirmed-refund-saves-agreed-date',w.__resolutions.length===1&&w.__resolutions[0].id==='r1'&&w.__resolutions[0].access_until.endsWith('Z')&&w.__resolutions[0].decision==='approved');
+  check('resolved-request-not-actionable',!q('#platformRefunds button')&&!q('#resolveRefundDialog').open);
+  w.sessionStorage.removeItem('ashkana-auth-session-v1');frame.remove();
+ }catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

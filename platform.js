@@ -337,6 +337,7 @@ async function bootstrap() {
     await loadPlans();
     await loadConnectionRequests();
     await loadMailStatus();
+    await window.OimoBillingPanel?.load();
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       sessionStorage.removeItem(sessionKey);

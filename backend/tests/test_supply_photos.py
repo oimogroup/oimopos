@@ -325,7 +325,7 @@ def test_photo_browser_requests_choose_terminal_cookie_without_admin_fallback(mo
                 return SimpleNamespace(fetchone=lambda: accounts.get(params[0]))
             return SimpleNamespace()
     connection = Connection()
-    monkeypatch.setattr(main, "_validate_tenant_access", lambda user: None)
+    monkeypatch.setattr(main, "_validate_tenant_access", lambda user, **kw: None)
     monkeypatch.setattr(main, "_workspace_row", lambda *args: {"payload": {"branches": [{"id": "b1", "status": "active"}]}})
     assert main._supply_photo_user(request, "pos", "admin-cookie", "terminal-cookie", connection)["tenant_id"] == "tenant-a"
     assert main._supply_photo_user(request, "", "admin-cookie", "terminal-cookie", connection)["tenant_id"] == "admin-tenant"
