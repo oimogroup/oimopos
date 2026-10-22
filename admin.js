@@ -2776,7 +2776,7 @@ function openEmployeeForm(employeeId = null, preferredBranchId = null) {
     : `<option value="${escapeHtml(activeBranch.id)}">${escapeHtml(activeBranch.name)}</option>`;
   $("#employeeBranchInput").value = activeBranch.id;
   $("#employeeBranchInput").disabled = !ownerMode;
-  $("#employeeBranchHint").textContent = ownerMode ? "Основное заведение используется для смен и отчётов, но не ограничивает права внутри аккаунта." : "Основное заведение используется для смен и отчётов.";
+  $("#employeeBranchHint").textContent = "PIN работает на кассах выбранного заведения. Проверьте, что сотруднику разрешён вход на кассу.";
   $("#employeeRoleInput").innerHTML = ownerMode
     ? '<option value="branch_manager">Руководитель</option><option value="hall_admin">Администратор зала</option><option value="waiter">Официант</option><option value="storekeeper">Кладовщик</option><option value="production">Производство</option><option value="marketer">Маркетолог</option><option value="cashier">Кассир</option>'
     : '<option value="hall_admin">Администратор зала</option><option value="waiter">Официант</option><option value="storekeeper">Кладовщик</option><option value="production">Производство</option><option value="marketer">Маркетолог</option><option value="cashier">Кассир</option>';

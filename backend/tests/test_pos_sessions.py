@@ -37,6 +37,9 @@ class OperatorConnection:
     def transaction(self):
         return nullcontext()
 
+    def commit(self):
+        self.calls.append(("COMMIT", ()))
+
     def execute(self, query, params):
         self.calls.append((query, params))
         if "FROM auth_users WHERE id" in query:
@@ -79,6 +82,9 @@ def test_wrong_pin_does_not_create_or_extend_cashier_session():
     with pytest.raises(HTTPException) as error:
         main.unlock_pos(PosUnlockInput(pin="0000"), response, request, terminal(datetime.now(timezone.utc) + timedelta(days=7)), connection)
     assert error.value.status_code == 401
+    assert error.value.detail["code"] == "invalid_pin"
+    assert error.value.detail["attemptsRemaining"] == 4
+    assert any(query == "COMMIT" for query, _ in connection.calls)
     assert not any("INSERT INTO pos_operator_sessions" in query for query, _ in connection.calls)
     assert "set-cookie" not in response.headers
 
@@ -129,7 +135,9 @@ def test_disabled_pos_access_cannot_unlock():
     connection.employee["access_permissions"] = {"posAccess": False}
     with pytest.raises(HTTPException) as error:
         unlock(connection, pin="4821")
-    assert error.value.status_code == 401
+    assert error.value.status_code == 409
+    assert error.value.detail["code"] == "pos_no_pin_access"
+    assert not any("SET pin_failed_attempts" in query for query, _ in connection.calls)
 
 
 def test_fifth_wrong_pin_locks_terminal():

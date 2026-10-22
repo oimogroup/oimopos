@@ -1,0 +1,60 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Offline PIN recovery</title><pre id="results">RUNNING</pre><script>
+(async()=>{
+ const checks=[],check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');};
+ const f=document.createElement('iframe');document.body.append(f);
+ try{
+  const [core,client]=await Promise.all(['/offline-pos-core.js','/offline-pos.js'].map(url=>fetch(url).then(r=>r.text())));
+  await new Promise(resolve=>{f.onload=resolve;f.srcdoc='<!doctype html><meta charset="utf-8"><title>Isolated PIN fixture</title>';});
+  const w=f.contentWindow;
+  w.eval(`
+   Object.defineProperty(navigator,'serviceWorker',{value:{register:async()=>({}),ready:Promise.resolve({}),controller:{}},configurable:true});
+   window.cloud={online:true,revoked:false,pin:'0123',remaining:4,id:2};
+   class ApiError extends Error{constructor(message,status=0,details=null){super(message);this.status=status;this.details=details;}}
+   const session={role:'branch',staffRole:'pos_terminal',tenantId:'pin-browser-test',registerId:10,branchId:'b1'};
+   const shift={id:20,closedAt:null},workspace={version:1,state:{serviceMode:'canteen',sales:[],recipes:[],logisticsState:{branchStocks:{b1:{}}}}};
+   function online(){if(!cloud.online)throw new ApiError('No network',0);if(cloud.revoked)throw new ApiError('Session expired',401);}
+   function operator(){return {id:cloud.id,name:'Test employee',staffRole:'cashier',accountVersion:1,permissions:{posAccess:true,posCash:true}};}
+   window.AshkanaApi={ApiError,setOperationActor:()=>{},me:async()=>{online();return {session}},workspace:async()=>{online();return workspace},posOperator:async()=>{online();return {operator:operator(),shift}},
+    unlockPos:async pin=>{online();if(cloud.noOperators)throw new ApiError('No employees',409,{code:'pos_no_pin_access'});if(pin!==cloud.pin)throw new ApiError('Wrong PIN',401,{code:'invalid_pin',attemptsRemaining:cloud.remaining});return {operator:operator(),shift}},
+    offlineLease:async()=>({operatorId:cloud.id,registerId:10,version:1,token:'test-lease',issuedAt:new Date().toISOString(),expiresAt:new Date(Date.now()+3600000).toISOString()}),
+    lockPos:async()=>({}),logout:async()=>({})};
+   window.fetch=()=>Promise.reject(new Error('Live API requests forbidden in this fixture'));
+   window.record=async update=>{const db=await new Promise((resolve,reject)=>{const r=indexedDB.open('oimo-offline-pos-v1',1);r.onsuccess=()=>resolve(r.result);r.onerror=()=>reject(r.error)});try{return await new Promise((resolve,reject)=>{const t=db.transaction('records',update?'readwrite':'readonly'),store=t.objectStore('records'),r=store.get('terminal:pin-browser-test|10');let value;r.onsuccess=()=>{value=r.result.value;if(update){update(value);store.put({key:r.result.key,value})}};t.oncomplete=()=>resolve(value);t.onabort=()=>reject(t.error)})}finally{db.close()}};
+  `);
+  w.eval(core);w.eval(client);await w.OfflinePos.init();
+  const api=w.AshkanaApi;
+  const rejects=async(pin,status)=>{try{await api.unlockPos(pin);return false}catch(e){return e.status===status}};
+  await api.me();await api.workspace();await api.unlockPos('0123');
+  check('online-pin-prepares-offline-access',w.OfflinePos.status().ready);
+  check('incorrect-pin-is-rejected',await rejects('9999',401));
+  let device=await w.record();
+  check('one-typo-does-not-revoke-register',!device.blocked&&device.pinFailures===1&&!!device.operators['2'].verifier);
+  w.cloud.online=false;
+  check('correct-pin-works-offline-after-online-typo',(await api.unlockPos('0123')).operator.id===2);
+  w.cloud.online=true;w.cloud.remaining=1;await rejects('9999',401);w.cloud.online=false;
+  await rejects('9999',403);
+  check('online-and-offline-attempts-share-lockout',await rejects('0123',429));
+  w.cloud.online=true;await api.unlockPos('0123');device=await w.record();
+  check('successful-online-pin-clears-old-local-lock',!device.blocked&&device.pinFailures===0&&device.pinLockedUntil===0&&w.OfflinePos.status().ready);
+  w.cloud.id=3;w.cloud.pin='6789';await api.unlockPos('6789');
+  w.cloud.id=2;w.cloud.pin='4321';w.cloud.remaining=4;await rejects('0123',401);device=await w.record();
+  check('server-invalidated-pin-loses-only-its-own-offline-grant',!device.operators['2'].verifier&&!device.operators['2'].lease&&!!device.operators['3'].verifier&&!device.blocked);
+  w.cloud.online=false;
+  check('old-pin-cannot-be-used-offline-after-reset',await rejects('0123',403));
+  check('another-employee-can-still-unlock-offline',(await api.unlockPos('6789')).operator.id===3);
+  w.cloud.online=true;w.cloud.revoked=true;
+  check('expired-terminal-session-remains-rejected',await rejects('6789',401));
+  w.cloud.online=false;
+  check('revoked-terminal-cannot-bypass-server-offline',await rejects('6789',409));
+  w.cloud.online=true;w.cloud.revoked=false;w.cloud.id=3;w.cloud.pin='6789';await api.unlockPos('6789');w.cloud.online=false;
+  check('verified-online-login-restores-offline-access',(await api.unlockPos('6789')).operator.id===3);
+  w.cloud.online=true;w.cloud.noOperators=true;
+  check('no-eligible-employees-is-a-configuration-error',await rejects('6789',409));
+  device=await w.record();
+  check('deleted-employees-have-no-remaining-offline-grants',Object.values(device.operators).every(a=>!a.verifier&&!a.lease));
+  w.cloud.online=false;
+  check('deleted-pin-cannot-unlock-offline',await rejects('6789',403));
+ }catch(error){check('runtime:'+error.stack,false);}
+ finally{f.remove();document.body.dataset.done='true';}
+})();
+</script></html>

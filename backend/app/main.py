@@ -444,7 +444,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
     requested_client = request.headers.get("x-ashkana-client", "").lower()
     authenticated_operator = dict(user) if (
         requested_client == "pos" and user["role"] == "branch"
-        and user.get("staff_role") in {"branch_manager", "hall_admin", "waiter", "cashier", "production"}
+        and user.get("staff_role") != "pos_terminal"
         and _has_permission(dict(user), "posAccess")
     ) else None
     if user["role"] == "branch" and user.get("staff_role") != "pos_terminal" and not _has_admin_access(dict(user)) and not authenticated_operator:
@@ -608,6 +608,8 @@ def _operator_payload(row: dict) -> dict:
         "waiter": "Официант",
         "cashier": "Кассир",
         "production": "Сотрудник производства",
+        "storekeeper": "Кладовщик",
+        "marketer": "Маркетолог",
     }
     return {
         "id": row["id"],
@@ -644,7 +646,9 @@ def _current_pos_operator(
               AND employee.is_active
               AND employee.tenant_id = %s
               AND employee.role = 'branch'
-              AND employee.staff_role IN ('branch_manager', 'hall_admin', 'waiter', 'cashier', 'production')
+              AND employee.staff_role <> 'pos_terminal'
+              AND employee.deleted_at IS NULL
+              AND employee.branch_id = operator.branch_id
             """,
             (token_hash(raw_token), user["session_id"], user["branch_id"], user["tenant_id"]),
         ).fetchone()
@@ -984,7 +988,7 @@ def list_pos_operators(
         FROM auth_users
         WHERE tenant_id = %s AND role = 'branch' AND is_active
           AND branch_id = %s
-          AND staff_role IN ('branch_manager', 'hall_admin', 'waiter', 'cashier', 'production') AND pin_hash IS NOT NULL
+          AND staff_role <> 'pos_terminal' AND deleted_at IS NULL AND pin_hash IS NOT NULL
         ORDER BY CASE staff_role WHEN 'branch_manager' THEN 0 WHEN 'hall_admin' THEN 1 ELSE 2 END, display_name, id
         """,
         (user["tenant_id"], user["branch_id"]),
@@ -1295,7 +1299,8 @@ def unlock_pos(
 ) -> dict:
     _check_origin(request)
     _pos_terminal(user)
-    failure: tuple[int, str] | None = None
+    failure: tuple[int, str | dict] | None = None
+    attempts_changed = False
     raw_token: str | None = None
     operator: dict | None = None
     with connection.transaction():
@@ -1314,20 +1319,23 @@ def unlock_pos(
                       (pin_locked_until IS NOT NULL AND pin_locked_until > CURRENT_TIMESTAMP) AS pin_locked
                FROM auth_users
                WHERE tenant_id = %s AND branch_id = %s AND role = 'branch' AND is_active
-                 AND staff_role IN ('branch_manager', 'hall_admin', 'waiter', 'cashier', 'production')
+                 AND staff_role <> 'pos_terminal' AND deleted_at IS NULL
                  AND pin_hash IS NOT NULL
                ORDER BY id FOR UPDATE""",
             (user["tenant_id"], user["branch_id"]),
         ).fetchall()
-        matches = [dict(candidate) for candidate in candidates
-                   if _has_permission(dict(candidate), "posAccess") and verify_pin(payload.pin, candidate["pin_hash"])]
+        eligible = [dict(candidate) for candidate in candidates if _has_permission(dict(candidate), "posAccess")]
+        matches = [candidate for candidate in eligible if verify_pin(payload.pin, candidate["pin_hash"])]
         row = matches[0] if len(matches) == 1 else None
-        if len(matches) > 1:
+        if not eligible:
+            failure = (409, {"code": "pos_no_pin_access", "message": "В этом заведении нет активных сотрудников с PIN и доступом к кассе. Назначьте сотруднику PIN и разрешите вход на кассу в настройках сотрудников."})
+        elif len(matches) > 1:
             failure = (409, "Этот PIN назначен нескольким сотрудникам. Попросите руководителя назначить разные PIN")
         elif row and row["pin_locked"]:
             failure = (429, "PIN временно заблокирован. Повторите через 5 минут")
         elif not row:
             attempts = int(terminal["pin_failed_attempts"]) + 1
+            attempts_changed = True
             if attempts >= 5:
                 connection.execute(
                     "UPDATE auth_users SET pin_failed_attempts = 0, pin_locked_until = CURRENT_TIMESTAMP + INTERVAL '5 minutes' WHERE id = %s",
@@ -1337,7 +1345,8 @@ def unlock_pos(
             else:
                 connection.execute("UPDATE auth_users SET pin_failed_attempts = %s WHERE id = %s",
                                    (attempts, terminal["id"]))
-                failure = (401, f"Неверный PIN. Осталось попыток: {5 - attempts}")
+                failure = (401, {"code": "invalid_pin", "message": f"Неверный PIN для этого заведения. Осталось попыток: {5 - attempts}",
+                                 "attemptsRemaining": 5 - attempts})
         else:
             connection.execute(
                 "UPDATE auth_users SET pin_failed_attempts = 0, pin_locked_until = NULL WHERE id = %s",
@@ -1358,6 +1367,11 @@ def unlock_pos(
                  user["session_expires_at"]),
             )
             operator = dict(row)
+    if attempts_changed:
+        # current_user has already started a transaction, so the block above is
+        # a savepoint. Persist failed attempts before HTTPException rolls back
+        # the request's transaction; no operational data is written here.
+        connection.commit()
     if failure:
         raise HTTPException(status_code=failure[0], detail=failure[1])
     response.set_cookie(

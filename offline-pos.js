@@ -76,7 +76,7 @@
   if(!key||!response.operator)return;
   const id=String(response.operator.id),salt=pin?Array.from(crypto.getRandomValues(new Uint8Array(16))):null;
   const verifier=pin?await pinDigest(pin,salt):null;
-  await mutate(d=>{const old=d.operators[id]||{};if(!pin&&old.operator?.accountVersion!==response.operator.accountVersion){delete old.verifier;delete old.salt;delete old.lease;}if(!response.shift||String(old.shift?.id)!==String(response.shift.id))delete old.lease;d.closing=false;d.operators[id]={...old,operator:copy(response.operator),shift:copy(response.shift),...pin?{salt,verifier}:{}};});
+  await mutate(d=>{const old=d.operators[id]||{};if(!pin&&old.operator?.accountVersion!==response.operator.accountVersion){delete old.verifier;delete old.salt;delete old.lease;}if(!response.shift||String(old.shift?.id)!==String(response.shift.id))delete old.lease;d.closing=false;if(pin){d.blocked=false;d.pinFailures=0;d.pinLockedUntil=0;}d.operators[id]={...old,operator:copy(response.operator),shift:copy(response.shift),...pin?{salt,verifier}:{}};});
   actorId=id;api.setOperationActor?.(id);await prepare();
  }
  async function prepare(){
@@ -131,7 +131,15 @@
  api.posOperators=async()=>{try{return await raw.posOperators();}catch(e){if(!networkError(e))throw e;return Object.values(device?.operators||{}).filter(a=>a.verifier&&a.lease&&Date.parse(a.lease.expiresAt)>Date.now()).map(a=>a.operator);}};
  api.unlockPos=async pin=>{
   await init();try{const result=await raw.unlockPos(pin);offline=false;await rememberOperator(result,pin);return result;}
-  catch(e){if(!networkError(e)){if(e.status===401)await blocked();if(e.status===429&&key)await mutate(d=>{d.pinLockedUntil=Date.now()+300000;});if(e.status===403&&device)for(const [id,a] of Object.entries(device.operators))if(a.verifier&&await pinDigest(pin,a.salt)===a.verifier)await mutate(d=>{delete d.operators[id].verifier;delete d.operators[id].lease;});throw e;}return offlineUnlock(pin);}
+  catch(e){if(!networkError(e)){
+   const wrongPin=e.status===401&&e.details?.code==='invalid_pin';
+   if(e.status===401&&!wrongPin)await blocked();
+   if(e.status===409&&e.details?.code==='pos_no_pin_access'&&key){await mutate(d=>{for(const a of Object.values(d.operators)){delete a.verifier;delete a.lease;}});actorId=null;render();}
+   if(wrongPin&&key)await mutate(d=>{const remaining=Number(e.details.attemptsRemaining);d.pinFailures=Number.isInteger(remaining)&&remaining>=1&&remaining<=4?5-remaining:Math.min(4,(d.pinFailures||0)+1);d.pinLockedUntil=0;});
+   if(e.status===429&&key)await mutate(d=>{d.pinLockedUntil=Date.now()+300000;d.pinFailures=0;});
+   if((wrongPin||e.status===403)&&device)for(const [id,a] of Object.entries(device.operators))if(a.verifier&&await pinDigest(pin,a.salt)===a.verifier)await mutate(d=>{delete d.operators[id].verifier;delete d.operators[id].lease;});
+   throw e;
+  }return offlineUnlock(pin);}
  };
  api.lockPos=async()=>{actorId=null;render();if(offline)return {};try{return await raw.lockPos();}catch(e){if(!networkError(e))throw e;offline=true;render();return {};}};
  api.logout=async()=>{if(core.pending(device||{}).length)throw fail('Сначала отправьте сохранённые чеки.');await blocked();return raw.logout();};

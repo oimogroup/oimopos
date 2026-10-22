@@ -27,10 +27,10 @@ def setup(monkeypatch):
     common={'role':'branch','tenant_id':'t1','branch_id':'b1','is_active':True,'password_hash':'hash','account_version':1,'access_permissions':{}}
     return ({**common,'id':42,'login':'person','display_name':'Person','staff_role':'branch_manager'}, {**common,'id':9,'login':'register','display_name':'Касса','staff_role':'pos_terminal'})
 
-@pytest.mark.parametrize('role',['branch_manager','cashier','waiter','hall_admin','production'])
+@pytest.mark.parametrize('role',['branch_manager','cashier','waiter','hall_admin','production','storekeeper','marketer'])
 def test_personal_password_binds_the_authenticated_employee_without_pin(setup,role):
     employee,terminal=setup;employee['staff_role']=role
-    if role == 'production': employee['access_permissions']={'posAccess':True,'production':True}
+    if role in {'production','storekeeper','marketer'}: employee['access_permissions']={'posAccess':True,'production':role == 'production'}
     connection=Connection(employee,terminal);response=Response()
     result=main.login(LoginInput(login='person',password='test-password'),response,REQUEST,connection)
     assert result['session']['staffRole']=='pos_terminal'
