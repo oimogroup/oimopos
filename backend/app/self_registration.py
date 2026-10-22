@@ -70,6 +70,8 @@ def install(app):
                     'INSERT INTO trial_registrations (id, tenant_id, email, phone, peer_key, fingerprint) VALUES (%s,%s,%s,%s,%s,%s)',
                     (payload.request_id, tenant['id'], payload.email, payload.phone, peer_key, fingerprint),
                 )
+                from .mailer import enqueue_welcome
+                enqueue_welcome(connection, tenant, payload.name, payload.email)
             # Login validates the account and trial even on an old request replay.
             result = main.login(LoginInput(login=payload.email, password=payload.password), response, request, connection)
         return {**result, 'redirect': '/admin'}

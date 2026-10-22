@@ -23,6 +23,14 @@ services:
         value: "true"
       - key: CORS_ORIGINS
         value: ""
+      - key: SMTP_HOST
+        value: smtp.gmail.com
+      - key: SMTP_PORT
+        value: "465"
+      - key: SMTP_USERNAME
+        value: oimogroup2027@gmail.com
+      - key: SMTP_FROM_NAME
+        value: Oimo
 databases:
   - name: oimo-db
     databaseName: oimo

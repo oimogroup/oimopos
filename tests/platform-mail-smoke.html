@@ -1,0 +1,35 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Gmail controls checks</title><pre id="results">RUNNING</pre><iframe id="app" title="Тест почты платформы" style="width:1100px;height:900px;border:0"></iframe><script>
+(async()=>{
+ const rows=[],check=(name,ok)=>{rows.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=rows.join('|');},pause=()=>new Promise(r=>setTimeout(r,30));
+ try {
+  const source=await fetch('/platform').then(r=>r.text());
+  const code=await fetch('/platform.js').then(r=>r.text());
+  const stub=`<script>
+   window.__configured=false;window.__tests=0;window.__retries=0;window.__failed=1;
+   window.AshkanaApi={me:async()=>({session:{role:'platform_owner',name:'Owner',initials:'OO'}}),tenants:async()=>[],plans:async()=>[],connectionRequests:async()=>[],
+    mailStatus:async()=>({configured:window.__configured,sender:'oimogroup2027@gmail.com',counts:{pending:2,failed:window.__failed},recent:[{id:1,status:'failed',attempts:6,last_error:'SMTPAuthenticationError'},{id:2,status:'<img src=x onerror=alert(1)>',attempts:1}]}),
+    testMail:async()=>{window.__tests++;return {queued:true};},retryMail:async()=>{window.__retries++;window.__failed=0;return {ok:true};}};
+   window.fetch=()=>Promise.reject(new Error('Unexpected live API request'));
+  <\/script>`;
+  const frame=document.querySelector('#app');
+  const html=source.replace(/<script src="platform\.js[^"]*"><\/script>/,stub+'<script>'+code.replaceAll('location.origin','new URL(document.baseURI).origin')+'<\/script>');
+  await new Promise(resolve=>{frame.addEventListener('load',resolve,{once:true});frame.srcdoc=html.replace('<head>','<head><base href="/">');});
+  const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s);
+  for(let i=0;i<50&&!q('#mailStatus').textContent.includes('SMTP_PASSWORD');i++)await pause();
+  check('sender-and-missing-secret-visible',q('#mailStatus').textContent.includes('oimogroup2027@gmail.com')&&q('#mailStatus').textContent.includes('SMTP_PASSWORD'));
+  check('sending-disabled-before-configuration',q('#mailTest').disabled&&q('#mailRetry').disabled);
+  check('safe-actionable-auth-error',q('#mailRecent').textContent.includes('Проверьте пароль приложения Gmail'));
+  check('smtp-status-is-text-not-html',!q('#mailRecent img')&&q('#mailRecent').textContent.includes('<img'));
+  check('no-password-input-in-page',!q('input[name="smtp_password"]'));
+  w.__configured=true;q('#mailRefresh').click();await pause();
+  check('configured-controls-available',!q('#mailTest').disabled&&!q('#mailRetry').disabled);
+  q('#mailTest').click();await pause();
+  check('test-explicitly-queued-once',w.__tests===1&&q('#mailActionStatus').textContent.includes('поставлено в очередь'));
+  q('#mailRetry').click();await pause();
+  check('failed-retry-explicit-and-refreshed',w.__retries===1&&q('#mailRetry').disabled);
+  check('welcome-is-not-email-verification',q('.platform-mail').textContent.includes('не подтверждает владение email'));
+  frame.remove();
+ }catch(error){check('runtime:'+error.stack,false);}
+ document.body.dataset.done='true';
+})();
+</script></html>

@@ -116,6 +116,32 @@ try:
   assert trial['subscription_status']=='trialing' and trial['max_branches']==1
   assert trial['branch_count']==1
  print('PASS both public trial formats, automatic secure login, empty isolated workspace, retry without duplicate or trial extension, fixed server limits')
+ counts=run(['docker','exec',db,'psql','-U','postgres','-Atc',"SELECT count(*) FROM email_outbox WHERE status='pending' AND attempts=0"]).stdout.strip()
+ assert counts=='2',counts
+ assert api('/platform/mail')['configured'] is False
+ assert api('/platform/mail')['counts']['pending']==2
+ try:
+  api('/platform/mail/test',{})
+  raise AssertionError('SMTP test accepted without a configured password')
+ except urllib.error.HTTPError as error: assert error.code==409
+ probe='''from app.database import pool
+from app import mailer
+from pydantic import SecretStr
+pool.open(wait=True)
+cfg=mailer.get_settings().model_copy(update={'smtp_password':SecretStr('test-only-not-a-real-password')})
+sent=[]
+mailer.send_message=lambda row,settings: sent.append(row['dedup_key'])
+assert mailer.deliver_one(pool,cfg)
+assert mailer.deliver_one(pool,cfg)
+assert not mailer.deliver_one(pool,cfg)
+assert len(sent)==2 and len(set(sent))==2
+with pool.connection() as c:
+ assert c.execute("SELECT count(*) AS total FROM email_outbox WHERE status='sent' AND attempts=1").fetchone()['total']==2
+pool.close()
+'''
+ run(['docker','exec',web,'python','-c',probe])
+ assert api('/platform/mail')['counts']['sent']==2
+ print('PASS welcome emails queued atomically without retry duplicates; disabled SMTP keeps queue; real database claims and completion with mocked transport (no external mail)')
  # Expiry blocks existing sessions as well as replayed signup requests.
  run(['docker','exec',db,'psql','-U','postgres','-c',"UPDATE tenant_subscriptions SET trial_ends_at = now() - interval '1 day' WHERE tenant_id IN (SELECT tenant_id FROM trial_registrations)"])
  for data,result,trial_cookie in trials:

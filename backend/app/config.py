@@ -1,6 +1,7 @@
 from functools import lru_cache
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
+from pydantic import Field, SecretStr
 
 
 class Settings(BaseSettings):
@@ -15,6 +16,12 @@ class Settings(BaseSettings):
     session_cookie_secure: bool = False
     openai_api_key: str = ""
     invoice_photo_model: str = "gpt-4.1"
+    smtp_host: str = "smtp.gmail.com"
+    smtp_port: int = Field(default=465, ge=1, le=65535)
+    smtp_username: str = "oimogroup2027@gmail.com"
+    smtp_password: SecretStr = SecretStr("")
+    smtp_from_name: str = "Oimo"
+    public_app_url: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:

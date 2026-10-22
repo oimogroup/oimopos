@@ -336,6 +336,7 @@ async function bootstrap() {
     await loadTenants();
     await loadPlans();
     await loadConnectionRequests();
+    await loadMailStatus();
   } catch (error) {
     if (error.status === 401 || error.status === 403) {
       sessionStorage.removeItem(sessionKey);
@@ -491,3 +492,31 @@ $('#connectionRequestsList').addEventListener('click',async event=>{
   $('#tenantPhone').value='+'+row.phone;
   $('#tenantPlan').value=row.plan;
 });
+
+async function loadMailStatus() {
+  try {
+    const data = await window.AshkanaApi.mailStatus();
+    const counts = data.counts || {};
+    $('#mailStatus').textContent = `${data.sender}. ${data.configured ? 'SMTP настроен' : 'Добавьте SMTP_PASSWORD в Environment сервиса Render'}. В очереди: ${Number(counts.pending || 0) + Number(counts.sending || 0)}. Принято почтовым сервером: ${Number(counts.sent || 0)}. С ошибкой: ${Number(counts.failed || 0)}.`;
+    $('#mailTest').disabled = !data.configured;
+    $('#mailRetry').disabled = !data.configured || !Number(counts.failed || 0);
+    const labels = {pending:'Ожидает отправки',sending:'Отправляется',sent:'Принято почтовым сервером',failed:'Не отправлено'};
+    const errors = {SMTPAuthenticationError:'Проверьте пароль приложения Gmail',SMTPRecipientsRefused:'Адрес получателя отклонён',TimeoutError:'Почтовый сервер не ответил',DeliveryInterrupted:'Отправка прервана'};
+    $('#mailRecent').textContent = (data.recent || []).map(row => `#${row.id} · ${labels[row.status] || row.status} · попыток: ${row.attempts}${row.last_error ? ' · ' + (errors[row.last_error] || 'Ошибка соединения с почтой') : ''}`).join('\n');
+  } catch (error) {
+    $('#mailStatus').textContent = 'Не удалось проверить почту. ' + error.message;
+  }
+}
+$('#mailRefresh').addEventListener('click', () => loadMailStatus());
+for (const [selector, method, message] of [
+  ['#mailTest','testMail','Тестовое письмо поставлено в очередь. Получатель — ваш Gmail. Обновите статус через 15 секунд.'],
+  ['#mailRetry','retryMail','Письма с ошибками возвращены в очередь. Обновите статус через 15 секунд.'],
+]) {
+  $(selector).addEventListener('click', async event => {
+    const button = event.currentTarget;
+    button.disabled = true;
+    try {await window.AshkanaApi[method](); $('#mailActionStatus').textContent = message;}
+    catch (error) {$('#mailActionStatus').textContent = error.message;}
+    finally {await loadMailStatus();}
+  });
+}

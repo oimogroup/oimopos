@@ -64,6 +64,12 @@ services:
       SESSION_COOKIE_SECURE: ${SESSION_COOKIE_SECURE:-false}
       OPENAI_API_KEY: ${OPENAI_API_KEY:-}
       INVOICE_PHOTO_MODEL: ${INVOICE_PHOTO_MODEL:-gpt-4.1}
+      SMTP_HOST: ${SMTP_HOST:-smtp.gmail.com}
+      SMTP_PORT: ${SMTP_PORT:-465}
+      SMTP_USERNAME: ${SMTP_USERNAME:-oimogroup2027@gmail.com}
+      SMTP_PASSWORD: ${SMTP_PASSWORD:-}
+      SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Oimo}
+      PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://127.0.0.1:8000}
     ports:
       - "${API_PORT:-8001}:8000"
     healthcheck:

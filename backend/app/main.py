@@ -2,6 +2,7 @@ from __future__ import annotations
 from . import production_shifts
 
 from contextlib import asynccontextmanager
+import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import re
@@ -108,8 +109,14 @@ def _ensure_operational_data() -> None:
 async def lifespan(_: FastAPI):
     open_pool()
     _ensure_operational_data()
-    yield
-    close_pool()
+    from .mailer import start_worker
+    mail_stop, mail_thread = start_worker(pool)
+    try:
+        yield
+    finally:
+        mail_stop.set()
+        await asyncio.to_thread(mail_thread.join, 20)
+        close_pool()
 
 
 app = FastAPI(
@@ -2740,3 +2747,6 @@ install_offline_pos(app)
 
 from .self_registration import install as install_self_registration
 install_self_registration(app)
+
+from .mailer import install as install_mailer
+install_mailer(app)

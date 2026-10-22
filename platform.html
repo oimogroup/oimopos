@@ -39,6 +39,7 @@
 
           <section class="platform-requests" id="connectionRequestsSection" aria-labelledby="connectionRequestsTitle"><header><div><h2 id="connectionRequestsTitle">Заявки с сайта <span id="connectionRequestCount"></span></h2><p>Контакты заведений, которые хотят подключить Oimo.</p></div><button id="refreshConnectionRequests" class="secondary-button" type="button">Обновить</button></header><div id="connectionRequestsList" aria-live="polite">Загружаем заявки…</div></section>
           <section class="platform-plans" aria-labelledby="plansTitle">
+            <details class="platform-mail"><summary>Почта Oimo · Gmail</summary><p id="mailStatus" role="status">Загрузка настроек почты…</p><p>После регистрации клиенту отправляется письмо о пробном доступе. Это письмо не подтверждает владение email.</p><div class="mail-actions"><button id="mailRefresh" class="secondary-button" type="button">Обновить статус</button><button id="mailTest" class="secondary-button" type="button" disabled>Отправить тест себе</button><button id="mailRetry" class="secondary-button" type="button" disabled>Повторить письма с ошибкой</button></div><p id="mailActionStatus" aria-live="polite"></p><div id="mailRecent"></div></details>
             <div><h2 id="plansTitle">Тарифы</h2><p>Стоимость за аккаунт в месяц, в сомах. Изменения сохраняются в каталоге; платежи и списания автоматически не выполняются.</p></div>
             <div id="planCards" class="plan-cards" aria-live="polite">Загрузка тарифов…</div>
           </section>
