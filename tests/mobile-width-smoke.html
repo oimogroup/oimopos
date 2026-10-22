@@ -1,0 +1,60 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Mobile width checks</title><pre id="results">RUNNING</pre><script>
+(async()=>{
+ const checks=[],pause=(ms=70)=>new Promise(resolve=>setTimeout(resolve,ms));
+ const check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');};
+ const f=document.createElement('iframe');f.style.cssText='width:320px;height:844px;border:0';document.body.append(f);
+ try{
+  await new Promise(resolve=>{f.onload=resolve;f.src='/admin?test=1';});await pause(300);
+  const w=f.contentWindow,d=f.contentDocument,q=s=>d.querySelector(s),content=q('.admin-content');
+  const stable=()=>{
+   for(const el of [d.documentElement,d.body,content])el.scrollLeft=150;
+   return [d.documentElement,d.body,content].every(el=>el.scrollLeft===0&&el.scrollWidth<=el.clientWidth+1);
+  };
+  const fits=selector=>[...d.querySelectorAll(selector)].every(el=>{
+   const r=el.getBoundingClientRect();return !r.width||(r.left>=-1&&r.right<=w.innerWidth+1&&el.scrollWidth<=el.clientWidth+1);
+  });
+  const routes=[
+   ['dashboard',()=>w.switchView('dashboard')],
+   ...[...d.querySelectorAll('[data-menu-page]')].map(b=>['menu/'+b.dataset.menuPage,()=>w.switchMenuPage(b.dataset.menuPage)]),
+   ...[...d.querySelectorAll('[data-stock-tab]')].map(b=>['stock/'+b.dataset.stockTab,()=>{w.switchView('inventory');w.switchStockTab(b.dataset.stockTab);}]),
+   ...[...d.querySelectorAll('[data-finance-tab]')].map(b=>['finance/'+b.dataset.financeTab,()=>{w.switchView('finance');w.switchFinanceTab(b.dataset.financeTab);}]),
+   ...[...d.querySelectorAll('[data-analytics-tab]')].map(b=>['reports/'+b.dataset.analyticsTab,()=>{w.switchView('reports');w.switchAnalyticsTab(b.dataset.analyticsTab);}]),
+   ...['branches','registers','employees','settings'].map(v=>[v,()=>w.switchView(v)])
+  ];
+  for(const width of [320,390,430,700]){
+   f.style.width=width+'px';await pause();
+   for(const [name,open] of routes){open();await pause(15);check('no-page-pan-'+name+'-'+width,stable());}
+   w.switchView('inventory');w.switchStockTab('overview');
+   q('#stockValue').textContent='1000000000000,00 сом';
+   check('stock-cards-wrap-large-amounts-'+width,stable()&&fits('.inventory-summary article'));
+   const table=q('#stock-pane-overview .table-panel');table.scrollLeft=100;
+   check('stock-table-scrolls-independently-'+width,table.scrollLeft>0&&content.scrollLeft===0&&d.documentElement.scrollLeft===0);
+   table.scrollLeft=0;
+   w.switchView('reports');w.switchAnalyticsTab('abc');
+   check('abc-groups-stay-within-screen-'+width,stable()&&fits('.report-callout>div'));
+   w.eval("employees=[{id:42,display_name:'Staff'+('LongName'.repeat(12)),login:'email'+('longalias'.repeat(12))+'@example.com',staff_role:'cashier',branch_id:'b1',is_active:true,has_pin:true}];renderEmployees();");
+   w.switchView('employees');await pause();
+   q('#employeesTable [data-mobile-record-toggle]').click();
+   check('long-employee-details-wrap-'+width,stable()&&fits('#employeesTable td,.employee-summary article,.employee-person'));
+   for(const [fn,id] of [['openRecipeForm','recipeModal'],['openPreparationForm','preparationModal'],['openEmployeeForm','employeeModal'],['openRegisterForm','registerModal']]){
+    w[fn]();await pause();
+    const body=q('#'+id+' .catalog-editor-body')||q('#'+id+' .mobile-access-editor-body');
+    body.scrollLeft=150;
+    check('editor-no-horizontal-pan-'+id+'-'+width,body.scrollLeft===0&&body.scrollWidth<=body.clientWidth+1);
+    if(id==='recipeModal'||id==='preparationModal'){
+     const row=q('#'+id+' .component-editor-row'),input=row.querySelector('.ingredient-picker input');
+     input.focus();input.value='';input.dispatchEvent(new w.Event('input',{bubbles:true}));
+     const options=row.querySelector('.ingredient-picker-options');
+     check('ingredient-search-fits-and-is-not-clipped-'+id+'-'+width,!options.hidden&&options.getBoundingClientRect().right<=width+1&&w.getComputedStyle(options.parentElement.parentElement.parentElement).overflowX==='visible');
+     input.blur();
+    }
+    q('#'+id+' [data-close="'+id+'"]').click();
+   }
+  }
+  f.style.width='390px';f.style.height='568px';await pause();w.switchView('dashboard');
+  content.scrollTop=100;
+  check('vertical-page-scroll-preserved',content.scrollTop>0&&stable());
+ }catch(error){check('runtime:'+error.stack,false);}
+ finally{f.remove();document.body.dataset.done='true';}
+})();
+</script></html>
