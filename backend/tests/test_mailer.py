@@ -62,6 +62,25 @@ def test_secret_is_redacted_and_unconfigured_transport_does_not_connect(monkeypa
     with pytest.raises(RuntimeError): mailer.send_message(ROW,cfg)
 
 
+def test_cloudflare_smtp_uses_token_auth_but_domain_from_and_message_id(monkeypatch):
+    client=SMTP()
+    monkeypatch.setattr(mailer.smtplib,'SMTP_SSL',lambda *a,**kw:client)
+    cfg=settings(smtp_host='smtp.mx.cloudflare.net',smtp_username='api_token',smtp_from='support@oimopos.com')
+    assert mailer.configured(cfg)
+    mailer.send_message(ROW,cfg)
+    assert ('login','api_token','abcd efgh ijkl mnop') in client.calls
+    message=next(c[1] for c in client.calls if c[0]=='send')
+    assert str(message['From'])=='Oimo <support@oimopos.com>'
+    assert message['Message-ID'].endswith('@oimopos.com>')
+    assert 'api_token' not in message.as_string()
+
+
+@pytest.mark.parametrize('address',['','not-an-email','support@example.com\nBcc:other@example.com'])
+def test_token_login_requires_valid_separate_sender(address):
+    cfg=settings(smtp_username='api_token',smtp_from=address)
+    assert not mailer.configured(cfg)
+
+
 @pytest.mark.parametrize('url,expected', [
     ('https://oimo.example','https://oimo.example/login'),
     ('http://127.0.0.1:8000','http://127.0.0.1:8000/login'),
@@ -132,3 +151,19 @@ def test_mail_controls_are_platform_only_and_never_expose_password(monkeypatch):
     assert insert[2]=='oimogroup2027@gmail.com'
     cfg.smtp_password=SecretStr('')
     assert client.post('/api/v1/platform/mail/test',headers=headers).status_code==409
+
+
+def test_cloudflare_status_and_test_use_domain_from_but_gmail_recipient(monkeypatch):
+    cfg=settings(smtp_host='smtp.mx.cloudflare.net',smtp_username='api_token',smtp_from='support@oimopos.com')
+    monkeypatch.setattr(mailer,'get_settings',lambda:cfg)
+    app=FastAPI();mailer.install(app)
+    connection=Connection()
+    app.dependency_overrides[main.current_user]=lambda:dict(role='platform_owner',id=1)
+    app.dependency_overrides[main.get_connection]=lambda:connection
+    client=TestClient(app)
+    status=client.get('/api/v1/platform/mail').json()
+    assert status['sender']=='support@oimopos.com' and status['testRecipient']=='oimogroup2027@gmail.com'
+    assert 'api_token' not in repr(status) and 'abcd efgh' not in repr(status)
+    assert client.post('/api/v1/platform/mail/test',headers={'Origin':'http://127.0.0.1:8000'}).json()=={'queued':True}
+    insert=next(p for sql,p in connection.calls if 'INSERT INTO email_outbox' in sql)
+    assert insert[2]=='oimogroup2027@gmail.com' and 'support@oimopos.com' in insert[4]

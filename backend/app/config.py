@@ -21,6 +21,8 @@ class Settings(BaseSettings):
     smtp_username: str = "oimogroup2027@gmail.com"
     smtp_password: SecretStr = SecretStr("")
     smtp_from_name: str = "Oimo"
+    smtp_from: str = ""
+    smtp_test_recipient: str = "oimogroup2027@gmail.com"
     public_app_url: str = ""
 
     @property

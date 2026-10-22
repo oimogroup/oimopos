@@ -19,7 +19,16 @@ log = logging.getLogger(__name__)
 
 
 def configured(settings):
-    return bool(settings.smtp_host and settings.smtp_username and settings.smtp_password.get_secret_value())
+    return bool(settings.smtp_host and settings.smtp_username and settings.smtp_password.get_secret_value() and sender(settings))
+
+
+def sender(settings):
+    value = settings.smtp_from or settings.smtp_username
+    try:
+        address = Address(addr_spec=value)
+        return value if address.username and address.domain else ''
+    except ValueError:
+        return ''
 
 
 def login_url(settings):
@@ -63,11 +72,12 @@ def send_message(row, settings):
     if not configured(settings):
         raise RuntimeError('SMTP is not configured')
     message = EmailMessage()
-    message['From'] = Address(settings.smtp_from_name, addr_spec=settings.smtp_username)
+    from_address = sender(settings)
+    message['From'] = Address(settings.smtp_from_name, addr_spec=from_address)
     message['To'] = Address(addr_spec=row['recipient'])
     message['Subject'] = row['subject']
     digest = hashlib.sha256(row['dedup_key'].encode()).hexdigest()
-    message['Message-ID'] = f'<oimo-{digest}@{settings.smtp_username.rsplit("@", 1)[-1]}>'
+    message['Message-ID'] = f'<oimo-{digest}@{from_address.rsplit("@", 1)[-1]}>'
     message['Date'] = formatdate(localtime=False)
     message.set_content(row['body'])
     context = ssl.create_default_context()
@@ -155,7 +165,7 @@ def install(app):
         recent = connection.execute(
             'SELECT id, status, attempts, last_error, created_at, sent_at FROM email_outbox ORDER BY id DESC LIMIT 10'
         ).fetchall()
-        return dict(configured=configured(settings), sender=settings.smtp_username,
+        return dict(configured=configured(settings), sender=sender(settings), testRecipient=settings.smtp_test_recipient,
                     counts={row['status']: row['total'] for row in counts}, recent=[dict(row) for row in recent])
 
     @app.post('/api/v1/platform/mail/test', tags=['platform'])
@@ -164,14 +174,14 @@ def install(app):
         main._platform_owner(user)
         settings = get_settings()
         if not configured(settings):
-            raise HTTPException(409, 'Добавьте SMTP_PASSWORD в Environment сервиса Render.')
+            raise HTTPException(409, 'Проверьте SMTP_HOST, SMTP_USERNAME, SMTP_FROM и SMTP_PASSWORD в Environment сервиса Render.')
         with connection.transaction():
             connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('mail-test',0))")
             recent = connection.execute("SELECT id FROM email_outbox WHERE dedup_key LIKE 'test:%' AND created_at > now()-interval '1 minute' LIMIT 1").fetchone()
             if recent:
                 raise HTTPException(429, 'Тестовое письмо уже в очереди. Подождите минуту.')
-            enqueue(connection, dedup_key='test:'+str(uuid4()), recipient=settings.smtp_username,
-                    subject='Oimo — проверка Gmail', body='Gmail успешно принял тестовое письмо от Oimo.\n')
+            enqueue(connection, dedup_key='test:'+str(uuid4()), recipient=settings.smtp_test_recipient,
+                    subject='Oimo — проверка системной почты', body=f'Это тестовое письмо от Oimo.\nОтправитель: {sender(settings)}\n')
         return {'queued': True}
 
     @app.post('/api/v1/platform/mail/retry', tags=['platform'])

@@ -497,11 +497,11 @@ async function loadMailStatus() {
   try {
     const data = await window.AshkanaApi.mailStatus();
     const counts = data.counts || {};
-    $('#mailStatus').textContent = `${data.sender}. ${data.configured ? 'SMTP настроен' : 'Добавьте SMTP_PASSWORD в Environment сервиса Render'}. В очереди: ${Number(counts.pending || 0) + Number(counts.sending || 0)}. Принято почтовым сервером: ${Number(counts.sent || 0)}. С ошибкой: ${Number(counts.failed || 0)}.`;
+    $('#mailStatus').textContent = `${data.sender || 'Отправитель не задан'}. ${data.configured ? 'Параметры отправки заданы' : 'Проверьте SMTP_PASSWORD и SMTP_FROM в Environment сервиса Render'}. Тестовый получатель: ${data.testRecipient || 'не указан'}. В очереди: ${Number(counts.pending || 0) + Number(counts.sending || 0)}. Принято почтовым сервером: ${Number(counts.sent || 0)}. С ошибкой: ${Number(counts.failed || 0)}.`;
     $('#mailTest').disabled = !data.configured;
     $('#mailRetry').disabled = !data.configured || !Number(counts.failed || 0);
     const labels = {pending:'Ожидает отправки',sending:'Отправляется',sent:'Принято почтовым сервером',failed:'Не отправлено'};
-    const errors = {SMTPAuthenticationError:'Проверьте пароль приложения Gmail',SMTPRecipientsRefused:'Адрес получателя отклонён',TimeoutError:'Почтовый сервер не ответил',DeliveryInterrupted:'Отправка прервана'};
+    const errors = {SMTPAuthenticationError:'Проверьте SMTP_USERNAME и SMTP_PASSWORD',SMTPSenderRefused:'Проверьте подтверждение домена отправителя',SMTPRecipientsRefused:'Адрес получателя отклонён',TimeoutError:'Почтовый сервер не ответил',DeliveryInterrupted:'Отправка прервана'};
     $('#mailRecent').textContent = (data.recent || []).map(row => `#${row.id} · ${labels[row.status] || row.status} · попыток: ${row.attempts}${row.last_error ? ' · ' + (errors[row.last_error] || 'Ошибка соединения с почтой') : ''}`).join('\n');
   } catch (error) {
     $('#mailStatus').textContent = 'Не удалось проверить почту. ' + error.message;
@@ -509,7 +509,7 @@ async function loadMailStatus() {
 }
 $('#mailRefresh').addEventListener('click', () => loadMailStatus());
 for (const [selector, method, message] of [
-  ['#mailTest','testMail','Тестовое письмо поставлено в очередь. Получатель — ваш Gmail. Обновите статус через 15 секунд.'],
+  ['#mailTest','testMail','Тестовое письмо поставлено в очередь. Получатель указан в статусе почты. Обновите статус через 15 секунд.'],
   ['#mailRetry','retryMail','Письма с ошибками возвращены в очередь. Обновите статус через 15 секунд.'],
 ]) {
   $(selector).addEventListener('click', async event => {

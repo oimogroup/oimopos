@@ -69,6 +69,8 @@ services:
       SMTP_USERNAME: ${SMTP_USERNAME:-oimogroup2027@gmail.com}
       SMTP_PASSWORD: ${SMTP_PASSWORD:-}
       SMTP_FROM_NAME: ${SMTP_FROM_NAME:-Oimo}
+      SMTP_FROM: ${SMTP_FROM:-}
+      SMTP_TEST_RECIPIENT: ${SMTP_TEST_RECIPIENT:-oimogroup2027@gmail.com}
       PUBLIC_APP_URL: ${PUBLIC_APP_URL:-http://127.0.0.1:8000}
     ports:
       - "${API_PORT:-8001}:8000"
