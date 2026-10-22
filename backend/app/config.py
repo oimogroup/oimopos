@@ -1,7 +1,14 @@
 from functools import lru_cache
+import json
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from pydantic import Field, SecretStr
+
+
+# Public business requisites supplied for the website, never credentials.
+# Deployment environment variables can override each field.
+_SELLER = json.loads(Path(__file__).with_name('public_seller.json').read_text(encoding='utf-8'))
 
 
 class Settings(BaseSettings):
@@ -36,6 +43,10 @@ class Settings(BaseSettings):
     seller_phone: str = ""
     seller_bank_details: str = ""
     seller_support_email: str = "support@oimopos.com"
+    seller_backup_email: str = ""
+    seller_registration_number: str = ""
+    seller_registration_date: str = ""
+    seller_okpo: str = ""
 
     @property
     def allowed_origins(self) -> list[str]:
@@ -44,4 +55,6 @@ class Settings(BaseSettings):
 
 @lru_cache
 def get_settings() -> Settings:
-    return Settings()
+    settings=Settings()
+    return settings.model_copy(update={field:value for field,value in _SELLER.items()
+      if value and (field not in settings.model_fields_set or not getattr(settings,field,'').strip())})

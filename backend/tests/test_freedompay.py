@@ -15,7 +15,8 @@ from app.config import Settings
 
 
 def config(**changes):
-    return Settings(database_url='',public_app_url='https://oimo.example',freedompay_merchant_id='123',freedompay_secret_key=SecretStr('test-secret'),**changes)
+    seller={field:'' for field in (*legal.FIELDS,*legal.OPTIONAL_FIELDS)}
+    return Settings(database_url='',public_app_url='https://oimo.example',freedompay_merchant_id='123',freedompay_secret_key=SecretStr('test-secret'),**{**seller,**changes})
 
 
 def test_protocol_signature_uses_sorted_values_script_and_secret():
@@ -119,3 +120,46 @@ def test_incomplete_seller_disables_checkout_and_legal_routes_escape_identity(mo
     cfg.seller_legal_name='<script>alert(1)</script>'
     assert '<script>alert' not in client.get('/legal/contacts').text
     before=legal.version(cfg);cfg.seller_address='Changed';assert legal.version(cfg)!=before
+
+
+def test_published_profile_fills_blank_environment_but_keeps_explicit_overrides(monkeypatch):
+    from app import config as config_module
+    monkeypatch.setattr(config_module,'_SELLER',{'seller_legal_name':'Test seller','seller_bank_details':'Test bank account','seller_phone':'','seller_support_email':'profile@example.com'})
+    monkeypatch.setenv('DATABASE_URL','')
+    monkeypatch.setenv('SELLER_LEGAL_NAME','')
+    monkeypatch.setenv('SELLER_BANK_DETAILS','')
+    monkeypatch.setenv('SELLER_PHONE','')
+    monkeypatch.delenv('SELLER_SUPPORT_EMAIL',raising=False)
+    config_module.get_settings.cache_clear()
+    try:
+        settings=config_module.get_settings()
+        assert settings.seller_legal_name=='Test seller'
+        assert settings.seller_bank_details=='Test bank account'
+        assert settings.seller_phone==''
+        assert settings.seller_support_email=='profile@example.com'
+        monkeypatch.setenv('SELLER_LEGAL_NAME','Explicit seller')
+        monkeypatch.setenv('SELLER_SUPPORT_EMAIL','override@example.com')
+        config_module.get_settings.cache_clear()
+        assert config_module.get_settings().seller_legal_name=='Explicit seller'
+        assert config_module.get_settings().seller_support_email=='override@example.com'
+    finally:
+        config_module.get_settings.cache_clear()
+
+
+def test_legal_pages_publish_requisites_and_only_missing_phone_keeps_draft(monkeypatch):
+    cfg=config(seller_legal_name='Test seller',seller_tax_id='Test INN',seller_address='Test address',
+               seller_bank_details='Recipient INN: Test INN\nBank INN: Different bank INN\nAccount: test',
+               seller_support_email='support@example.com',seller_backup_email='backup@example.com',
+               seller_registration_number='Test registration',seller_registration_date='20.10.2026',seller_okpo='Test OKPO')
+    assert legal.missing(cfg)==['SELLER_PHONE']
+    monkeypatch.setattr(legal,'get_settings',lambda:cfg)
+    client=TestClient(main.app)
+    for kind in ['offer','privacy','refunds','contacts','payment']:
+        response=client.get('/legal/'+kind)
+        assert response.status_code==200
+        assert 'Test seller' in response.text and 'Test registration' in response.text
+        assert 'Different bank INN' in response.text and 'backup@example.com' in response.text
+        assert 'Для публикации осталось заполнить: рабочий телефон' in response.text
+    cfg.seller_phone='+996555000000'
+    assert not legal.missing(cfg) and 'Проект документа' not in client.get('/legal/offer').text
+    assert 'FREEDOMPAY_ENABLED' in billing.readiness(cfg)

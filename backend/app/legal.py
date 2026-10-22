@@ -7,16 +7,18 @@ from fastapi.responses import HTMLResponse
 
 from .config import get_settings
 
-VERSION = '2026-10-22-v1'
+VERSION = '2026-10-22-v2'
 FIELDS = ('seller_legal_name','seller_tax_id','seller_address','seller_phone','seller_bank_details','seller_support_email')
+OPTIONAL_FIELDS = ('seller_backup_email','seller_registration_number','seller_registration_date','seller_okpo')
 
 
 def identity(settings):
-    return {field: getattr(settings,field).strip() for field in FIELDS}
+    return {field: getattr(settings,field,'').strip() for field in (*FIELDS,*OPTIONAL_FIELDS)}
 
 
 def missing(settings):
-    return [field.upper() for field,value in identity(settings).items() if not value]
+    seller=identity(settings)
+    return [field.upper() for field in FIELDS if not seller[field]]
 
 
 def version(settings):
@@ -35,13 +37,17 @@ def page(kind, settings):
     name=escape(seller['seller_legal_name'] or 'Продавец будет указан до начала приёма оплаты')
     email=escape(seller['seller_support_email'])
     contact=f'<a href="mailto:{email}">{email}</a>'
+    backup=escape(seller['seller_backup_email'])
+    contact_options=contact+(f' (резервный адрес: <a href="mailto:{backup}">{backup}</a>)' if backup and backup!=email else '')
+    registration=''.join(f'<dt>{label}</dt><dd>{escape(seller[field])}</dd>' for field,label in (
+      ('seller_registration_number','Регистрационный номер ИП'),('seller_registration_date','Дата регистрации'),('seller_okpo','ОКПО')) if seller[field])
     common=f'''<section><h2>Продавец и связь</h2><dl><dt>Наименование</dt><dd>{name}</dd>
-    <dt>ИНН</dt><dd>{escape(seller['seller_tax_id']) or 'Будет опубликован'}</dd>
+    <dt>ИНН продавца</dt><dd>{escape(seller['seller_tax_id']) or 'Будет опубликован'}</dd>{registration}
     <dt>Адрес</dt><dd>{escape(seller['seller_address']) or 'Будет опубликован'}</dd>
     <dt>Телефон</dt><dd>{escape(seller['seller_phone']) or 'Будет опубликован'}</dd>
-    <dt>Email</dt><dd>{contact}</dd><dt>Банковские реквизиты</dt><dd>{escape(seller['seller_bank_details']) or 'Будут опубликованы'}</dd></dl></section>'''
+    <dt>Email</dt><dd>{contact_options}</dd><dt>Банковские реквизиты</dt><dd>{escape(seller['seller_bank_details']) or 'Будут опубликованы'}</dd></dl></section>'''
     texts={
-      'offer':f'''<p>Эти условия описывают предоставление доступа к сервису Oimo на сайте oimopos.com. Продавец — {name}. Заказчик — владелец зарегистрированного аккаунта компании.</p>
+      'offer':f'''<p>Эти условия описывают предоставление доступа к сервису на <a href="/">сайте Oimo</a>. Продавец — {name}. Заказчик — владелец зарегистрированного аккаунта компании.</p>
       <h2>Услуга</h2><p>Oimo предоставляет удалённый доступ к программе для управления заведением: меню, кассой, складом, производством, сотрудниками и управленческими отчётами. Состав функций зависит от тарифа. Фискализация и услуги банковского эквайринга для гостей заведения в подписку автоматически не включаются.</p>
       <h2>Пробный доступ</h2><p>После самостоятельной регистрации предоставляются 14 дней пробного доступа для одного заведения. Регистрация не привязывает банковскую карту и не запускает списания.</p>
       <h2>Тариф и срок</h2><p>Действующие цены указаны в сомах на <a href="/#pricing">странице тарифов</a> и в <a href="/billing">разделе подписки</a>. Перед оплатой заказчик видит окончательную сумму. Один платёж оплачивает один календарный месяц текущего тарифа и действующий лимит заведений, указанный в заказе. Смена формата и расширение лимита согласуются отдельно.</p>
@@ -67,11 +73,14 @@ def page(kind, settings):
       <ol><li>Войдите как владелец компании и откройте <a href="/billing">«Подписка и оплата»</a>.</li><li>Проверьте тариф, сумму и условия; подтвердите согласие с офертой.</li><li>Перейдите на платёжную страницу Freedom Pay и выберите доступный способ оплаты. Реквизиты карты вводятся на стороне Freedom Pay.</li><li>Вернитесь в Oimo и проверьте статус. После подтверждения платежа появятся новые даты доступа.</li></ol>
       <p>Повторное нажатие кнопки при незавершённой оплате возвращает к существующему заказу. Если деньги списаны, а статус ещё не обновлён, нажмите «Проверить оплату»; повторно оплачивать тот же заказ не нужно.</p>
       <p>Автопродление и списания без вашего действия не подключены. Доступность способов оплаты определяется подключением магазина и показана на странице Freedom Pay. Возвраты описаны <a href="/legal/refunds">отдельно</a>.</p>
+      <p>Планируемые способы приёма оплаты — банковские карты Visa, Mastercard и Элкарт. Способы будут доступны после подключения магазина и подтверждения их платёжным провайдером.</p>
       <div style="display:flex;align-items:center;gap:24px;flex-wrap:wrap" aria-label="Платёжные системы Freedom Pay"><img src="/vendor/payment-logos/visa.svg" alt="Visa" width="70" height="38"><img src="/vendor/payment-logos/mastercard.svg" alt="Mastercard" width="70" height="45"><img src="/vendor/payment-logos/elkart.svg" alt="Элкарт" width="90" height="42"></div>''',
       'contacts':'<p>Oimo — сервис управления столовыми, кафе и ресторанами. По вопросам доступа, оплаты и возвратов обращайтесь по контактам ниже.</p>',
     }
     title=labels[kind]
-    draft='<aside role="status">Проект документа: реквизиты продавца ещё не заполнены. До их публикации этот текст не является предложением оплатить услугу; онлайн-оплата недоступна.</aside>' if missing(settings) else ''
+    field_labels={'SELLER_LEGAL_NAME':'наименование продавца','SELLER_TAX_ID':'ИНН продавца','SELLER_ADDRESS':'адрес продавца','SELLER_PHONE':'рабочий телефон','SELLER_BANK_DETAILS':'банковские реквизиты','SELLER_SUPPORT_EMAIL':'email поддержки'}
+    absent=missing(settings)
+    draft=f'<aside role="status">Проект документа. Для публикации осталось заполнить: {", ".join(field_labels[field] for field in absent)}. До этого этот текст не является предложением оплатить услугу; онлайн-оплата недоступна.</aside>' if absent else ''
     html=f'''<!doctype html><html lang="ru"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width,initial-scale=1"><title>{title} · Oimo</title><link rel="icon" href="/favicon.svg"><style>
     *{{box-sizing:border-box}}body{{margin:0;background:#f8f6f2;color:#302b32;font:16px/1.7 system-ui,sans-serif}}main{{max-width:880px;margin:auto;padding:30px 24px 60px}}nav{{display:flex;gap:18px;flex-wrap:wrap;margin:18px 0 32px}}a{{color:#61425e}}h1{{font-size:clamp(27px,5vw,42px);line-height:1.2}}h2{{font-size:21px;margin-top:30px}}aside{{padding:18px;background:#fff0d5;border-radius:12px}}dd{{margin:0 0 12px;white-space:pre-line;overflow-wrap:anywhere}}dt{{font-size:13px;color:#746575}}small{{color:#746575}}</style></head><body><main><a href="/">← Oimo</a><nav><a href="/legal/offer">Условия</a><a href="/legal/privacy">Конфиденциальность</a><a href="/legal/refunds">Возвраты</a><a href="/legal/payment">Оплата</a><a href="/legal/contacts">Контакты</a></nav>{draft}<h1>{title}</h1><small>Редакция {VERSION}</small>{texts[kind]}{common}</main></body></html>'''
     return HTMLResponse(html,headers={'Cache-Control':'no-store'})
