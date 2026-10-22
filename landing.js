@@ -48,35 +48,39 @@
     const hex=[...bytes].map(n=>n.toString(16).padStart(2,'0')).join('');
     return `${hex.slice(0,8)}-${hex.slice(8,12)}-${hex.slice(12,16)}-${hex.slice(16,20)}-${hex.slice(20)}`;
   };
-  try { pending = JSON.parse(sessionStorage.getItem('oimo-connection-pending') || 'null'); } catch (_) { /* Storage is optional. */ }
+  try { pending = JSON.parse(sessionStorage.getItem('oimo-registration-pending') || 'null'); } catch (_) { /* Storage is optional. */ }
   // Recover only the request ID and fingerprint; contact details stay out of storage.
   form.addEventListener('submit', async event => {
     event.preventDefault();
     if (busy || !form.reportValidity()) return;
-    const payload = {name:form.elements.name.value.trim(),phone:form.elements.phone.value.trim(),company:form.elements.company.value.trim(),plan:form.elements.plan.value,consent:form.elements.consent.checked,website:form.elements.website.value};
+    const payload = {name:form.elements.name.value.trim(),phone:form.elements.phone.value.trim(),company:form.elements.company.value.trim(),plan:form.elements.plan.value,consent:form.elements.consent.checked,website:form.elements.website.value,email:form.elements.email.value.trim().toLowerCase(),password:form.elements.password.value};
+    if(payload.password!==form.elements.passwordConfirm.value){message.textContent='Пароли не совпадают.';form.elements.passwordConfirm.focus();return;}
     const digits=payload.phone.replace(/\D/g,'');
     if (!/^[+\d ()-]+$/.test(payload.phone) || digits.length<7 || digits.length>15) { message.textContent='Проверьте номер телефона: укажите от 7 до 15 цифр.';form.elements.phone.focus();return; }
     if (payload.name.length<2 || payload.company.length<2) { message.textContent='Укажите имя и название заведения — минимум 2 символа.';return; }
     // A lost response must never create a second request. A changed form starts a new one.
-    busy=true;submit.disabled=true;submit.textContent='Отправляем…';message.textContent='';
+    busy=true;submit.disabled=true;submit.textContent='Создаём аккаунт…';message.textContent='';
     const text=JSON.stringify(payload);
     let fingerprint;
     try {
       const hash=await crypto.subtle.digest('SHA-256',new TextEncoder().encode(text));
       fingerprint=[...new Uint8Array(hash)].map(n=>n.toString(16).padStart(2,'0')).join('');
-    } catch (_) { fingerprint=text; }
-    if (!pending || pending.fingerprint!==fingerprint) pending={id:makeId(),fingerprint};
-    if (fingerprint!==text) { try { sessionStorage.setItem('oimo-connection-pending',JSON.stringify(pending)); } catch (_) {} }
+    } catch (_) { fingerprint=null; }
+    if (!pending || !fingerprint || pending.fingerprint!==fingerprint) pending={id:makeId(),fingerprint};
+    if (fingerprint) { try { sessionStorage.setItem('oimo-registration-pending',JSON.stringify(pending)); } catch (_) {} }
     try {
-      const response=await fetch('/api/v1/public/connection-requests',{method:'POST',credentials:'omit',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,request_id:pending.id})});
+      const response=await fetch('/api/v1/public/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,request_id:pending.id})});
       const contentType=response.headers.get('Content-Type') || '';
       const body=contentType.includes('application/json') ? await response.json() : null;
-      if(!response.ok) throw new Error(typeof body?.detail==='string' ? body.detail : response.status===422 ? 'Проверьте имя, телефон и название заведения.' : 'Не удалось отправить заявку. Повторите попытку.');
-      if(body?.ok!==true) throw new Error('Нет подтверждения приёма заявки. Повторите отправку.');
-      pending=null;try {sessionStorage.removeItem('oimo-connection-pending');}catch(_){}
+      if(!response.ok) throw new Error(typeof body?.detail==='string' ? body.detail : response.status===422 ? 'Проверьте поля формы. Пароль — минимум 12 символов.' : 'Не удалось создать аккаунт. Повторите попытку.');
+      if(!body?.session || body.redirect!=='/admin') throw new Error('Нет подтверждения регистрации. Повторите попытку.');
+      try{sessionStorage.setItem('ashkana-auth-session-v1',JSON.stringify(body.session));}catch(_){}
+      pending=null;try {sessionStorage.removeItem('oimo-registration-pending');}catch(_){}
+      form.elements.password.value='';form.elements.passwordConfirm.value='';
       form.hidden=true;
       const success=document.getElementById('formSuccess');success.hidden=false;success.tabIndex=-1;success.focus();
+      setTimeout(() => window.location.assign('/admin'), 300);
     } catch(error) {message.textContent=error.message==='Failed to fetch' ? 'Нет связи с сервером. Проверьте интернет и повторите отправку.' : error.message;}
-    finally {busy=false;submit.disabled=false;submit.innerHTML='Оставить заявку <span aria-hidden="true">↗</span>';}
+    finally {busy=false;submit.disabled=false;submit.innerHTML='Создать аккаунт <span aria-hidden="true">↗</span>';}
   });
 })();

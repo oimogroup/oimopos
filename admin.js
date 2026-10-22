@@ -6930,6 +6930,14 @@ async function initializeApplication() {
     }
   }
   applyRoleWorkspace();
+  const trialNotice = document.querySelector('#trialNotice');
+  if (trialNotice && currentRole === 'owner' && currentSession.subscriptionStatus === 'trialing' && currentSession.trialEndsAt) {
+    const end = new Date(currentSession.trialEndsAt);
+    if (Number.isFinite(end.getTime())) {
+      trialNotice.hidden = false;
+      trialNotice.textContent = `Пробный доступ до ${end.toLocaleDateString('ru-RU')}. Осталось дней: ${Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000))}. Для продолжения после пробного периода свяжитесь с командой Oimo. Автоматических списаний нет.`;
+    }
+  }
   renderAll();
   routeInitialWorkspace();
 }

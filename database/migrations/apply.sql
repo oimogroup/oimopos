@@ -79,3 +79,8 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '017_connecti
 \if :run_017
   \ir 017_connection_requests.sql
 \endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '018_trial_registration') AS run_018 \gset
+\if :run_018
+  \ir 018_trial_registration.sql
+\endif

@@ -1,4 +1,5 @@
 import subprocess, secrets, os, time, urllib.request, json
+from uuid import uuid4
 suffix=secrets.token_hex(4); network='oimo-check-'+suffix; db=network+'-db'; web=network+'-web'
 def run(args,**kwargs): return subprocess.run(args,check=True,stdout=subprocess.PIPE,stderr=subprocess.PIPE,text=True,**kwargs)
 password=secrets.token_hex(24)
@@ -79,6 +80,53 @@ try:
  headers['Cookie']=platform_cookie
  print('PASS deletion confirmation, complete account removal, second tenant isolation and audit')
  print('PASS startup, health, frontend, private files not served, login and Secure cookie')
+ # Public registrations must create isolated trials and authenticated owner sessions.
+ public_headers={'Content-Type':'application/json','Origin':env['RENDER_EXTERNAL_URL']}
+ def signup(data, expected=201):
+  req=urllib.request.Request('http://127.0.0.1:18080/api/v1/public/register',data=json.dumps(data).encode(),headers=public_headers)
+  try:
+   with urllib.request.urlopen(req) as response:
+    assert response.status==expected
+    assert 'HttpOnly' in response.headers['Set-Cookie'] and 'Secure' in response.headers['Set-Cookie']
+    return json.load(response),response.headers['Set-Cookie'].split(';')[0]
+  except urllib.error.HTTPError as error:
+   assert error.code==expected,(error.code,error.read())
+ trials=[]
+ for index,plan in enumerate(['canteen','restaurant']):
+  data={'request_id':str(uuid4()),'name':'Trial Owner','company':'Trial '+plan,'phone':'99655522233'+str(index),'email':f'trial{index}@example.com','password':secrets.token_hex(16),'plan':plan,'consent':True}
+  result,trial_cookie=signup(data)
+  assert result['redirect']=='/admin' and result['session']['role']=='owner'
+  assert result['session']['subscriptionStatus']=='trialing' and result['session']['maxBranches']==1
+  repeated,_=signup(data)
+  assert repeated['session']['tenantId']==result['session']['tenantId']
+  assert repeated['session']['trialEndsAt']==result['session']['trialEndsAt']
+  signup({**data,'company':'Changed'},409)
+  signup({**data,'request_id':str(uuid4())},429)
+  signup({**data,'request_id':str(uuid4()),'trial_days':365},422)
+  signup({**data,'request_id':str(uuid4()),'plan':'enterprise'},422)
+  headers['Cookie']=trial_cookie
+  workspace=api('/workspace')['state']
+  assert not workspace['sales'] and not workspace['products'] and len(workspace['branches'])==1
+  assert workspace['serviceMode']==plan
+  trials.append((data,result,trial_cookie))
+ headers['Cookie']=platform_cookie
+ listed=api('/platform/tenants')
+ for data,result,_ in trials:
+  trial=next(t for t in listed if t['id']==result['session']['tenantId'])
+  assert trial['subscription_status']=='trialing' and trial['max_branches']==1
+  assert trial['branch_count']==1
+ print('PASS both public trial formats, automatic secure login, empty isolated workspace, retry without duplicate or trial extension, fixed server limits')
+ # Expiry blocks existing sessions as well as replayed signup requests.
+ run(['docker','exec',db,'psql','-U','postgres','-c',"UPDATE tenant_subscriptions SET trial_ends_at = now() - interval '1 day' WHERE tenant_id IN (SELECT tenant_id FROM trial_registrations)"])
+ for data,result,trial_cookie in trials:
+  headers['Cookie']=trial_cookie
+  try:
+   api('/workspace')
+   raise AssertionError('expired trial still has access')
+  except urllib.error.HTTPError as error: assert error.code==403
+  signup(data,403)
+ headers['Cookie']=platform_cookie
+ print('PASS trial expiry enforced for existing sessions and registration retries')
 except subprocess.CalledProcessError as e:
  print(e.stderr.replace(password,'[redacted]')); raise SystemExit(1)
 finally:

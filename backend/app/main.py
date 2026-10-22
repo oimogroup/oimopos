@@ -1908,6 +1908,10 @@ def create_tenant(
 ) -> dict:
     _check_origin(request)
     _platform_owner(user)
+    return _provision_tenant(payload, user, connection)
+
+
+def _provision_tenant(payload: TenantCreate, user: dict, connection: Connection) -> dict:
     _validate_plan(payload.plan_code)
     tenant_id = f"tenant-{uuid4()}"
     trial_ends_at = datetime.now(timezone.utc) + timedelta(days=payload.trial_days) if payload.trial_days else None
@@ -2733,3 +2737,6 @@ def pnl_report(start: str, end: str, branch: str = 'all', user: dict = Depends(c
 
 from .offline_pos import install as install_offline_pos
 install_offline_pos(app)
+
+from .self_registration import install as install_self_registration
+install_self_registration(app)

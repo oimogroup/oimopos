@@ -8,7 +8,7 @@
   if(width>=320&&width<=1440)frame.style.width=width+'px';
   const response=await fetch('/');const source=await response.text();
   check('root-is-public-landing',response.ok&&source.includes('id="connectionForm"')&&source.includes('<title>Oimo — касса'));
-  const stub=`<script>window.__posts=[];window.__outcome='offline';window.fetch=async(url,options={})=>{if(url==='/api/v1/public/plans')return new Response(JSON.stringify([{code:'canteen',monthly_price:2100},{code:'restaurant',monthly_price:3600}]),{headers:{'Content-Type':'application/json'}});if(url==='/api/v1/public/connection-requests'){window.__posts.push(JSON.parse(options.body));if(window.__outcome==='offline')throw new TypeError('Failed to fetch');return new Response(JSON.stringify({ok:true}),{status:201,headers:{'Content-Type':'application/json'}});}throw new Error('Unexpected request '+url);};<\/script>`;
+  const stub=`<script>window.__posts=[];window.__outcome='offline';window.fetch=async(url,options={})=>{if(url==='/api/v1/public/plans')return new Response(JSON.stringify([{code:'canteen',monthly_price:2100},{code:'restaurant',monthly_price:3600}]),{headers:{'Content-Type':'application/json'}});if(url==='/api/v1/public/register'){window.__posts.push(JSON.parse(options.body));if(window.__outcome==='offline')throw new TypeError('Failed to fetch');return new Response(JSON.stringify({session:{role:'owner',subscriptionStatus:'trialing'},redirect:'/admin'}),{status:201,headers:{'Content-Type':'application/json'}});}throw new Error('Unexpected request '+url);};<\/script>`;
   await new Promise(resolve=>{frame.addEventListener('load',resolve,{once:true});frame.srcdoc=source.replace('<head>','<head><base href="/">'+stub);});
   const w=frame.contentWindow,d=frame.contentDocument,q=s=>d.querySelector(s);
   await pause();
@@ -17,18 +17,19 @@
   q('#tab-stock').click();check('switch-preview',!q('#preview-stock').hidden&&q('#preview-pos').hidden&&q('#tab-stock').getAttribute('aria-selected')==='true');
   q('#tab-stock').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));check('keyboard-preview',!q('#preview-finance').hidden&&d.activeElement===q('#tab-finance'));
   q('[data-plan-choice="restaurant"]').addEventListener('click',e=>e.preventDefault(),{once:true});q('[data-plan-choice="restaurant"]').click();check('pricing-selects-format',q('select[name=plan]').value==='restaurant');
-  const form=q('#connectionForm');form.elements.name.value='Тестовый посетитель';form.elements.company.value='Тестовое заведение';form.elements.phone.value='+996 555 123 456';form.elements.consent.checked=true;
+  const form=q('#connectionForm');form.elements.name.value='Тестовый посетитель';form.elements.company.value='Тестовое заведение';form.elements.phone.value='+996 555 123 456';form.elements.consent.checked=true;form.elements.email.value='trial@example.com';form.elements.password.value='test-password-123';form.elements.passwordConfirm.value='test-password-123';
   form.requestSubmit();for(let i=0;i<30&&!q('#formMessage').textContent;i++)await pause();
   check('failed-submit-stays-retryable',!q('#connectionSubmit').disabled&&!form.hidden&&q('#formMessage').textContent.includes('связи'));
   const id=w.__posts[0]?.request_id;w.__outcome='ok';form.requestSubmit();for(let i=0;i<30&&!form.hidden;i++)await pause();
   check('retry-keeps-request-id',w.__posts.length===2&&w.__posts[1].request_id===id&&!!id);
   check('confirmed-success',form.hidden&&!q('#formSuccess').hidden);
-  check('contact-not-in-storage',!w.sessionStorage.getItem('oimo-connection-pending'));
-  check('privacy-and-no-payment-promise',!!q('#data-policy')&&source.includes('не создаёт платную подписку'));
+  check('contact-not-in-storage',!w.sessionStorage.getItem('oimo-registration-pending'));
+  check('privacy-and-no-payment-promise',!!q('#data-policy')&&source.includes('Автоматических списаний нет'));
   check('all-anchor-targets-exist',[...d.querySelectorAll('a[href^="#"]')].every(a=>!!d.getElementById(a.getAttribute('href').slice(1))));
   check('no-horizontal-overflow',d.documentElement.scrollWidth<=w.innerWidth+1);
   check('login-link-available',!!q('a[href="/login"]'));
   check('no-live-business-mutations',w.__posts.every(p=>p.company==='Тестовое заведение'));
+  frame.remove();
  }catch(error){check('runtime:'+error.stack,false);}
  document.body.dataset.done='true';
 })();
