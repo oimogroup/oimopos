@@ -7,11 +7,12 @@ import secrets
 
 PASSWORD_SCHEME = "pbkdf2_sha256"
 PASSWORD_ITERATIONS = 310_000
+MIN_PASSWORD_LENGTH = 5
 
 
 def hash_password(password: str, *, salt: bytes | None = None, iterations: int = PASSWORD_ITERATIONS) -> str:
-    if len(password) < 8:
-        raise ValueError("Пароль должен содержать не менее 8 символов")
+    if len(password) < MIN_PASSWORD_LENGTH:
+        raise ValueError(f"Пароль должен содержать не менее {MIN_PASSWORD_LENGTH} символов")
     password_salt = salt or secrets.token_bytes(16)
     digest = hashlib.pbkdf2_hmac("sha256", password.encode("utf-8"), password_salt, iterations)
     return f"{PASSWORD_SCHEME}${iterations}${password_salt.hex()}${digest.hex()}"

@@ -2282,7 +2282,7 @@ function openBranchForm(branchId = null) {
   $("#branchManagerInput").value = branch?.managerName || "Не назначен";
   $("#branchLoginInput").value = currentSession.tenantSlug || branch?.login || "";
   $("#branchPasswordInput").value = branch ? "" : generateTemporaryPassword();
-  $("#branchPasswordInput").placeholder = branch ? "Оставьте пустым, чтобы не менять" : "Не менее 8 символов";
+  $("#branchPasswordInput").placeholder = branch ? "Оставьте пустым, чтобы не менять" : "Не менее 5 символов";
   $("#branchPasswordLabel").textContent = branch ? "Новый пароль основной кассы" : "Пароль основной кассы *";
   $("#branchPasswordHint").classList.toggle("hidden", !branch);
   $("#branchAccessSectionHint").textContent = branch ? "Кассы и сотрудники настраиваются отдельно в разделе «Доступ»" : "Основная касса будет создана вместе с заведением";
@@ -2307,7 +2307,7 @@ async function saveBranch() {
   if (!address) { showToast("Укажите адрес заведения"); $("#branchAddressInput").focus(); return; }
   if (!managerName) { showToast("Не удалось подготовить данные заведения"); return; }
   if (!/^[a-z0-9._-]{3,48}$/.test(login)) { showToast("Проверьте адрес аккаунта компании"); return; }
-  if ((!existing || password) && password.length < 8) { showToast("Пароль должен содержать не менее 8 символов"); $("#branchPasswordInput").focus(); return; }
+  if ((!existing || password) && password.length < 5) { showToast("Пароль должен содержать не менее 5 символов"); $("#branchPasswordInput").focus(); return; }
   if (branches.some((branch) => branch.id !== existing?.id && branch.short.toLowerCase() === short.toLowerCase())) { showToast("Заведение с таким названием уже существует"); return; }
   const accounts = serverMode ? {} : loadManagedAccounts();
   const belongsToAnotherPoint = !serverMode && branches.some((branch) => branch.id !== existing?.id && branch.login === login);
@@ -2519,8 +2519,8 @@ async function saveRegister() {
     return;
   }
   if (!name) { showToast("Укажите название кассы"); return; }
-  if (!existing && password.length < 8) { showToast("Пароль кассы должен содержать не менее 8 символов"); return; }
-  if (password && password.length < 8) { showToast("Новый пароль должен содержать не менее 8 символов"); return; }
+  if (!existing && password.length < 5) { showToast("Пароль кассы должен содержать не менее 5 символов"); return; }
+  if (password && password.length < 5) { showToast("Новый пароль должен содержать не менее 5 символов"); return; }
   const payload = {
     name,
     branch_id: activeBranch.id,
@@ -2787,7 +2787,7 @@ function openEmployeeForm(employeeId = null, preferredBranchId = null) {
   $("#employeePasswordInput").value = "";
   $("#employeePinInput").value = employee ? "" : generateEmployeePin();
   $("#employeePasswordLabel").textContent = employee ? "Новый пароль" : "Временный пароль";
-  $("#employeePasswordHint").textContent = employee ? "Оставьте пустым, если пароль менять не нужно." : "Минимум 8 символов. Пароль будет показан только сейчас.";
+  $("#employeePasswordHint").textContent = employee ? "Оставьте пустым, если пароль менять не нужно." : "Минимум 5 символов. Пароль будет показан только сейчас.";
   $("#employeeActiveRow").classList.toggle("hidden", !employee);
   $("#employeeActiveInput").checked = employee?.is_active !== false;
   $("#saveEmployeeButton").textContent = employee ? "Сохранить изменения" : "Создать сотрудника";
@@ -2816,8 +2816,8 @@ async function saveEmployee() {
   if (adminAccess) {
     if (!/^[a-zA-Z0-9._@+-]{3,64}$/.test(login)) { showToast("Логин: 3–64 латинских символа, цифры, точка, дефис или подчёркивание"); return; }
     const existingAdminAccess = existing && employeeHasAdminAccess(normalizeEmployeePermissions(existing.permissions, existing.staff_role));
-    if ((!existing || !existingAdminAccess) && password.length < 8) { showToast("Временный пароль должен содержать не менее 8 символов"); return; }
-    if (existing && password && password.length < 8) { showToast("Новый пароль должен содержать не менее 8 символов"); return; }
+    if ((!existing || !existingAdminAccess) && password.length < 5) { showToast("Временный пароль должен содержать не менее 5 символов"); return; }
+    if (existing && password && password.length < 5) { showToast("Новый пароль должен содержать не менее 5 символов"); return; }
   }
   if (pin && !/^\d{4}$/.test(pin)) { showToast("PIN должен состоять из 4 цифр"); return; }
   const payload = {

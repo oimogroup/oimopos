@@ -80,7 +80,7 @@
       const response=await fetch('/api/v1/public/register',{method:'POST',credentials:'same-origin',headers:{'Content-Type':'application/json'},body:JSON.stringify({...payload,request_id:pending.id})});
       const contentType=response.headers.get('Content-Type') || '';
       const body=contentType.includes('application/json') ? await response.json() : null;
-      if(!response.ok) throw new Error(typeof body?.detail==='string' ? body.detail : response.status===422 ? 'Проверьте поля формы. Пароль — минимум 12 символов.' : 'Не удалось создать аккаунт. Повторите попытку.');
+      if(!response.ok) throw new Error(typeof body?.detail==='string' ? body.detail : response.status===422 ? 'Проверьте поля формы. Пароль — минимум 5 символов.' : 'Не удалось создать аккаунт. Повторите попытку.');
       if(!body?.session || body.redirect!=='/admin') throw new Error('Нет подтверждения регистрации. Повторите попытку.');
       try{sessionStorage.setItem('ashkana-auth-session-v1',JSON.stringify(body.session));}catch(_){}
       pending=null;try {sessionStorage.removeItem('oimo-registration-pending');}catch(_){}

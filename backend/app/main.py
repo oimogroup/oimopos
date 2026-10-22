@@ -92,7 +92,7 @@ def _ensure_operational_data() -> None:
     with pool.connection() as connection, connection.transaction():
         login = settings.platform_initial_login.lower()
         existing = connection.execute(
-            "SELECT id FROM auth_users WHERE lower(login) = lower(%s) AND deleted_at IS NULL LIMIT 1",
+            "SELECT id FROM auth_users WHERE role = 'platform_owner' AND lower(login) = lower(%s) AND deleted_at IS NULL LIMIT 1",
             (login,),
         ).fetchone()
         if not existing:
@@ -353,6 +353,8 @@ def _update_branch_account(connection: Connection, tenant_id: str, payload: dict
     if not branch:
         raise HTTPException(status_code=422, detail="Точка не найдена после сохранения")
     password = str(payload.get("password", ""))
+    if password and len(password) < 5:
+        raise HTTPException(422, 'Пароль должен содержать не менее 5 символов')
     tenant = connection.execute("SELECT slug FROM tenants WHERE id = %s", (tenant_id,)).fetchone()
     if not tenant:
         raise HTTPException(status_code=422, detail="Компания не найдена")
@@ -362,8 +364,8 @@ def _update_branch_account(connection: Connection, tenant_id: str, payload: dict
         (tenant_id, branch_id),
     ).fetchone()
     if not existing:
-        if len(password) < 8:
-            raise HTTPException(status_code=422, detail="Для основной кассы нужен пароль не короче 8 символов")
+        if len(password) < 5:
+            raise HTTPException(status_code=422, detail="Для основной кассы нужен пароль не короче 5 символов")
         _ensure_register_password_unique(connection, tenant_id, password)
         connection.execute(
             """
@@ -394,9 +396,9 @@ def _update_branch_account(connection: Connection, tenant_id: str, payload: dict
 
 def login(payload: LoginInput, response: Response, request: Request, connection: Connection = Depends(get_connection)) -> dict:
     _check_origin(request)
-    user = connection.execute(
+    identities = connection.execute(
         """
-        SELECT u.id, u.login, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
+        SELECT u.id, u.login, u.email, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
                u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
                t.status AS tenant_status, subscription.plan_code,
                subscription.status AS subscription_status, subscription.max_branches,
@@ -404,11 +406,21 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
         FROM auth_users u
         LEFT JOIN tenants t ON t.id = u.tenant_id
         LEFT JOIN tenant_subscriptions subscription ON subscription.tenant_id = u.tenant_id
-        WHERE lower(u.login) = lower(%s) AND u.staff_role <> 'pos_terminal'
+        WHERE ((lower(u.login) = lower(%s) AND (u.role <> 'owner' OR position('@' in u.login) = 0))
+               OR lower(u.email) = lower(%s)) AND u.staff_role <> 'pos_terminal'
           AND u.deleted_at IS NULL
+        ORDER BY (lower(u.email) = lower(%s)) DESC NULLS LAST, u.id
+        LIMIT 2
         """,
-        (payload.login,),
-    ).fetchone()
+        (payload.login, payload.login, payload.login),
+    ).fetchall()
+    # Resolve by email first. A shared alias must never select an account by
+    # password, row order or an unrelated tenant's session.
+    user = next((row for row in identities if (row.get('email') or '').lower() == payload.login.strip().lower()), None)
+    if user is None:
+        if len(identities) > 1:
+            raise HTTPException(401, 'Этот логин используется в нескольких аккаунтах. Войдите по email.')
+        user = identities[0] if identities else None
     if not user or not user["is_active"] or not verify_password(payload.password, user["password_hash"]):
         candidates = connection.execute(
             """
@@ -1907,6 +1919,7 @@ def _tenant_record(connection: Connection, tenant_id: str) -> dict:
                workspace.payload -> 'branches' -> 0 ->> 'address' AS first_location_address,
                COUNT(users.id) FILTER (WHERE users.is_active) AS active_users,
                MAX(users.login) FILTER (WHERE users.role = 'owner' AND users.is_active) AS owner_login,
+               MAX(users.email) FILTER (WHERE users.role = 'owner' AND users.is_active) AS owner_email,
                MAX(users.display_name) FILTER (WHERE users.role = 'owner' AND users.is_active) AS owner_name
         FROM tenants tenant
         LEFT JOIN tenant_subscriptions subscription ON subscription.tenant_id = tenant.id
@@ -2023,10 +2036,10 @@ def _provision_tenant(payload: TenantCreate, user: dict, connection: Connection)
             )
             connection.execute(
                 """
-                INSERT INTO auth_users (login, password_hash, role, staff_role, tenant_id, branch_id, display_name)
-                VALUES (%s, %s, 'owner', 'company_admin', %s, NULL, %s)
+                INSERT INTO auth_users (login, email, password_hash, role, staff_role, tenant_id, branch_id, display_name)
+                VALUES (%s, %s, %s, 'owner', 'company_admin', %s, NULL, %s)
                 """,
-                (owner_login, hash_password(payload.owner_password), tenant_id, payload.owner_name),
+                (owner_login, payload.email, hash_password(payload.owner_password), tenant_id, payload.owner_name),
             )
             connection.execute(
                 """
@@ -2049,7 +2062,7 @@ def _provision_tenant(payload: TenantCreate, user: dict, connection: Connection)
             )
     except UniqueViolation as error:
         constraint = error.diag.constraint_name or ""
-        detail = "Этот логин уже используется" if "auth_users_login" in constraint else "Код компании уже используется"
+        detail = "Этот email уже используется" if "auth_users_email" in constraint else "Этот логин уже используется" if "auth_users_login" in constraint else "Код компании уже используется"
         raise HTTPException(status_code=409, detail=detail) from error
     return _tenant_record(connection, tenant_id)
 
@@ -2193,7 +2206,7 @@ def update_tenant_owner_access(
         with connection.transaction():
             owner = connection.execute(
                 """
-                SELECT id, login, password_hash, display_name, account_version
+                SELECT id, login, email, password_hash, display_name, account_version
                 FROM auth_users
                 WHERE tenant_id = %s AND role = 'owner' AND is_active
                 FOR UPDATE
@@ -2202,24 +2215,28 @@ def update_tenant_owner_access(
             ).fetchone()
             if not owner:
                 raise HTTPException(status_code=404, detail="Администратор компании не найден")
+            owner_email = payload.owner_email or owner['email']
+            if not owner_email:
+                raise HTTPException(422, 'Укажите email владельца для входа и восстановления доступа')
             duplicate = connection.execute(
-                "SELECT id FROM auth_users WHERE lower(login) = lower(%s) AND deleted_at IS NULL AND id <> %s",
-                (payload.owner_login, owner["id"]),
+                "SELECT id FROM auth_users WHERE lower(email) = lower(%s) AND deleted_at IS NULL AND id <> %s",
+                (owner_email, owner["id"]),
             ).fetchone()
             if duplicate:
-                raise HTTPException(status_code=409, detail="Этот логин уже используется")
-            access_changed = owner["login"].lower() != payload.owner_login.lower() or bool(payload.owner_password)
+                raise HTTPException(status_code=409, detail="Этот email уже используется")
+            email_changed = owner['email'] != owner_email
+            access_changed = email_changed or owner["login"].lower() != payload.owner_login.lower() or bool(payload.owner_password)
             password_hash = hash_password(payload.owner_password) if payload.owner_password else owner["password_hash"]
             version = owner["account_version"] + (1 if access_changed else 0)
             connection.execute(
                 """
                 UPDATE auth_users
-                SET login = %s, display_name = %s, password_hash = %s, account_version = %s,
-                    email_verified_at = CASE WHEN lower(login) = lower(%s) THEN email_verified_at ELSE NULL END,
+                SET login = %s, email = %s, display_name = %s, password_hash = %s, account_version = %s,
+                    email_verified_at = CASE WHEN email = %s THEN email_verified_at ELSE NULL END,
                     updated_at = CURRENT_TIMESTAMP
                 WHERE id = %s
                 """,
-                (payload.owner_login, payload.owner_name, password_hash, version, payload.owner_login, owner["id"]),
+                (payload.owner_login, owner_email, payload.owner_name, password_hash, version, owner_email, owner["id"]),
             )
             if access_changed:
                 connection.execute('UPDATE auth_action_tokens SET consumed_at=now() WHERE user_id=%s AND consumed_at IS NULL',(owner['id'],))
@@ -2235,11 +2252,12 @@ def update_tenant_owner_access(
                 (user["id"], user["login"], tenant_id, Jsonb({
                     "ownerName": payload.owner_name,
                     "ownerLogin": payload.owner_login,
+                    "ownerEmail": owner_email,
                     "passwordChanged": bool(payload.owner_password),
                 })),
             )
     except UniqueViolation as error:
-        raise HTTPException(status_code=409, detail="Этот логин уже используется") from error
+        raise HTTPException(status_code=409, detail="Этот email уже используется") from error
     return _tenant_record(connection, tenant_id)
 
 

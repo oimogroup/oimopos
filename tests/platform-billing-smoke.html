@@ -4,9 +4,11 @@
  try {
   const [source,panel,code]=await Promise.all([fetch('/platform').then(r=>r.text()),fetch('/platform-billing.js').then(r=>r.text()),fetch('/platform.js').then(r=>r.text())]);
   const stub=`<script>
-    window.__resolutions=[];window.__checks=0;
+    window.__resolutions=[];window.__checks=0;window.__ownerUpdates=[];
+    window.__tenants=[{id:'t1',name:'Test Cafe',slug:'test-cafe',owner_name:'Same Owner',owner_login:'shared-owner',owner_email:'one@example.com',contact_email:'contact@example.com',phone:'+996555123456',business_type:'canteen',subscription_status:'trialing',status:'active',plan_code:'canteen',max_branches:1,branch_count:1,created_at:'2026-10-22T00:00:00Z'}];
     window.__billing={ready:false,missing:['FREEDOMPAY_SECRET_KEY'],testing:true,orders:[{id:'o1',tenantName:'<img src=x onerror=alert(1)>',amount:3500,testing:true,status:'review',refund_amount:0}],refundRequests:[{id:'r1',order_id:'o1',tenant_name:'Test',amount:3500,refund_amount:0,status:'new',reason:'Unused period'}]};
-    window.AshkanaApi={me:async()=>({session:{role:'platform_owner',name:'Owner',initials:'OO'}}),tenants:async()=>[],plans:async()=>[],connectionRequests:async()=>[],mailStatus:async()=>({configured:false,counts:{},recent:[]}),
+    window.AshkanaApi={me:async()=>({session:{role:'platform_owner',name:'Owner',initials:'OO'}}),tenants:async()=>structuredClone(window.__tenants),plans:async()=>[{code:'canteen',name:'Canteen',monthly_price:3500,annual_price:42000}],connectionRequests:async()=>[],mailStatus:async()=>({configured:false,counts:{},recent:[]}),
+     updateTenant:async(id,payload)=>({...window.__tenants[0],...payload}),updateTenantOwner:async(id,payload)=>{window.__ownerUpdates.push({id,...payload});return {...window.__tenants[0],...payload};},
      platformBilling:async()=>structuredClone(window.__billing),platformRefreshPayment:async()=>{window.__checks++;window.__billing.refundRequests[0].refund_amount=3500;return{};},platformResolveRefund:async(id,payload)=>{window.__resolutions.push({id,...payload});window.__billing.refundRequests[0].status='approved';return{ok:true};}};
     window.fetch=()=>Promise.reject(new Error('Unexpected live API call'));
   <\/script>`;
@@ -25,6 +27,13 @@
   q('#platformRefunds button').click();q('#refundResolution').value='Согласовано с клиентом';q('#refundAccessUntil').value='2026-10-22T10:00';q('#resolveRefundForm button[type=submit]').click();await pause();
   check('confirmed-refund-saves-agreed-date',w.__resolutions.length===1&&w.__resolutions[0].id==='r1'&&w.__resolutions[0].access_until.endsWith('Z')&&w.__resolutions[0].decision==='approved');
   check('resolved-request-not-actionable',!q('#platformRefunds button')&&!q('#resolveRefundDialog').open);
+  check('owner-login-link-uses-email',new URL(q('#tenantTable a').href).searchParams.get('login')==='one@example.com');
+  q('[data-edit-tenant="t1"]').click();
+  check('owner-alias-and-email-separated',q('#settingsOwnerLogin').value==='shared-owner'&&q('#settingsOwnerEmail').value==='one@example.com'&&q('#settingsTenantEmail').value==='contact@example.com');
+  q('#settingsOwnerPassword').value='abcde';q('#settingsOwnerEmail').value='new@example.com';
+  check('owner-five-character-password-valid',q('#tenantSettingsForm').checkValidity());
+  q('#tenantSettingsForm').requestSubmit();await pause();
+  check('owner-email-and-alias-saved-separately',w.__ownerUpdates.length===1&&w.__ownerUpdates[0].owner_login==='shared-owner'&&w.__ownerUpdates[0].owner_email==='new@example.com'&&w.__ownerUpdates[0].owner_password==='abcde'&&q('#tenantSettingsModal').classList.contains('hidden'));
   w.sessionStorage.removeItem('ashkana-auth-session-v1');frame.remove();
  }catch(error){check('runtime:'+error.stack,false);}
  document.body.dataset.done='true';

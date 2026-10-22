@@ -21,7 +21,8 @@
   q('#tab-stock').click();check('switch-preview',!q('#preview-stock').hidden&&q('#preview-pos').hidden&&q('#tab-stock').getAttribute('aria-selected')==='true');
   q('#tab-stock').dispatchEvent(new w.KeyboardEvent('keydown',{key:'ArrowRight',bubbles:true}));check('keyboard-preview',!q('#preview-finance').hidden&&d.activeElement===q('#tab-finance'));
   q('[data-plan-choice="restaurant"]').addEventListener('click',e=>e.preventDefault(),{once:true});q('[data-plan-choice="restaurant"]').click();check('pricing-selects-format',q('select[name=plan]').value==='restaurant');
-  const form=q('#connectionForm');form.elements.name.value='Тестовый посетитель';form.elements.company.value='Тестовое заведение';form.elements.phone.value='+996 555 123 456';form.elements.consent.checked=true;form.elements.email.value='trial@example.com';form.elements.password.value='test-password-123';form.elements.passwordConfirm.value='test-password-123';
+  const form=q('#connectionForm');form.elements.name.value='Тестовый посетитель';form.elements.company.value='Тестовое заведение';form.elements.phone.value='+996 555 123 456';form.elements.consent.checked=true;form.elements.email.value='trial@example.com';form.elements.password.value='abcde';form.elements.passwordConfirm.value='abcde';
+  check('five-character-password-valid',form.checkValidity());
   form.requestSubmit();for(let i=0;i<30&&!q('#formMessage').textContent;i++)await pause();
   check('failed-submit-stays-retryable',!q('#connectionSubmit').disabled&&!form.hidden&&q('#formMessage').textContent.includes('связи'));
   const id=w.__posts[0]?.request_id;w.__outcome='ok';form.requestSubmit();for(let i=0;i<30&&!form.hidden;i++)await pause();

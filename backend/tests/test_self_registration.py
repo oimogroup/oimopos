@@ -15,7 +15,7 @@ def data(**changes):
 
 
 @pytest.mark.parametrize('changes', [
-    {'password':'short'}, {'email':'not-email'}, {'email':'name/test@example.com'},
+    {'password':'abcd'}, {'email':'not-email'}, {'email':'name/test@example.com'},
     {'trial_days':365}, {'max_branches':100}, {'role':'platform_owner'},
     {'plan':'enterprise'}, {'consent':False}, {'phone':'abc'},
 ])

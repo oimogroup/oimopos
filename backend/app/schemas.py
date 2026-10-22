@@ -2,8 +2,11 @@ from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, StringConstraints, model_validator
+from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, model_validator
 
+from .security import MIN_PASSWORD_LENGTH
+
+UserPassword = Annotated[str, StringConstraints(strip_whitespace=False, min_length=MIN_PASSWORD_LENGTH, max_length=200)]
 
 NonEmptyText = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=200)]
 ItemId = Annotated[str, StringConstraints(strip_whitespace=True, min_length=1, max_length=80, pattern=r"^[a-zA-Z0-9._:-]+$")]
@@ -80,8 +83,8 @@ class TechnicalCardUpdate(BaseModel):
 
 
 class LoginInput(BaseModel):
-    login: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=64)]
-    password: Annotated[str, StringConstraints(min_length=8, max_length=200)]
+    login: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=200)]
+    password: UserPassword
     register_id: Annotated[int, Field(gt=0)] | None = None
 
 
@@ -129,7 +132,7 @@ class EmployeeCreate(BaseModel):
     branch_id: ItemId
     staff_role: StaffRole
     login: AccountLogin | None = None
-    password: Annotated[str, StringConstraints(min_length=8, max_length=200)] | None = None
+    password: UserPassword | None = None
     pin: CashierPin | None = None
     permissions: EmployeePermissions | None = None
 
@@ -140,7 +143,7 @@ class EmployeeUpdate(BaseModel):
     branch_id: ItemId
     staff_role: StaffRole
     login: AccountLogin | None = None
-    password: Annotated[str, StringConstraints(min_length=8, max_length=200)] | None = None
+    password: UserPassword | None = None
     pin: CashierPin | None = None
     is_active: bool = True
     permissions: EmployeePermissions | None = None
@@ -154,14 +157,14 @@ class PosUnlockInput(BaseModel):
 class PosRegisterCreate(BaseModel):
     name: NonEmptyText
     branch_id: ItemId
-    password: Annotated[str, StringConstraints(min_length=8, max_length=200)]
+    password: UserPassword
     login: Annotated[AccountLogin, Field(max_length=64)] | None = None
 
 
 class PosRegisterUpdate(BaseModel):
     name: NonEmptyText
     branch_id: ItemId
-    password: Annotated[str, StringConstraints(min_length=8, max_length=200)] | None = None
+    password: UserPassword | None = None
     is_active: bool = True
     login: Annotated[AccountLogin, Field(max_length=64)] | None = None
 
@@ -184,7 +187,7 @@ class TenantCreate(BaseModel):
     email: ContactEmail
     phone: PhoneText
     owner_login: AccountLogin | None = None
-    owner_password: Annotated[str, StringConstraints(min_length=12, max_length=200)]
+    owner_password: UserPassword
     business_status: Annotated[str, StringConstraints(pattern=r"^(operating|opening|learning)$")] = "operating"
     business_type: Annotated[str, StringConstraints(pattern=r"^(canteen|cafe|restaurant|fast_food|bakery|shop|other)$")] = "canteen"
     service_modes: Annotated[list[Annotated[str, StringConstraints(pattern=r"^(counter|tables|takeaway|delivery)$")]], Field(min_length=1, max_length=4)]
@@ -193,7 +196,7 @@ class TenantCreate(BaseModel):
     location_address: NonEmptyText
     location_open_time: ClockTime = "08:00"
     location_close_time: ClockTime = "20:00"
-    register_password: Annotated[str, StringConstraints(min_length=8, max_length=200)]
+    register_password: UserPassword
     plan_code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=32)] = "canteen"
     max_branches: Annotated[int, Field(ge=1, le=1000)] = 3
     trial_days: Annotated[int, Field(ge=0, le=365)] = 14
@@ -226,7 +229,14 @@ class TenantUpdate(BaseModel):
 class TenantOwnerAccessUpdate(BaseModel):
     owner_name: NonEmptyText
     owner_login: AccountLogin
-    owner_password: Annotated[str, StringConstraints(min_length=12, max_length=200)] | None = None
+    owner_email: ContactEmail | None = None
+    owner_password: UserPassword | None = None
+
+    @model_validator(mode="after")
+    def legacy_email_login(self) -> "TenantOwnerAccessUpdate":
+        if self.owner_email is None and '@' in self.owner_login:
+            self.owner_email = TypeAdapter(ContactEmail).validate_python(self.owner_login)
+        return self
 
 
 class PlanPriceUpdate(BaseModel):

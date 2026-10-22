@@ -12,7 +12,8 @@ class Connection:
     def execute(self, sql, params):
         self.calls.append((sql,params))
         value=None
-        if 'WHERE lower(u.login)' in sql: value=self.employee
+        if 'OR lower(u.email)' in sql:
+            return SimpleNamespace(fetchall=lambda:[self.employee] if self.employee else [])
         elif 'SELECT u.id' in sql: value=self.terminal
         elif 'INSERT INTO auth_sessions' in sql: value={'id':77}
         return SimpleNamespace(fetchone=lambda:value,fetchall=lambda:[self.terminal])

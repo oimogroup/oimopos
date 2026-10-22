@@ -68,6 +68,7 @@ def register_environment(monkeypatch):
 @pytest.mark.parametrize("changes,initial_active,expected_version,revoked", [
     ({"name": "Новое имя"}, True, 3, False),
     ({"password": "Updated-password-2026"}, True, 4, True),
+    ({"password": "abcde"}, True, 4, True),
     ({"is_active": False}, True, 4, True),
     ({"password": "Updated-password-2026"}, False, 4, True),
     ({"branch_id": "b2"}, True, 4, True),

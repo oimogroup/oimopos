@@ -12,7 +12,7 @@ from psycopg.types.json import Jsonb
 
 from . import mailer
 from .config import get_settings
-from .schemas import ContactEmail, LoginInput
+from .schemas import ContactEmail, LoginInput, UserPassword
 from .security import hash_password, token_hash
 
 
@@ -27,11 +27,15 @@ class TokenInput(BaseModel):
 
 
 class ResetInput(TokenInput):
-    password: Annotated[str, StringConstraints(min_length=12, max_length=200)]
+    password: UserPassword
 
 
 def bucket_key(kind, value):
     return hmac.new(get_settings().employee_pin_key.encode(), (kind+':'+value).encode(), hashlib.sha256).hexdigest()
+
+
+def account_email(user):
+    return (user.get('email') or '').strip().lower()
 
 
 def rate_limit(connection, request, action, identity='', *, pair_limit=10, peer_limit=60, seconds=900):
@@ -62,7 +66,7 @@ def send_link(connection, user, purpose):
     """The outbox and token are committed atomically with account provisioning."""
     url=mailer.login_url(get_settings())
     if not url: return False
-    email=user['login'].strip().lower()
+    email=account_email(user)
     if '@' not in email or user.get('staff_role')=='pos_terminal': return False
     if purpose=='verify' and user.get('email_verified_at'): return False
     # Resends reuse an unexpired queued link for one minute instead of flooding.
@@ -99,15 +103,16 @@ def install(app):
         rate_limit(connection,request,'recovery',payload.email,pair_limit=3,peer_limit=20)
         # The response does not reveal whether an account exists or SMTP is enabled.
         with connection.transaction():
-            user=connection.execute("SELECT * FROM auth_users WHERE lower(login)=%s AND is_active AND deleted_at IS NULL AND staff_role<>'pos_terminal' FOR UPDATE",(payload.email,)).fetchone()
+            user=connection.execute("SELECT * FROM auth_users WHERE lower(email)=%s AND is_active AND deleted_at IS NULL AND staff_role<>'pos_terminal' FOR UPDATE",(payload.email,)).fetchone()
             if user: send_link(connection,user,'reset')
         time.sleep(max(0,0.25-time.monotonic()+started))
         return {'ok':True,'message':'Если аккаунт с этим email существует, письмо для восстановления будет отправлено. Проверьте входящие и спам.'}
 
     @app.get('/api/v1/auth/email',tags=['auth'])
     def email_status(user=Depends(main.current_user),connection=Depends(main.get_connection)):
-        row=connection.execute('SELECT login,email_verified_at FROM auth_users WHERE id=%s',(user['id'],)).fetchone()
-        return {'email':row['login'],'verified':bool(row['email_verified_at']),'canVerify':'@' in row['login'] and user.get('staff_role')!='pos_terminal'}
+        row=connection.execute('SELECT email,email_verified_at FROM auth_users WHERE id=%s',(user['id'],)).fetchone()
+        email=account_email(row)
+        return {'email':email,'verified':bool(row['email_verified_at']),'canVerify':bool(email) and user.get('staff_role')!='pos_terminal'}
 
     @app.post('/api/v1/auth/email/send',tags=['auth'])
     def resend(request:Request,user=Depends(main.current_user),connection=Depends(main.get_connection)):
@@ -119,7 +124,7 @@ def install(app):
         with connection.transaction():
             row=connection.execute('SELECT * FROM auth_users WHERE id=%s FOR UPDATE',(user['id'],)).fetchone()
             if row['email_verified_at']: return {'ok':True,'verified':True}
-            if '@' not in row['login'] or row['staff_role']=='pos_terminal': raise HTTPException(409,'Укажите email для этой учётной записи через администратора.')
+            if not account_email(row) or row['staff_role']=='pos_terminal': raise HTTPException(409,'Укажите email для этой учётной записи через администратора.')
             send_link(connection,row,'verify')
         return {'ok':True,'verified':False,'message':'Письмо подтверждения поставлено в очередь. Проверьте входящие и спам.'}
 
@@ -132,14 +137,14 @@ def install(app):
             if not initial: raise HTTPException(400,'Ссылка недействительна или срок её действия истёк. Запросите новое письмо.')
             user=connection.execute('SELECT * FROM auth_users WHERE id=%s FOR UPDATE',(initial['user_id'],)).fetchone()
             token=connection.execute('SELECT *,expires_at>now() AS valid FROM auth_action_tokens WHERE token_hash=%s FOR UPDATE',(digest,)).fetchone()
-            if not user or not user['is_active'] or user['deleted_at'] or token['consumed_at'] or not token['valid'] or token['account_version']!=user['account_version'] or token['email']!=user['login'].lower():
+            if not user or not user['is_active'] or user['deleted_at'] or token['consumed_at'] or not token['valid'] or token['account_version']!=user['account_version'] or token['email']!=account_email(user):
                 raise HTTPException(400,'Ссылка недействительна или срок её действия истёк. Запросите новое письмо.')
             if purpose=='reset':
                 connection.execute('''UPDATE auth_users SET password_hash=%s,account_version=account_version+1,email_verified_at=COALESCE(email_verified_at,now()),updated_at=now() WHERE id=%s''',(hash_password(payload.password),user['id']))
                 connection.execute('UPDATE auth_sessions SET revoked_at=now() WHERE user_id=%s AND revoked_at IS NULL',(user['id'],))
                 connection.execute('UPDATE pos_operator_sessions SET revoked_at=now() WHERE employee_user_id=%s AND revoked_at IS NULL',(user['id'],))
                 connection.execute('UPDATE auth_action_tokens SET consumed_at=now() WHERE user_id=%s AND consumed_at IS NULL',(user['id'],))
-                mailer.enqueue(connection,dedup_key='password-changed:'+digest,tenant_id=user['tenant_id'],recipient=user['login'],subject='Oimo — пароль изменён',body='Пароль аккаунта Oimo изменён. Все прежние сеансы завершены. Если это были не вы, восстановите доступ и обратитесь в поддержку.\n')
+                mailer.enqueue(connection,dedup_key='password-changed:'+digest,tenant_id=user['tenant_id'],recipient=account_email(user),subject='Oimo — пароль изменён',body='Пароль аккаунта Oimo изменён. Все прежние сеансы завершены. Если это были не вы, восстановите доступ и обратитесь в поддержку.\n')
             else:
                 connection.execute('UPDATE auth_users SET email_verified_at=COALESCE(email_verified_at,now()),updated_at=now() WHERE id=%s',(user['id'],))
                 connection.execute("UPDATE auth_action_tokens SET consumed_at=now() WHERE user_id=%s AND purpose='verify' AND consumed_at IS NULL",(user['id'],))

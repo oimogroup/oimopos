@@ -4,8 +4,11 @@ import re
 from urllib.parse import parse_qs, urlsplit
 
 import pytest
+from fastapi import HTTPException, Request
+from uuid import uuid4
 
 from app import main
+from app.schemas import TenantCreate, TenantOwnerAccessUpdate
 from app.security import verify_password
 from test_billing_integration import system, DSN, checkout
 
@@ -25,6 +28,89 @@ def queued_token(system, purpose):
 def set_unverified(system):
     with system.connect() as connection:
         connection.execute('UPDATE auth_users SET email_verified_at=NULL WHERE id=%s',(system.user['id'],))
+
+
+def signup_data(**changes):
+    return {'request_id':str(uuid4()),'name':'Same Owner','company':'Same Cafe',
+            'phone':'996'+str(uuid4().int)[:10],'email':uuid4().hex[:16]+'@example.com',
+            'password':'abcde','plan':'restaurant','consent':True,**changes}
+
+
+def owner_access(system, **changes):
+    payload=TenantOwnerAccessUpdate(owner_name='Same Owner',owner_login=changes.pop('owner_login','shared-owner'),
+                                   owner_email=changes.pop('owner_email',system.user['email']),**changes)
+    request=Request({'type':'http','headers':[(b'origin',b'https://oimo.example')]})
+    with system.connect() as connection:
+        return main.update_tenant_owner_access(system.tenant,payload,request,{'id':None,'role':'platform_owner','login':'test'},connection)
+
+
+def test_signup_allows_same_names_and_five_characters_but_email_is_unique(system):
+    first=signup_data()
+    assert system.client.post('/api/v1/public/register',json={**first,'password':'abcd'}).status_code==422
+    result=system.client.post('/api/v1/public/register',json=first)
+    assert result.status_code==201
+    first_tenant=result.json()['session']['tenantId']
+    second=system.client.post('/api/v1/public/register',json=signup_data())
+    assert second.status_code==201 and second.json()['session']['tenantId']!=first_tenant
+    duplicate=system.client.post('/api/v1/public/register',json=signup_data(email=first['email'].upper()))
+    assert duplicate.status_code==409 and 'email' in duplicate.json()['detail']
+    logged=system.client.post('/api/v1/auth/login',json={'login':first['email'].upper(),'password':'abcde'})
+    assert logged.status_code==200 and logged.json()['session']['tenantId']==first_tenant
+
+
+def test_concurrent_signup_reserves_one_account_per_email(system):
+    email=uuid4().hex[:16]+'@example.com'
+    payloads=[signup_data(email=email),signup_data(email=email.upper())]
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        responses=list(executor.map(lambda payload:system.client.post('/api/v1/public/register',json=payload),payloads))
+    assert sorted(response.status_code for response in responses)==[201,409]
+    with system.connect() as connection:
+        assert connection.execute('SELECT count(*) AS n FROM auth_users WHERE lower(email)=%s AND deleted_at IS NULL',(email,)).fetchone()['n']==1
+        assert connection.execute('SELECT count(*) AS n FROM trial_registrations WHERE email=%s',(email,)).fetchone()['n']==1
+
+
+def test_shared_owner_alias_and_password_never_mix_tenants_or_recovery(system):
+    first=owner_access(system,owner_password='abcde')
+    assert first['owner_login']=='shared-owner' and first['owner_email']==system.user['email']
+    assert system.client.get('/api/v1/auth/me').status_code==401
+    second_email=uuid4().hex[:16]+'@example.com'
+    with system.connect() as connection:
+        second=main._provision_tenant(TenantCreate(name='Same Cafe',slug='same-'+uuid4().hex[:16],owner_name='Same Owner',
+          owner_login='shared-owner',email=second_email,phone='996555123456',owner_password='abcde',register_password='vwxyz',
+          service_modes=['counter'],location_name='Test',location_address='Test'),{'id':None,'login':'test'},connection)
+    denied=system.client.post('/api/v1/auth/login',json={'login':'shared-owner','password':'abcde'})
+    assert denied.status_code==401 and 'email' in denied.json()['detail']
+    for email,tenant in [(system.user['email'],system.tenant),(second_email,second['id'])]:
+        result=system.client.post('/api/v1/auth/login',json={'login':email.upper(),'password':'abcde'})
+        assert result.status_code==200 and result.json()['session']['tenantId']==tenant
+        assert system.client.get('/api/v1/auth/email').json()['email']==email
+        assert system.client.post('/api/v1/auth/password/forgot',json={'email':email}).status_code==200
+    with system.connect() as connection:
+        recipients=connection.execute("SELECT recipient,tenant_id FROM email_outbox WHERE tenant_id IN (%s,%s) AND subject=%s",(system.tenant,second['id'],'Oimo — восстановление пароля')).fetchall()
+    assert {(row['recipient'],row['tenant_id']) for row in recipients}=={(system.user['email'],system.tenant),(second_email,second['id'])}
+    # A duplicate address is rejected even when the alias is different.
+    with pytest.raises(HTTPException) as duplicate:
+        owner_access(system,owner_login='different-alias',owner_email=second_email.upper())
+    assert duplicate.value.status_code==409
+    # Even an alias that looks like another owner's email cannot shadow them.
+    owner_access(system,owner_login=second_email,owner_password='fghij')
+    result=system.client.post('/api/v1/auth/login',json={'login':second_email,'password':'abcde'})
+    assert result.status_code==200 and result.json()['session']['tenantId']==second['id']
+    assert system.client.post('/api/v1/auth/login',json={'login':second_email,'password':'fghij'}).status_code==401
+    terminal=system.client.post('/api/v1/auth/login',json={'login':second['slug'],'password':'vwxyz'},headers={'X-Ashkana-Client':'pos'})
+    assert terminal.status_code==200 and terminal.json()['session']['tenantId']==second['id']
+
+
+def test_email_change_revokes_access_and_links_without_touching_other_accounts(system):
+    assert system.client.post('/api/v1/auth/password/forgot',json={'email':system.user['email']}).status_code==200
+    token=queued_token(system,'reset')
+    changed=uuid4().hex[:16]+'@example.com'
+    owner_access(system,owner_login=system.user['login'],owner_email=changed,owner_password='abcde')
+    assert system.client.get('/api/v1/auth/me').status_code==401
+    assert system.client.post('/api/v1/auth/password/reset',json={'token':token,'password':'vwxyz'}).status_code==400
+    assert system.client.post('/api/v1/auth/login',json={'login':system.user['email'],'password':'abcde'}).status_code==401
+    assert system.client.post('/api/v1/auth/login',json={'login':changed,'password':'abcde'}).status_code==200
+    assert system.client.get('/api/v1/auth/email').json()=={'email':changed,'verified':False,'canVerify':True}
 
 
 def test_email_confirmation_is_explicit_one_use_and_unlocks_billing(system):
@@ -52,7 +138,9 @@ def test_password_recovery_is_generic_and_one_use_under_concurrency(system):
     assert known.status_code==unknown.status_code==200 and known.json()==unknown.json()
     token=queued_token(system,'reset')
     assert system.client.post('/api/v1/auth/email/verify',json={'token':token}).status_code==400
-    password='Changed-password-123!'
+    # The minimum works through reset, hashing and subsequent real login.
+    assert system.client.post('/api/v1/auth/password/reset',json={'token':token,'password':'abcd'}).status_code==422
+    password='abcde'
     with ThreadPoolExecutor(max_workers=3) as executor:
         results=list(executor.map(lambda _:system.client.post('/api/v1/auth/password/reset',json={'token':token,'password':password}),range(3)))
     assert sorted(result.status_code for result in results)==[200,400,400]
@@ -76,7 +164,7 @@ def test_stale_or_invalidated_reset_token_cannot_change_account(system,change):
     with system.connect() as connection:
         if change=='expired': connection.execute("UPDATE auth_action_tokens SET expires_at=now()-interval '1 second' WHERE user_id=%s",(system.user['id'],))
         elif change=='account-version': connection.execute('UPDATE auth_users SET account_version=account_version+1 WHERE id=%s',(system.user['id'],))
-        elif change=='email': connection.execute("UPDATE auth_users SET login='changed-'||login WHERE id=%s",(system.user['id'],))
+        elif change=='email': connection.execute("UPDATE auth_users SET email='changed-'||email WHERE id=%s",(system.user['id'],))
         elif change=='inactive': connection.execute('UPDATE auth_users SET is_active=false WHERE id=%s',(system.user['id'],))
         elif change=='deleted': connection.execute('UPDATE auth_users SET deleted_at=now(),is_active=false WHERE id=%s',(system.user['id'],))
     response=system.client.post('/api/v1/auth/password/reset',json={'token':token,'password':'Should-not-be-saved-123'})

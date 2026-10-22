@@ -34,11 +34,28 @@ try:
     legacy_sql="""INSERT INTO subscription_payments
       (id,tenant_id,request_id,plan_code,amount,max_branches,merchant_id,testing,expires_at,terms_version,terms_snapshot)
       VALUES ('pre-annual-quote','tenant-ashkana','11111111-1111-4111-8111-111111111111','canteen',2000,1,'123',true,now()+interval '1 hour','legacy','{"period":"calendar-month"}');"""
+    legacy_sql += """
+      INSERT INTO tenants (id,slug,name,contact_email) VALUES
+        ('email-migrate-1','email-migrate-1','Test only','other@example.com'),
+        ('email-migrate-2','email-migrate-2','Test only','custom@example.com'),
+        ('email-migrate-3','email-migrate-3','Test only','shared@example.com'),
+        ('email-migrate-4','email-migrate-4','Test only','shared@example.com'),
+        ('email-migrate-5','email-migrate-5','Test only','primary@example.com');
+      INSERT INTO auth_users (login,password_hash,role,staff_role,tenant_id,display_name) VALUES
+        ('primary@example.com','unused-test-hash','owner','company_admin','email-migrate-1','Same Owner'),
+        ('custom-alias','unused-test-hash','owner','company_admin','email-migrate-2','Same Owner'),
+        ('shared-alias-1','unused-test-hash','owner','company_admin','email-migrate-3','Same Owner'),
+        ('shared-alias-2','unused-test-hash','owner','company_admin','email-migrate-4','Same Owner'),
+        ('reserved-alias','unused-test-hash','owner','company_admin','email-migrate-5','Same Owner');
+    """
     run(['docker','exec','-i',database,'psql','-U','postgres','-v','ON_ERROR_STOP=1'],input=legacy_sql,text=True,stdout=subprocess.DEVNULL)
     for _ in range(2): run(['docker','run','--rm','--network',network,'-e','DATABASE_URL','oimo-render-check','python','/app/render_migrate.py'],env=environment,stdout=subprocess.DEVNULL)
     preserved=run(['docker','exec',database,'psql','-U','postgres','-Atc',"SELECT amount || ':' || period_months FROM subscription_payments WHERE id='pre-annual-quote'"],text=True,stdout=subprocess.PIPE).stdout.strip()
     assert preserved=='2000.00:1',preserved
     print('PASS upgrade and repeated migrations preserve the original monthly quote',flush=True)
+    identities=run(['docker','exec',database,'psql','-U','postgres','-Atc',"SELECT login || ':' || COALESCE(email,'UNASSIGNED') FROM auth_users WHERE tenant_id LIKE 'email-migrate-%' ORDER BY tenant_id"],text=True,stdout=subprocess.PIPE).stdout.splitlines()
+    assert identities==['primary@example.com:primary@example.com','custom-alias:custom@example.com','shared-alias-1:UNASSIGNED','shared-alias-2:UNASSIGNED','reserved-alias:UNASSIGNED'],identities
+    print('PASS legacy email identities migrate; shared or reserved contact addresses stay unassigned',flush=True)
     image=subprocess.check_output(['docker','compose','images','-q','api'],cwd=ROOT,text=True).strip()
     environment['BILLING_TEST_DATABASE_URL']=environment['DATABASE_URL'];environment['DATABASE_URL']=''
     run(['docker','run','--rm','--network',network,'-e','DATABASE_URL','-e','BILLING_TEST_DATABASE_URL','-v',str(ROOT/'backend')+':/app:ro',image,'python','-m','pytest','tests/test_billing_integration.py','tests/test_account_access_integration.py','tests/test_service_reliability_integration.py','-q','-s','-p','no:cacheprovider'],env=environment)

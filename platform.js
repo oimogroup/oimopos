@@ -63,7 +63,7 @@ function recordLabel(count) {
 function tenantLoginUrl(tenant) {
   const url = new URL("/login", location.origin);
   url.searchParams.set("mode", "admin");
-  if (tenant.owner_login) url.searchParams.set("login", tenant.owner_login);
+  if (tenant.owner_email || tenant.owner_login) url.searchParams.set("login", tenant.owner_email || tenant.owner_login);
   return url.href;
 }
 
@@ -72,7 +72,7 @@ function renderTenants() {
   const status = $("#tenantStatusFilter").value;
   const filtered = tenants.filter((tenant) => {
     const matchesStatus = status === "all" || tenant.status === status;
-    const haystack = [tenant.name, tenant.slug, tenant.owner_login, tenant.contact_email, tenant.first_location_name, tenant.first_location_address, tenant.plan_code].join(" ").toLowerCase();
+    const haystack = [tenant.name, tenant.slug, tenant.owner_login, tenant.owner_email, tenant.contact_email, tenant.first_location_name, tenant.first_location_address, tenant.plan_code].join(" ").toLowerCase();
     return matchesStatus && haystack.includes(search);
   });
   $("#tenantTable").innerHTML = filtered.map((tenant) => {
@@ -87,7 +87,7 @@ function renderTenants() {
         <td class="company-cell"><b>${escapeHtml(tenant.name)}</b><small>${escapeHtml(tenant.slug)} · с ${formatDate(tenant.created_at)}</small>${tenant.first_location_name ? `<small>${escapeHtml(tenant.first_location_name)} · ${escapeHtml(tenant.first_location_address || "адрес не указан")}</small>` : ""}</td>
         <td><span class="plan-badge">${escapeHtml(planLabel(tenant.plan_code))}</span></td>
         <td><div class="usage-cell"><div class="usage-label"><span>${branchCount} из ${branchLimit} заведений</span><small>${usage}%</small></div><div class="usage-track"><i class="${usage >= 80 ? "near-limit" : ""}" style="width:${usage}%"></i></div></div></td>
-        <td><div class="owner-cell"><span class="owner-avatar">${escapeHtml(initials(owner))}</span><div class="company-cell"><b>${escapeHtml(owner)}</b><small>${escapeHtml(tenant.owner_login || "Логин не назначен")}</small></div></div></td>
+        <td><div class="owner-cell"><span class="owner-avatar">${escapeHtml(initials(owner))}</span><div class="company-cell"><b>${escapeHtml(owner)}</b><small>${escapeHtml(tenant.owner_email || tenant.owner_login || "Email не назначен")}</small></div></div></td>
         <td><span class="status-badge ${escapeHtml(tenant.subscription_status)}">${escapeHtml(statusLabel(tenant.subscription_status))}</span>${tenant.trial_ends_at ? `<span class="subscription-date">до ${formatDate(tenant.trial_ends_at)}</span>` : ""}</td>
         <td><span class="status-badge ${escapeHtml(tenant.status)}">${escapeHtml(statusLabel(tenant.status))}</span></td>
         <td><div class="row-actions"><a class="row-action icon-button" href="${escapeHtml(tenantLoginUrl(tenant))}" target="_blank" rel="noopener noreferrer" title="Открыть вход в админку" aria-label="Открыть вход в админку">${icon("logout")}</a><button class="row-action icon-button" data-copy-login="${escapeHtml(tenant.id)}" type="button" title="Скопировать ссылку на вход" aria-label="Скопировать ссылку на вход">${icon("copy")}</button><button class="row-action icon-button" data-edit-tenant="${escapeHtml(tenant.id)}" type="button" title="Настроить клиента" aria-label="Настроить клиента">${icon("settings")}</button><button class="row-action icon-button${tenant.status === "active" ? " danger-button" : ""}" data-toggle-tenant="${escapeHtml(tenant.id)}" data-next-status="${nextStatus}" type="button" title="${toggleLabel}" aria-label="${toggleLabel}">${icon(tenant.status === "active" ? "pause" : "play")}</button><button class="row-action icon-button danger-button" data-delete-tenant="${escapeHtml(tenant.id)}" type="button" aria-label="Удалить аккаунт" title="Удалить аккаунт"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div></td>
@@ -250,6 +250,7 @@ function openTenantSettings(tenantId) {
   $("#settingsTenantStatus").value = tenant.status;
   $("#settingsOwnerName").value = tenant.owner_name || "Администратор компании";
   $("#settingsOwnerLogin").value = tenant.owner_login || "";
+  $("#settingsOwnerEmail").value = tenant.owner_email || "";
   $("#settingsOwnerPassword").value = "";
   $("#tenantSettingsError").classList.add("hidden");
   $("#tenantSettingsModal").classList.remove("hidden");
@@ -267,8 +268,9 @@ async function saveTenantSettings(event) {
     const tenant = tenants.find((entry) => entry.id === editingTenantId);
     const ownerName = $("#settingsOwnerName").value.trim();
     const ownerLogin = $("#settingsOwnerLogin").value.trim().toLowerCase();
+    const ownerEmail = $("#settingsOwnerEmail").value.trim().toLowerCase();
     const ownerPassword = $("#settingsOwnerPassword").value;
-    const ownerChanged = ownerName !== tenant?.owner_name || ownerLogin !== tenant?.owner_login || Boolean(ownerPassword);
+    const ownerChanged = ownerName !== tenant?.owner_name || ownerLogin !== tenant?.owner_login || ownerEmail !== tenant?.owner_email || Boolean(ownerPassword);
     const requests = [window.AshkanaApi.updateTenant(editingTenantId, {
         name: $("#settingsTenantName").value.trim(),
         email: $("#settingsTenantEmail").value.trim().toLowerCase(),
@@ -282,12 +284,14 @@ async function saveTenantSettings(event) {
     if (ownerChanged) requests.push(window.AshkanaApi.updateTenantOwner(editingTenantId, {
       owner_name: ownerName,
       owner_login: ownerLogin,
+      owner_email: ownerEmail,
       owner_password: ownerPassword || null,
     }));
     const [updated] = await Promise.all(requests);
     if (ownerChanged) {
       updated.owner_name = ownerName;
       updated.owner_login = ownerLogin;
+      updated.owner_email = ownerEmail;
     }
     tenants = tenants.map((entry) => entry.id === updated.id ? updated : entry);
     renderTenants();

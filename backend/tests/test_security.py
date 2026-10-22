@@ -55,6 +55,14 @@ def test_password_hash_is_salted_and_verifiable() -> None:
     assert not verify_password("wrong-password", first)
 
 
+def test_five_character_password_is_hashed_and_four_is_rejected() -> None:
+    encoded = hash_password('abcde')
+    assert verify_password('abcde', encoded)
+    assert not verify_password('abcd', encoded)
+    with pytest.raises(ValueError):
+        hash_password('abcd')
+
+
 def test_cashier_pin_is_salted_and_verifiable() -> None:
     encoded = hash_pin("4821")
 

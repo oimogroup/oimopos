@@ -18,9 +18,9 @@
   let f=await fixture('#action=reset&token='+token);
   check('token-removed-from-url',!f.w.location.hash);
   check('no-consumption-on-open',f.w.__calls.length===0&&!f.q('#resetForm').hidden);
-  f.q('#resetForm').elements.password.value='New-password-123';f.q('#resetForm').elements.confirmation.value='Different-password-123';f.q('#resetForm').requestSubmit();await pause();
+  f.q('#resetForm').elements.password.value='abcde';f.q('#resetForm').elements.confirmation.value='Different-password-123';f.q('#resetForm').requestSubmit();await pause();
   check('password-confirmation-required',f.w.__calls.length===0&&f.q('#accountMessage').textContent.includes('не совпадают'));
-  f.q('#resetForm').elements.confirmation.value='New-password-123';f.q('#resetForm').requestSubmit();await pause();
+  f.q('#resetForm').elements.confirmation.value='abcde';check('five-character-reset-valid',f.q('#resetForm').checkValidity());f.q('#resetForm').requestSubmit();await pause();
   check('reset-posts-token-and-clears-password',f.w.__calls.length===1&&f.w.__calls[0].token===token&&!f.q('#resetForm').elements.password.value&&f.q('#resetForm').hidden);
   check('mobile-layout-fits',f.d.documentElement.scrollWidth<=f.w.innerWidth+1);
   f.frame.remove();f=await fixture('#action=verify&token='+token);

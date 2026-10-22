@@ -15,6 +15,7 @@ def test_recovery_rejects_unbounded_or_malformed_token(token):
 
 
 def test_password_policy_and_token_purpose_payload_are_bounded():
-    with pytest.raises(ValidationError): ResetInput(token='x'*43,password='short')
+    assert ResetInput(token='x'*43,password='abcde').password == 'abcde'
+    with pytest.raises(ValidationError): ResetInput(token='x'*43,password='abcd')
     with pytest.raises(ValidationError): ResetInput(token='x'*43,password='x'*201)
     with pytest.raises(ValidationError): ResetInput(token='x'*43,password='x'*12,user_id=1)

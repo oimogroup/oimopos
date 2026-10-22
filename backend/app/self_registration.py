@@ -6,15 +6,15 @@ from typing import Annotated
 from uuid import uuid4
 
 from fastapi import Depends, HTTPException, Request, Response
-from pydantic import Field, StringConstraints, field_validator, TypeAdapter
+from pydantic import Field, field_validator, TypeAdapter
 
 from .onboarding_requests import ConnectionRequest
-from .schemas import AccountLogin, ContactEmail, LoginInput, TenantCreate
+from .schemas import AccountLogin, ContactEmail, LoginInput, TenantCreate, UserPassword
 
 
 class SignupInput(ConnectionRequest):
     email: Annotated[ContactEmail, Field(max_length=64)]
-    password: Annotated[str, StringConstraints(strip_whitespace=False, min_length=12, max_length=200)]
+    password: UserPassword
 
     @field_validator('email')
     @classmethod
@@ -63,7 +63,7 @@ def install(app):
                 ).fetchone()
                 if recent['peer_total'] >= 10 or recent['phone_total'] >= 1:
                     raise HTTPException(429, 'Пробный аккаунт уже создан или достигнут лимит. Войдите в существующий аккаунт либо свяжитесь с Oimo.')
-                if connection.execute('SELECT id FROM auth_users WHERE lower(login) = %s LIMIT 1', (payload.email,)).fetchone():
+                if connection.execute('SELECT id FROM auth_users WHERE lower(email) = %s AND deleted_at IS NULL LIMIT 1', (payload.email,)).fetchone():
                     raise HTTPException(409, 'Этот email уже используется. Войдите в аккаунт.')
                 tenant = main._provision_tenant(tenant_input, {'id': None, 'login': 'self-registration'}, connection)
                 connection.execute(
