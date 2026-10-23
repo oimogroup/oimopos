@@ -27,6 +27,12 @@
  strong,b {font-weight:600;}
  :is(button,a,input,select,textarea,summary):focus-visible {outline:2px solid #737373;outline-offset:3px;}
  :is(input,textarea)::placeholder {color:#767676;}
+ [data-ui] .password-visibility-field {position:relative;display:flex;align-items:center;width:100%;min-width:0;}
+ [data-ui] .password-visibility-field>input {flex:1 1 auto;min-width:0;width:100%;padding-inline-end:52px!important;}
+ [data-ui] .password-visibility-toggle {position:absolute;inset-inline-end:4px;top:50%;transform:translateY(-50%);display:grid;place-items:center;width:40px;height:40px;min-height:40px;padding:0;border:0;background:transparent;color:#555;box-shadow:none;line-height:1;cursor:pointer;}
+ [data-ui] .password-visibility-toggle:hover {background:#f1f1f1;color:#202123;}
+ [data-ui] .password-visibility-toggle:focus-visible {outline:2px solid #737373;outline-offset:1px;}
+ [data-ui] .password-visibility-toggle svg {display:block;width:19px;height:19px;fill:none;stroke:currentColor;stroke-width:1.8;stroke-linecap:round;stroke-linejoin:round;}
  [data-ui] :is(.primary-button,.primary-action,.terminal-primary,.login-submit,.confirm-payment,.pay-button,.object-switch-button) {background:#202123;color:#fff;border-color:#202123;box-shadow:none;font-weight:500;}
  [data-ui] :is(.primary-button,.primary-action,.terminal-primary,.login-submit,.confirm-payment,.pay-button):hover:not(:disabled) {background:#090909;}
  [data-ui] :is(.secondary-button,.secondary-action,.filter-button,.icon-button) {background:#fff;color:var(--ink);border-color:var(--line);box-shadow:none;font-weight:500;}
