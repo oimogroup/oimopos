@@ -183,6 +183,7 @@ class PosShiftClose(BaseModel):
 class TenantCreate(BaseModel):
     name: NonEmptyText
     slug: TenantSlug
+    workspace_subdomain: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=48, pattern=r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")] | None = None
     owner_name: NonEmptyText
     email: ContactEmail
     phone: PhoneText
@@ -206,6 +207,10 @@ class TenantCreate(BaseModel):
         if self.owner_login is None:
             self.owner_login = self.email
         return self
+
+
+class WorkspaceAddressUpdate(BaseModel):
+    workspace_subdomain: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=48, pattern=r"^[A-Za-z0-9]+(?:-[A-Za-z0-9]+)*$")]
 
 
 class TenantDelete(BaseModel):

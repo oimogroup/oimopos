@@ -6,6 +6,8 @@ from urllib.parse import urlsplit
 from fastapi import Request
 from fastapi.responses import RedirectResponse, FileResponse
 from fastapi.staticfiles import StaticFiles
+from .config import get_settings
+from .workspace_address import request_subdomain, root_domain
 
 
 def configure_environment():
@@ -39,7 +41,9 @@ async def cloud_headers(request, call_next):
 
 
 @app.get("/", include_in_schema=False)
-def home():
+def home(request: Request):
+    if request_subdomain(request.url.hostname, root_domain(get_settings().public_app_url)):
+        return RedirectResponse("/login", status_code=307)
     return FileResponse(PUBLIC / "landing.html", headers={"Cache-Control": "no-cache"})
 
 

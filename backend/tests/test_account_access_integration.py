@@ -5,6 +5,7 @@ from urllib.parse import parse_qs, urlsplit
 
 import pytest
 from fastapi import HTTPException, Request
+from fastapi.testclient import TestClient
 from uuid import uuid4
 
 from app import main
@@ -67,6 +68,44 @@ def test_concurrent_signup_reserves_one_account_per_email(system):
     with system.connect() as connection:
         assert connection.execute('SELECT count(*) AS n FROM auth_users WHERE lower(email)=%s AND deleted_at IS NULL',(email,)).fetchone()['n']==1
         assert connection.execute('SELECT count(*) AS n FROM trial_registrations WHERE email=%s',(email,)).fetchone()['n']==1
+
+
+def test_workspace_subdomain_selects_and_locks_company_context(system):
+    suffix=uuid4().hex[:12]
+    email=f'workspace-{suffix}@example.com'
+    other_email=f'other-{suffix}@example.com'
+    with system.connect() as connection:
+        first=main._provision_tenant(TenantCreate(name='Workspace Cafe',slug='workspace-'+suffix,owner_name='Workspace Owner',
+          email=email,phone='996555123456',owner_password='abcde',register_password='vwxyz',service_modes=['counter'],
+          location_name='Cafe',location_address='Test'),{'id':None,'login':'test'},connection)
+        other=main._provision_tenant(TenantCreate(name='Another Cafe',slug='another-'+suffix,owner_name='Other Owner',
+          email=other_email,phone='996555654321',owner_password='fghij',register_password='uvwxy',service_modes=['counter'],
+          location_name='Cafe',location_address='Test'),{'id':None,'login':'test'},connection)
+
+    origin=f"https://{first['workspace_subdomain']}.oimo.example"
+    client=TestClient(main.app,base_url=origin,headers={'Origin':origin})
+    try:
+        logged=client.post('/api/v1/auth/login',json={'login':email,'password':'abcde'})
+        assert logged.status_code==200 and logged.json()['session']['tenantId']==first['id']
+        assert logged.json()['session']['workspaceUrl']==origin
+        wrong_company=client.post('/api/v1/auth/login',json={'login':other_email,'password':'fghij'})
+        assert wrong_company.status_code==401
+
+        changed=client.put('/api/v1/account/workspace-address',json={'workspace_subdomain':'workspace-new-'+suffix})
+        assert changed.status_code==200,changed.text
+        assert changed.json()['workspaceUrl']==f"https://workspace-new-{suffix}.oimo.example"
+        assert client.get('/api/v1/auth/me').status_code==404
+    finally:
+        client.close()
+
+    new_origin=f"https://workspace-new-{suffix}.oimo.example"
+    new_client=TestClient(main.app,base_url=new_origin,headers={'Origin':new_origin})
+    try:
+        logged=new_client.post('/api/v1/auth/login',json={'login':email,'password':'abcde'})
+        assert logged.status_code==200 and logged.json()['session']['tenantId']==first['id']
+        assert logged.json()['session']['workspaceSubdomain']=='workspace-new-'+suffix
+    finally:
+        new_client.close()
 
 
 def test_shared_owner_alias_and_password_never_mix_tenants_or_recovery(system):

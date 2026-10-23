@@ -138,6 +138,9 @@
     }),
     me: () => request("/auth/me"),
     logout: () => request("/auth/logout", { method: "POST", body: "{}" }),
+    updateWorkspaceAddress: workspaceSubdomain => request("/account/workspace-address", {
+      method: "PUT", body: JSON.stringify({ workspace_subdomain: workspaceSubdomain }),
+    }),
     workspace: () => request("/workspace"),
     exportInventory: (id, items) => request(`/workspace/inventories/${encodeURIComponent(id)}/export`, { method: "POST", body: JSON.stringify({ items }) }),
     action,

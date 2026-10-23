@@ -21,6 +21,8 @@ services:
         generateValue: true
       - key: SESSION_COOKIE_SECURE
         value: "true"
+      - key: PUBLIC_APP_URL
+        value: https://oimopos.com
       - key: CORS_ORIGINS
         value: ""
       - key: SMTP_HOST

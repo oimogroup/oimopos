@@ -7,7 +7,7 @@ from datetime import datetime, timedelta, timezone
 from decimal import Decimal
 import re
 from uuid import uuid4
-from urllib.parse import quote
+from urllib.parse import quote, urlsplit
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -38,8 +38,10 @@ from .schemas import (
     TenantDelete,
     TenantOwnerAccessUpdate,
     TenantUpdate,
+    WorkspaceAddressUpdate,
     WorkspaceActionInput,
 )
+from . import workspace_address
 from .security import hash_password, hash_pin, new_session_token, token_hash, verify_password, verify_pin
 from .workspace import sale_payment_amount, WorkspaceError, apply_action, new_tenant_state, visible_state, production_context
 
@@ -140,8 +142,30 @@ app.add_middleware(
 
 def _check_origin(request: Request) -> None:
     origin = request.headers.get("origin")
-    if not origin or origin not in get_settings().allowed_origins:
+    allowed = {value.rstrip("/").lower() for value in get_settings().allowed_origins}
+    is_allowed = bool(origin) and origin.rstrip("/").lower() in allowed
+    if not is_allowed and origin:
+        parsed = urlsplit(origin)
+        if parsed.scheme in {"http", "https"} and parsed.netloc and not parsed.username and not parsed.password:
+            request_host = (request.headers.get("host") or request.url.netloc).lower().rstrip(".")
+            forwarded_scheme = (request.headers.get("x-forwarded-proto") or request.url.scheme).split(",", 1)[0].strip().lower()
+            is_allowed = parsed.netloc.lower().rstrip(".") == request_host and parsed.scheme == forwarded_scheme
+    if not is_allowed:
         raise HTTPException(status_code=403, detail="Недопустимый источник запроса")
+
+
+def _request_workspace_subdomain(request: Request, connection: Connection) -> str | None:
+    subdomain = workspace_address.request_subdomain(
+        request.url.hostname, workspace_address.root_domain(get_settings().public_app_url),
+    )
+    if subdomain is None:
+        return None
+    tenant = connection.execute(
+        "SELECT id FROM tenants WHERE lower(workspace_subdomain) = lower(%s) LIMIT 1", (subdomain,),
+    ).fetchone()
+    if not tenant:
+        raise HTTPException(status_code=404, detail="Рабочее пространство не найдено")
+    return subdomain
 
 
 def _workspace_row(connection: Connection, tenant_id: str, *, for_update: bool = False) -> dict:
@@ -215,6 +239,9 @@ def _user_session(user: dict, state: dict | None = None) -> dict:
     tenant = {
         "tenantId": user["tenant_id"], "tenantName": user.get("tenant_name"),
         "tenantSlug": user.get("tenant_slug"), "planCode": user.get("plan_code"),
+        "workspaceSubdomain": user.get("tenant_workspace_subdomain"),
+        "workspaceUrl": workspace_address.workspace_url(user["tenant_workspace_subdomain"], get_settings().public_app_url)
+            if user.get("tenant_workspace_subdomain") else None,
         "serviceMode": "restaurant" if user.get("plan_code") == "restaurant" else "canteen",
         "subscriptionStatus": user.get("subscription_status"),
         "trialEndsAt": user.get("trial_ends_at"), "maxBranches": user.get("max_branches"),
@@ -292,7 +319,7 @@ def current_user(
         """
         SELECT u.id, u.login, u.email_verified_at, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name, u.is_active, u.account_version,
                s.id AS session_id, s.expires_at AS session_expires_at,
-               t.name AS tenant_name, t.slug AS tenant_slug, t.status AS tenant_status,
+               t.name AS tenant_name, t.slug AS tenant_slug, t.workspace_subdomain AS tenant_workspace_subdomain, t.status AS tenant_status,
                subscription.plan_code, subscription.status AS subscription_status, subscription.max_branches,
                subscription.trial_ends_at, subscription.current_period_ends_at
         FROM auth_sessions s
@@ -309,6 +336,11 @@ def current_user(
     ).fetchone()
     if not row:
         raise HTTPException(status_code=401, detail="Сессия истекла или доступ изменён")
+    requested_workspace = workspace_address.request_subdomain(
+        request.url.hostname, workspace_address.root_domain(get_settings().public_app_url),
+    )
+    if requested_workspace and requested_workspace.lower() != str(row.get("tenant_workspace_subdomain") or "").lower():
+        raise HTTPException(status_code=404, detail="Это рабочее пространство принадлежит другому аккаунту")
     if request.headers.get('x-ashkana-client', '').lower() == 'pos':
         expected_register = request.headers.get('x-oimo-register')
         expected_tenant = request.headers.get('x-oimo-tenant')
@@ -396,10 +428,11 @@ def _update_branch_account(connection: Connection, tenant_id: str, payload: dict
 
 def login(payload: LoginInput, response: Response, request: Request, connection: Connection = Depends(get_connection)) -> dict:
     _check_origin(request)
+    requested_workspace = _request_workspace_subdomain(request, connection)
     identities = connection.execute(
         """
         SELECT u.id, u.login, u.email, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
-               u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
+               u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug, t.workspace_subdomain AS tenant_workspace_subdomain,
                t.status AS tenant_status, subscription.plan_code,
                subscription.status AS subscription_status, subscription.max_branches,
                subscription.trial_ends_at, subscription.current_period_ends_at
@@ -409,10 +442,11 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
         WHERE ((lower(u.login) = lower(%s) AND (u.role <> 'owner' OR position('@' in u.login) = 0))
                OR lower(u.email) = lower(%s)) AND u.staff_role <> 'pos_terminal'
           AND u.deleted_at IS NULL
+          AND (%s::text IS NULL OR t.workspace_subdomain = %s)
         ORDER BY (lower(u.email) = lower(%s)) DESC NULLS LAST, u.id
         LIMIT 2
         """,
-        (payload.login, payload.login, payload.login),
+        (payload.login, payload.login, requested_workspace, requested_workspace, payload.login),
     ).fetchall()
     # Resolve by email first. A shared alias must never select an account by
     # password, row order or an unrelated tenant's session.
@@ -425,7 +459,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
         candidates = connection.execute(
             """
             SELECT u.id, u.login, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
-                   u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
+                   u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug, t.workspace_subdomain AS tenant_workspace_subdomain,
                    t.status AS tenant_status, subscription.plan_code,
                    subscription.status AS subscription_status, subscription.max_branches,
                    subscription.trial_ends_at, subscription.current_period_ends_at
@@ -434,9 +468,10 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
             LEFT JOIN tenant_subscriptions subscription ON subscription.tenant_id = u.tenant_id
             WHERE u.role = 'branch' AND u.staff_role = 'pos_terminal' AND u.is_active
               AND (lower(t.slug) = lower(%s) OR lower(u.login) = lower(%s))
+              AND (%s::text IS NULL OR t.workspace_subdomain = %s)
             ORDER BY u.id
             """,
-            (payload.login, payload.login),
+            (payload.login, payload.login, requested_workspace, requested_workspace),
         ).fetchall()
         user = next((candidate for candidate in candidates if verify_password(payload.password, candidate["password_hash"])), None)
     if not user or not user["is_active"]:
@@ -465,7 +500,7 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
         terminal_user = connection.execute(
             f"""
             SELECT u.id, u.login, u.email_verified_at, u.password_hash, u.role, u.staff_role, u.access_permissions, u.phone, u.tenant_id, u.branch_id, u.display_name,
-                   u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug,
+                   u.is_active, u.account_version, t.name AS tenant_name, t.slug AS tenant_slug, t.workspace_subdomain AS tenant_workspace_subdomain,
                    t.status AS tenant_status, subscription.plan_code,
                    subscription.status AS subscription_status, subscription.max_branches,
                    subscription.trial_ends_at, subscription.current_period_ends_at
@@ -534,6 +569,52 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
 def me(user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
     state = None if user["role"] == "platform_owner" else _workspace_row(connection, user["tenant_id"])["payload"]
     return {"session": _user_session(user, state)}
+
+
+@app.put("/api/v1/account/workspace-address", tags=["account"])
+def update_workspace_address(
+    payload: WorkspaceAddressUpdate,
+    request: Request,
+    user: dict = Depends(current_user),
+    connection: Connection = Depends(get_connection),
+) -> dict:
+    _check_origin(request)
+    if user["role"] != "owner":
+        raise HTTPException(status_code=403, detail="Адрес пространства может менять владелец компании")
+    try:
+        desired = workspace_address.validate_subdomain(payload.workspace_subdomain)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+    try:
+        with connection.transaction():
+            connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('workspace-subdomains', 0))")
+            tenant = connection.execute(
+                "SELECT name, workspace_subdomain FROM tenants WHERE id = %s FOR UPDATE", (user["tenant_id"],),
+            ).fetchone()
+            if not tenant:
+                raise HTTPException(status_code=404, detail="Компания не найдена")
+            subdomain = workspace_address.allocate(
+                connection, tenant["name"], desired, exclude_tenant_id=str(user["tenant_id"]),
+            )
+            if subdomain != tenant["workspace_subdomain"]:
+                connection.execute(
+                    "UPDATE tenants SET workspace_subdomain = %s, updated_at = CURRENT_TIMESTAMP WHERE id = %s",
+                    (subdomain, user["tenant_id"]),
+                )
+                connection.execute(
+                    "INSERT INTO platform_events (actor_user_id, actor_login, action, tenant_id, payload) VALUES (%s, %s, 'workspace.address.update', %s, %s)",
+                    (user["id"], user["login"], user["tenant_id"], Jsonb({
+                        "previous": tenant["workspace_subdomain"], "current": subdomain,
+                    })),
+                )
+    except UniqueViolation as error:
+        raise HTTPException(status_code=409, detail="Этот адрес уже занят. Выберите другой") from error
+    except ValueError as error:
+        raise HTTPException(status_code=409, detail=str(error)) from error
+    return {
+        "workspaceSubdomain": subdomain,
+        "workspaceUrl": workspace_address.workspace_url(subdomain, get_settings().public_app_url),
+    }
 
 
 @app.post("/api/v1/auth/logout", tags=["auth"])
@@ -1923,7 +2004,8 @@ def delete_employee(
 def _tenant_record(connection: Connection, tenant_id: str) -> dict:
     row = connection.execute(
         """
-        SELECT tenant.id, tenant.slug, tenant.name, tenant.status, tenant.created_at, tenant.updated_at,
+        SELECT tenant.id, tenant.slug, tenant.name, tenant.workspace_subdomain,
+               tenant.status, tenant.created_at, tenant.updated_at,
                tenant.contact_email, tenant.phone, tenant.business_status, tenant.business_type,
                tenant.service_modes, tenant.employee_range,
                subscription.plan_code, subscription.status AS subscription_status,
@@ -1946,7 +2028,9 @@ def _tenant_record(connection: Connection, tenant_id: str) -> dict:
     ).fetchone()
     if not row:
         raise HTTPException(status_code=404, detail="Компания не найдена")
-    return dict(row)
+    record = dict(row)
+    record["workspace_url"] = workspace_address.workspace_url(record["workspace_subdomain"], get_settings().public_app_url)
+    return record
 
 
 def _validate_plan(code: str):
@@ -2025,16 +2109,23 @@ def _provision_tenant(payload: TenantCreate, user: dict, connection: Connection)
     state["logisticsState"]["branchCosts"][branch_id] = {str(item["id"]): 0 for item in inventory_items}
     try:
         with connection.transaction():
+            connection.execute("SELECT pg_advisory_xact_lock(hashtextextended('workspace-subdomains', 0))")
+            try:
+                workspace_subdomain = workspace_address.allocate(
+                    connection, payload.name, payload.workspace_subdomain,
+                )
+            except ValueError as error:
+                raise HTTPException(status_code=422, detail=str(error)) from error
             connection.execute('SELECT pg_advisory_xact_lock(hashtextextended(%s,0))', ('account-login:'+payload.slug,))
             if connection.execute('SELECT id FROM auth_users WHERE lower(login) = %s AND deleted_at IS NULL LIMIT 1', (payload.slug,)).fetchone():
                 raise HTTPException(409, 'Код компании уже используется как логин. Выберите другой.')
             connection.execute(
                 """
                 INSERT INTO tenants
-                  (id, slug, name, status, contact_email, phone, business_status, business_type, service_modes, employee_range)
-                VALUES (%s, %s, %s, 'active', %s, %s, %s, %s, %s, %s)
+                  (id, slug, workspace_subdomain, name, status, contact_email, phone, business_status, business_type, service_modes, employee_range)
+                VALUES (%s, %s, %s, %s, 'active', %s, %s, %s, %s, %s, %s)
                 """,
-                (tenant_id, payload.slug, payload.name, payload.email, payload.phone,
+                (tenant_id, payload.slug, workspace_subdomain, payload.name, payload.email, payload.phone,
                  payload.business_status, payload.business_type, Jsonb(payload.service_modes), payload.employee_range),
             )
             connection.execute(
@@ -2068,7 +2159,8 @@ def _provision_tenant(payload: TenantCreate, user: dict, connection: Connection)
                 VALUES (%s, %s, 'tenant.create', %s, %s)
                 """,
                 (user["id"], user["login"], tenant_id, Jsonb({
-                    "name": payload.name, "slug": payload.slug, "ownerLogin": owner_login,
+                    "name": payload.name, "slug": payload.slug, "workspaceSubdomain": workspace_subdomain,
+                    "ownerLogin": owner_login,
                     "businessType": payload.business_type, "locationName": payload.location_name,
                     "locationAddress": payload.location_address, "planCode": payload.plan_code,
                     "maxBranches": payload.max_branches,

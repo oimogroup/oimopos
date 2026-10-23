@@ -2447,7 +2447,17 @@ function renderRegisters() {
   $("#registersContextBar").classList.toggle("hidden", ownerMode);
   $("#registersPointName").textContent = branch?.name || "Моё заведение";
   $("#registersPointAddress").textContent = branch?.address || "Адрес не указан";
-  $("#registerAccountLogin").textContent = currentSession.tenantSlug || pointRegisters[0]?.company_login || "—";
+  const workspaceLink = $("#registerWorkspaceUrl");
+  if (workspaceLink) {
+    if (currentSession.workspaceUrl) {
+      const loginUrl = new URL("/login", currentSession.workspaceUrl);
+      workspaceLink.href = loginUrl.href;
+      workspaceLink.textContent = loginUrl.host;
+    } else {
+      workspaceLink.removeAttribute("href");
+      workspaceLink.textContent = "Настройте в разделе «Настройки компании»";
+    }
+  }
   $("#registersTable").innerHTML = pointRegisters.map((register) => {
     const registerBranch = branchById(register.branch_id);
     const lastSeen = register.last_seen_at
@@ -6975,6 +6985,7 @@ window.CompanySettings.mount({
   session: currentSession,
   branchName: () => branches[0]?.name,
   notify: showToast,
+  saveWorkspaceAddress: value => window.AshkanaApi.updateWorkspaceAddress(value),
   save: async (section, values) => {
     if (serverMode) return runServerAction("settings.update", { section, values });
     const saved = JSON.parse(localStorage.getItem("ashkana-company-settings-test") || "{}");

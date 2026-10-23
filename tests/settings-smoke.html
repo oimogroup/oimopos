@@ -18,6 +18,9 @@ document.querySelector("#app").addEventListener("load", async () => {
       tab(name); check(`tab-${name}`, win.location.hash === `#settings/${name}` && doc.querySelector("#companySettings h2"));
     }
     check("saved-value-on-return", doc.querySelector('[name="companyName"]').value === "Кофейня Тест");
+    win.CompanySettings.receive(JSON.parse(win.localStorage.getItem(key) || "{}"), { role: "owner", tenantName: "Buffet", workspaceSubdomain: "buffet", workspaceUrl: "https://buffet.oimopos.com" });
+    const workspaceLink = doc.querySelector("#workspaceAddressLink");
+    check("workspace-address-editor", doc.querySelector("#workspaceSubdomain")?.value === "buffet" && workspaceLink?.href === "https://buffet.oimopos.com/login" && doc.querySelector(".workspace-address-input > span")?.textContent === ".oimopos.com");
     tab("delivery"); doc.querySelector("[data-add-area]").click();
     const area = doc.querySelector('[data-area-field="name"]'); area.value = "Центр"; area.dispatchEvent(new win.Event("input", { bubbles: true }));
     edit("enabled", true); await save();

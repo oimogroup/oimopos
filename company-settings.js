@@ -35,10 +35,16 @@
   };
   const group = (title, html) => `<section class="settings-group"><h2>${title}</h2>${html}</section>`;
   const unavailable = (label, reason, checked = false) => `<div class="settings-row settings-checkbox"><div></div><div><label class="settings-unavailable"><input type="checkbox" disabled ${checked ? "checked" : ""}>${label}</label><small>${reason}</small></div></div>`;
+  const workspaceUrl = subdomain => {
+    let domain = "oimopos.com";
+    try { domain = new URL(session.workspaceUrl).hostname.split(".").slice(1).join(".") || domain; } catch (_) { /* Use the public production domain until the first session refresh. */ }
+    return `https://${subdomain}.${domain}`;
+  };
   function general() {
     const tz = ["Asia/Almaty", "Asia/Bishkek", "Asia/Tashkent", "Europe/Moscow", "Europe/Kyiv", "Europe/Berlin", "UTC"];
     if (!tz.includes(draft.general.timezone)) tz.push(draft.general.timezone);
-    return group("Настройки компании", field("companyName", "Название компании", "text", "Будет печататься на чеке. Для разных названий точек выберите название заведения в настройках чека.", null, 'maxlength="120" required') + `<div class="settings-row"><label for="settingsAccount">Адрес аккаунта</label><div><input id="settingsAccount" value="${escape(session.tenantSlug || "ashkana")}" disabled><small>Идентификатор вашего аккаунта в Oimo.</small></div></div><div class="settings-row"><label for="settingsLogo">Логотип</label><div><label class="settings-upload" for="settingsLogo">Загрузить…</label><input id="settingsLogo" type="file" accept="image/png,image/jpeg,image/gif" class="settings-file"><small>Будет печататься в шапке чека. JPEG, PNG или GIF, до 5 МБ.</small><div id="settingsLogoPreview">${draft.general.logo ? `<img src="${escape(draft.general.logo)}" alt="Логотип компании"><button class="danger-button" type="button" data-remove-logo>Удалить</button>` : ""}</div></div></div>`) +
+    const address = session.role === "owner" ? `<div class="settings-row workspace-address-row"><label for="workspaceSubdomain">Адрес рабочего пространства</label><div><div class="workspace-address-input"><input id="workspaceSubdomain" value="${escape(session.workspaceSubdomain || "")}" maxlength="48" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="workspaceAddressHelp"><span>.${escape(new URL(workspaceUrl("oimo")).hostname.split(".").slice(1).join("."))}</span></div><small id="workspaceAddressHelp">По этому адресу вы и команда будете открывать кабинет компании.</small><a class="workspace-address-link" id="workspaceAddressLink" href="${escape(workspaceUrl(session.workspaceSubdomain || "oimo") + "/login")}" target="_blank" rel="noopener">${escape(workspaceUrl(session.workspaceSubdomain || "oimo"))}/login</a><div class="workspace-address-actions"><button class="secondary-action" type="button" data-save-workspace-address ${options?.saveWorkspaceAddress ? "" : "disabled"}>Сохранить адрес</button><span id="workspaceAddressStatus" role="status"></span></div></div></div>` : "";
+    return group("Настройки компании", field("companyName", "Название компании", "text", "Будет печататься на чеке. Для разных названий точек выберите название заведения в настройках чека.", null, 'maxlength="120" required') + address + `<div class="settings-row"><label for="settingsLogo">Логотип</label><div><label class="settings-upload" for="settingsLogo">Загрузить…</label><input id="settingsLogo" type="file" accept="image/png,image/jpeg,image/gif" class="settings-file"><small>Будет печататься в шапке чека. JPEG, PNG или GIF, до 5 МБ.</small><div id="settingsLogoPreview">${draft.general.logo ? `<img src="${escape(draft.general.logo)}" alt="Логотип компании"><button class="danger-button" type="button" data-remove-logo>Удалить</button>` : ""}</div></div></div>`) +
       group("Общие настройки", field("timezone", "Часовой пояс", "select", "Используется при печати чеков и выборе периода в статистике.", tz.map(z => [z, z])) + field("shiftEnd", "Время окончания смены", "time", "Начало отчётного дня. Например, при 05:00 продажи после полуночи до 05:00 относятся к предыдущему дню. Смена автоматически не закрывается.") + field("currency", "Денежная единица", "select", "Меняется обозначение валюты. Суммы не конвертируются.", [["KGS", "Кыргызский сом, сом"], ["KZT", "Казахстанский тенге, ₸"], ["RUB", "Российский рубль, ₽"], ["USD", "Доллар США, $"], ["EUR", "Евро, €"]]) + field("language", "Язык", "select", "Язык интерфейса аккаунта.", [["ru", "русский"]])) +
       group("Настройки кассы", field("floorPlan", "Показывать карту зала", "checkbox", "На кассе можно выбрать стол. Список столов настраивается в разделе «Заказы».") + unavailable("Использовать быструю смену официантов на кассе", "Смена сотрудника выполняется по личному PIN.") + field("fractional", "Разрешить заказывать часть порции", "checkbox", "Количество блюда можно изменить, например, на 0,5 или 1,5. Цена и списание пересчитываются пропорционально.") + field("roundTotal", "Округлять сумму заказа", "checkbox", "Сумма заказа округляется до целого числа в меньшую сторону (например, 10,60 → 10).") + field("servicePercent", "Процент за обслуживание", "select", "", [[0, "Не использовать"], ...[5, 7, 10, 12, 15, 20, 25, 30].map(n => [n, `${n}%`])]) + field("serviceDefault", "Добавлять обслуживание по умолчанию", "checkbox", "На кассе обслуживание можно включить или выключить для отдельного заказа.")) +
       group("Настройки администрирования", unavailable("Использовать производство тех. карт и полуфабрикатов", "Производство включено: продажи блюд учитывают готовые партии на раздаче.", true) + unavailable("Использовать кассовые смены", "Смены включены для учёта продаж и наличных на кассе.", true) + unavailable("Учитывать налоги", "Расчёт налогов ещё не подключён.") + unavailable("Использовать фискализацию", "Требуется подключение фискального регистратора. Сейчас печатается обычный чек.") + unavailable("Учитывать рабочее время сотрудников", "Табель рабочего времени ещё не подключён."));
@@ -111,6 +117,15 @@
     mounted = true;
     root().addEventListener("submit", save);
     root().addEventListener("input", () => { readDraft(); markDirty(); preview(); });
+    root().addEventListener("input", event => {
+      if (event.target.id !== "workspaceSubdomain") return;
+      const value = event.target.value.trim().toLowerCase();
+      const link = document.querySelector("#workspaceAddressLink");
+      if (!link || !/^[a-z0-9]+(?:-[a-z0-9]+)*$/.test(value)) return;
+      const url = workspaceUrl(value);
+      link.href = `${url}/login`;
+      link.textContent = `${url}/login`;
+    });
     root().addEventListener("change", async event => {
       if (event.target.id !== "settingsLogo") return;
       const file = event.target.files[0];
@@ -122,6 +137,28 @@
       reader.readAsDataURL(file);
     });
     root().addEventListener("click", event => {
+      const saveAddress = event.target.closest("[data-save-workspace-address]");
+      if (saveAddress) {
+        const input = document.querySelector("#workspaceSubdomain");
+        const status = document.querySelector("#workspaceAddressStatus");
+        const previous = session.workspaceSubdomain;
+        const value = input?.value.trim();
+        if (!value) { if (status) status.textContent = "Укажите адрес пространства"; input?.focus(); return; }
+        saveAddress.disabled = true;
+        if (status) status.textContent = "Сохраняем…";
+        Promise.resolve(options.saveWorkspaceAddress(value)).then(result => {
+          session.workspaceSubdomain = result.workspaceSubdomain;
+          session.workspaceUrl = result.workspaceUrl;
+          if (status) status.textContent = "Адрес сохранён";
+          const url = `${result.workspaceUrl}/login`;
+          const link = document.querySelector("#workspaceAddressLink");
+          if (link) { link.href = url; link.textContent = url; }
+          input.value = result.workspaceSubdomain;
+          if (previous && location.hostname.toLowerCase().startsWith(`${previous.toLowerCase()}.`)) location.assign(url);
+        }).catch(error => { if (status) status.textContent = error.message || "Не удалось сохранить адрес"; })
+          .finally(() => { if (saveAddress.isConnected) saveAddress.disabled = false; });
+        return;
+      }
       if (event.target.closest("[data-add-area]")) { readDraft(); draft.delivery.areas.push({ name: "", cost: 0, freeFrom: 0, minutes: 60 }); markDirty(); render(); }
       const remove = event.target.closest("[data-remove-area]");
       if (remove) { readDraft(); draft.delivery.areas.splice(Number(remove.dataset.removeArea), 1); markDirty(); render(); }
