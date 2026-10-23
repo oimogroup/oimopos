@@ -7,7 +7,8 @@
  :root,body[data-ui] {
   --op-plum:#202123;--op-plum-dark:#090909;--op-soft:#f1f1f1;
   --op-peach:#d9d9d9;--op-paper:#fff;--op-border:#e5e5e5;
-  --op-focus-color:#737373;--ink:#202123;--muted:#6b6b6b;
+  --op-focus-color:#737373;--ink:#202123;--muted:#626262;
+  --green:#176b48;--red:#b23849;--amber:#814d0a;
   --line:#e5e5e5;--canvas:#fff;--surface:#fff;
   --purple:#202123;--purple-dark:#090909;--purple-soft:#f1f1f1;
   --violet:#202123;--violet-dark:#090909;--navy:#f7f7f7;
@@ -22,7 +23,7 @@
  body[data-ui] {font-family:Oimo Sans,ui-sans-serif,system-ui,sans-serif;}
  body[data-ui=admin],body[data-ui=pos],body[data-ui=platform] {font-size:14px;line-height:1.45;}
  button,input,select,textarea {font-family:inherit;letter-spacing:inherit;}
- h1,h2,h3,h4 {font-family:inherit;letter-spacing:-.025em;font-weight:600;color:var(--ink);}
+ h1,h2,h3,h4 {font-family:inherit;letter-spacing:-.025em;font-weight:600;color:inherit;}
  strong,b {font-weight:600;}
  :is(button,a,input,select,textarea,summary):focus-visible {outline:2px solid #737373;outline-offset:3px;}
  :is(input,textarea)::placeholder {color:#767676;}
@@ -30,7 +31,7 @@
  [data-ui] :is(.primary-button,.primary-action,.terminal-primary,.login-submit,.confirm-payment,.pay-button):hover:not(:disabled) {background:#090909;}
  [data-ui] :is(.secondary-button,.secondary-action,.filter-button,.icon-button) {background:#fff;color:var(--ink);border-color:var(--line);box-shadow:none;font-weight:500;}
  [data-ui] :is(.secondary-button,.secondary-action,.filter-button,.icon-button):hover:not(:disabled) {background:#f5f5f5;}
- [data-ui] :is(input,select,textarea):not([type=checkbox]):not([type=radio]):not([type=color]) {border-color:#d4d4d4;background-color:#fff;color:var(--ink);}
+ [data-ui] :is(input,select,textarea):not([type=checkbox]):not([type=radio]):not([type=color]) {border-color:#b2b2b2;background-color:#fff;color:var(--ink);}
  [data-ui] :is(.primary-button,.primary-action,.terminal-primary,.confirm-payment,.pay-button):disabled {background:#ededed;color:#777;border-color:#ededed;opacity:1;}
  [data-ui] :is(.admin-brand-mark,.brand-mark,.auth-brand>span,.mobile-brand>span,.platform-brand>span) {background:#202123;color:#fff;box-shadow:none;}
  [data-ui] :is(.admin-brand-mark,.brand-mark)::after {display:none;}
@@ -60,6 +61,11 @@
  [data-ui] .page-heading>div>p,[data-ui] .page-heading>div>small:not(#stockAccessNote) {display:none;}
  body[data-ui=admin] :is(.panel,.table-panel,.settings-group,.metric-card,.inventory-summary article,.finance-summary article,.employee-summary article) {border:1px solid var(--line);background:#fff;box-shadow:none;}
  body[data-ui=admin] .finance-grid .finance-hero {background:#202123;border-color:#202123;color:#fff;}
+ body[data-ui=admin] :is(.chart-axis,.production-value.pending,.poster-analytics-view .analytics-summary small,.settings-row small,.settings-note) {color:#626262;}
+ body[data-ui=admin] :is(.status-badge.warn,.operation-status.shipped,.operation-status.returned,.document-hint.alert,.production-leftover) {color:#754705;}
+ body[data-ui=admin] .inventory-summary .warning strong {color:#754705;}
+ body[data-ui=admin] .settings-upload {color:#205b91;}
+ body[data-ui=admin] .dish-color {background:#f0f0f0!important;color:#202123;border:1px solid #d4d4d4;}
  body[data-ui=admin] :is(.panel-heading,.table-toolbar,.poster-table-toolbar) {padding:14px 16px;}
  body[data-ui=admin] th {background:#f8f8f8;color:#666;font-weight:500;}
  body[data-ui=admin] td {border-color:var(--line)!important;}
@@ -107,7 +113,7 @@
  body[data-ui=admin] .getting-started-help {display:block;}
  body[data-ui=admin] .start-help-links {padding:0;border:0;background:transparent;}
  body[data-ui=admin] .start-help-links h2 {font-size:13px;color:var(--muted);font-weight:400;margin-bottom:12px;}
- body[data-ui=admin] .start-help-links button {border:0;border-bottom:1px solid var(--line);min-height:48px;color:var(--ink);}
+ body[data-ui=admin] .start-help-links button {border:0;border-bottom:1px solid var(--line);min-height:48px;padding-inline:8px;color:var(--ink);}
  .workspace-guide-link {display:inline-flex;align-items:center;gap:8px;font-size:13px;color:var(--muted);text-decoration:none;padding:10px 0;}
  .workspace-guide-link:hover {color:var(--ink);text-decoration:underline;}
  .workspace-help {margin:12px 0;color:var(--muted);font-size:13px;}
@@ -130,7 +136,7 @@
  body[data-ui=pos] #mobileReturnReceipt:disabled {background:#f1f1f1;color:#777;}
  body[data-ui=pos] .offline-strip {background:#fafafa;border-color:var(--line);color:var(--muted);}
  body[data-ui=pos] #paymentModal .modal-header {background:#fff;color:var(--ink);border-bottom:1px solid var(--line);}
- body[data-ui=pos] #paymentModal .modal-header h2 {color:var(--ink);}
+ body[data-ui=pos] #paymentModal .modal-header h2 {color:inherit;}
  body[data-ui=pos] #paymentModal .modal-close {background:#fff;color:var(--ink);border-color:var(--line);}
  body[data-ui=pos] #paymentModal .confirm-payment:disabled {background:#ededed;color:#777;}
  body[data-ui=pos] #paymentModal :is(.payment-method,.payment-method input) {border-color:#d4d4d4;}
@@ -179,6 +185,18 @@
  .preview-explanation {display:none;}
  .feature-card,.plan,.faq details,.connect-card {background:#fff;border-color:var(--line);box-shadow:none;}
  .section h2,.connect h2 {font-family:inherit;font-weight:500;letter-spacing:-.04em;}
+ body[data-ui=landing] .connect-copy h2 {color:#fff;}
+ body[data-ui=landing] .connect-card {padding:32px;}
+ body[data-ui=landing] .connect-card label:not(.consent) {font-size:13px;color:#4b4b4b;}
+ body[data-ui=landing] .connect-card :is(input:not([type=checkbox]),select) {font-size:14px;border-color:#a6a6a6;padding:11px 14px;}
+ body[data-ui=landing] .connect-card input::placeholder {color:#6b6b6b;opacity:1;}
+ body[data-ui=landing] .connect-card .consent {font-size:12px;line-height:1.6;color:#505050;}
+ body[data-ui=landing] .connect-card .consent a {color:#202123;text-decoration-thickness:1px;}
+ body[data-ui=landing] .connect-card .form-footnote {font-size:12px;line-height:1.55;color:#555;}
+ body[data-ui=landing] :is(.quiet,.visual-caption,.example-tag,.chart-labels,.feature-number,.preview-chrome,.mock-categories,.mock-search,.receipt-label,.mock-receipt small,.stock-mock th,.stock-mock header span,.mock-info,.finance-result>span,.finance-line span,.process-grid article>span,.data-policy h2,.data-policy p,.plan-label,.pricing-note,.site-footer .copyright,.visual-summary strong small) {color:#646464!important;}
+ body[data-ui=landing] .feature-card p {color:#5f5f5f;}
+ body[data-ui=landing] .pricing-grid .price span {color:#646464;}
+ body[data-ui=landing] .product-tabs button:not([aria-selected=true]) {color:#555;}
  .button.primary,.button-dark {background:#202123;color:#fff;border-color:#202123;}
  .button.secondary {background:#fff;color:var(--ink);border-color:var(--line);}
  .section-intro>p,.feature-card>p {color:var(--muted);}
@@ -226,6 +244,9 @@
   body[data-ui=pos] .mobile-flow-header {background:#fff;}
   body[data-ui=auth] .auth-panel {align-items:flex-start;padding:40px 24px;}
   body[data-ui=auth] .login-card input {font-size:16px;}
+  body[data-ui=landing] .connect-card {padding:24px 18px;}
+  body[data-ui=landing] .connect-card :is(input:not([type=checkbox]),select) {font-size:16px;}
+  body[data-ui=landing] .connect-copy h2 br:last-child {display:inline;}
   .hero {padding-top:40px;padding-bottom:40px;}
   .hero-description {font-size:16px;}
  }
