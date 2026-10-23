@@ -47,6 +47,11 @@ PUBLIC = Path(__file__).resolve().parents[1] / "public"
 PAGES = {"pos": "index.html", "admin": "admin.html", "login": "login.html", "platform": "platform.html", "billing": "billing.html", "account": "account.html"}
 
 
+@app.get("/vendor/fonts/InterVariable.woff2", include_in_schema=False)
+def inter_variable_font():
+    return FileResponse(PUBLIC / "vendor/fonts/InterVariable.woff2", media_type="font/woff2")
+
+
 def page_response(filename):
     async def endpoint():
         return FileResponse(PUBLIC / filename, headers={"Cache-Control": "no-store"})
