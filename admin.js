@@ -2504,7 +2504,7 @@ function openRegisterTerminal(registerId = null, loginOverride = "") {
     showToast(activeRegisters.length ? "Выберите кассу и нажмите «Открыть кассу»" : "Сначала создайте и включите кассу");
     return;
   }
-  const login = loginOverride || currentSession.login || currentSession.tenantSlug || register.account_login;
+  const login = loginOverride || register.account_login || currentSession.login || currentSession.tenantSlug;
   const url = `/login?mode=pos&register=${encodeURIComponent(register.id)}&login=${encodeURIComponent(login)}`;
   window.open(url, "_blank", "noopener");
 }
