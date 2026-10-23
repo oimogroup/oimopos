@@ -27,6 +27,8 @@
  h1,h2,h3,h4 {font-family:inherit;letter-spacing:-.025em;font-weight:600;color:inherit;}
  strong,b {font-weight:600;}
  :is(button,a,input,select,textarea,summary):focus-visible {outline:2px solid #737373;outline-offset:3px;}
+ body[data-ui] :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]):not([type=range]),select,textarea):focus,
+ body[data-ui] :is(input:not([type=checkbox]):not([type=radio]):not([type=file]):not([type=color]):not([type=range]),select,textarea):focus-visible {outline:none!important;outline-offset:0!important;box-shadow:none!important;border-color:#8e878d!important;}
  :is(input,textarea)::placeholder {color:#767676;}
  [data-ui] .password-visibility-field {position:relative;display:flex;align-items:center;width:100%;min-width:0;}
  [data-ui] .password-visibility-field>input {flex:1 1 auto;min-width:0;width:100%;padding-inline-end:52px!important;}
