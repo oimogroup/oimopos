@@ -2239,6 +2239,7 @@ function renderSetupGuide() {
   });
   const count = completed.filter(Boolean).length;
   $("#setupProgress").textContent = `${count} из ${completed.length} шагов выполнено`;
+  $("#setupSummaryCount").textContent = `${count} / ${completed.length}`;
   $("#setupProgressBar").value = count;
   $("#setupNextStep").textContent = nextStep === -1
     ? "Всё готово! Продолжайте работу на кассе, а результаты смотрите в статистике."
@@ -2246,9 +2247,11 @@ function renderSetupGuide() {
 }
 
 function renderDashboard() {
-  $("#dashboardGreeting").textContent = currentSession.name
-    ? `Добро пожаловать, ${currentSession.name}!`
-    : "Добро пожаловать в Oimo!";
+  $("#dashboardGreeting").textContent = currentSession.tenantName || currentSession.name || "Мой аккаунт";
+  $("#dashboardBranchCount").textContent = branches.filter(branch => branch.status === "active").length;
+  $("#dashboardMenuCount").textContent = products.length + recipes.length;
+  $("#dashboardEmployeeCount").textContent = employees.filter(employee => employee.is_active).length;
+  $("#dashboardRegisterCount").textContent = posRegisters.filter(register => register.is_active).length;
   renderSetupGuide();
 }
 
@@ -2685,7 +2688,7 @@ function updateEmployeePermissionNote() {
   $("#employeePinLabel").textContent = posAccess ? "PIN сотрудника *" : "PIN сотрудника";
   $("#employeePinHint").textContent = editingEmployeeId
     ? "Оставьте пустым, если PIN менять не нужно."
-    : "4 цифры для входа в терминал. По PIN система определит сотрудника и его права.";
+    : "4 цифры для входа в кассу.";
   if (posAccess && !editingEmployeeId && !/^\d{4}$/.test($("#employeePinInput").value)) $("#employeePinInput").value = generateEmployeePin();
   if (adminAccess && !editingEmployeeId && !$("#employeePasswordInput").value) $("#employeePasswordInput").value = generateTemporaryPassword();
 }
@@ -2776,7 +2779,7 @@ function openEmployeeForm(employeeId = null, preferredBranchId = null) {
     : `<option value="${escapeHtml(activeBranch.id)}">${escapeHtml(activeBranch.name)}</option>`;
   $("#employeeBranchInput").value = activeBranch.id;
   $("#employeeBranchInput").disabled = !ownerMode;
-  $("#employeeBranchHint").textContent = "PIN работает на кассах выбранного заведения. Проверьте, что сотруднику разрешён вход на кассу.";
+  $("#employeeBranchHint").textContent = "PIN действует на кассах выбранного заведения.";
   $("#employeeRoleInput").innerHTML = ownerMode
     ? '<option value="branch_manager">Руководитель</option><option value="hall_admin">Администратор зала</option><option value="waiter">Официант</option><option value="storekeeper">Кладовщик</option><option value="production">Производство</option><option value="marketer">Маркетолог</option><option value="cashier">Кассир</option>'
     : '<option value="hall_admin">Администратор зала</option><option value="waiter">Официант</option><option value="storekeeper">Кладовщик</option><option value="production">Производство</option><option value="marketer">Маркетолог</option><option value="cashier">Кассир</option>';

@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=clear-ux-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
+    <link rel="stylesheet" href="/ui-theme.css?v=1" />
   </head>
   <body data-ui="pos">
     <svg class="ui-icon-sprite" aria-hidden="true">
@@ -192,7 +193,7 @@
     <div class="modal-backdrop hidden" id="terminalFunctions" role="dialog" aria-modal="true" aria-labelledby="functionsTitle">
       <section class="modal functions-modal"><div class="modal-header"><h2 id="functionsTitle">Действия кассы</h2><button class="icon-button" id="closeFunctions" type="button" aria-label="Закрыть">×</button></div>
       <div class="function-grid"><button type="button" id="salesReportButton">Отчёт по продажам</button><button type="button" id="salesImportButton">Импорт продаж из Excel</button></div><h3>Склад и смена</h3><div class="function-grid" id="functionOperations"></div>
-      <h3>Терминал</h3><div class="function-grid"><button type="button" id="functionSettings">Настройки и печать</button><button type="button" id="functionSync">Обновить данные</button><a href="/docs/user-guide/#cashier-day" target="_blank" rel="noopener" class="function-guide-link">Руководство со скриншотами ↗</a></div></section>
+      <h3>Терминал</h3><div class="function-grid"><button type="button" id="functionSettings">Настройки и печать</button><button type="button" id="functionSync">Обновить данные</button><a href="/docs/user-guide/#cashier-day" target="_blank" rel="noopener" class="function-guide-link">Руководство со скриншотами<svg class="ui-icon" aria-hidden="true"><use href="#ui-arrow"/></svg></a></div></section>
     </div>
     <div class="modal-backdrop hidden" id="salesImportModal" role="dialog" aria-modal="true" aria-labelledby="salesImportTitle">
       <section class="modal sales-import-modal"><header class="modal-header"><h2 id="salesImportTitle">Импорт продаж</h2><button type="button" class="icon-button" id="closeSalesImport" aria-label="Закрыть">×</button></header>
@@ -484,7 +485,7 @@
         <div class="operator-body" id="operatorStepPin">
           <p class="eyebrow">Начало работы</p>
           <h1 id="operatorLockTitle">Введите ПИН-код</h1>
-          <p class="operator-description">Введите личный PIN сотрудника этого заведения. PIN назначается в разделе «Сотрудники» при включённом доступе к кассе.</p>
+          <p class="operator-description">Личный PIN сотрудника этого заведения.</p>
           <div class="pin-dots" id="pinDots" aria-label="Введено цифр: 0"><i></i><i></i><i></i><i></i></div>
           <p class="pin-error hidden" id="pinError">Неверный PIN</p>
           <div class="pin-keypad" id="pinKeypad"></div>

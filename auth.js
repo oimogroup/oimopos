@@ -19,7 +19,7 @@ if (terminalMode) {
   document.querySelector("#authHeroDescription").textContent = "Сначала устройство входит в выбранную кассу. После этого каждый сотрудник работает под своим именем и личным PIN.";
   document.querySelector("#loginEyebrow").textContent = "Oimo POS";
   document.querySelector("#loginTitle").textContent = "Вход в кассу";
-  document.querySelector("#loginDescription").textContent = "Введите логин и пароль администратора либо логин аккаунта и отдельный пароль этой кассы.";
+  document.querySelector("#loginDescription").textContent = "Логин и пароль кассы или учётная запись руководителя.";
   document.querySelector("#loginSecurityTitle").textContent = "Одна касса — одно устройство";
   document.querySelector("#loginSecurityText").textContent = "После активации сотрудник выбирает своё имя и вводит личный 4-значный PIN.";
   submitLabel.textContent = "Открыть кассу";

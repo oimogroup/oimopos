@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=actions-15" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
+    <link rel="stylesheet" href="/ui-theme.css?v=1" />
   </head>
   <body data-ui="auth">
     <svg class="icon-sprite" aria-hidden="true">
@@ -36,15 +37,15 @@
       <section class="auth-panel">
         <form class="login-card" id="loginForm">
           <div class="mobile-brand"><span>o</span><b>Oimo</b></div>
-          <header><p id="loginEyebrow">Вход в систему</p><h2 id="loginTitle">Добро пожаловать</h2><small id="loginDescription">Владелец входит по email. Сотрудник и касса — по выданному логину.</small></header>
+          <header><p id="loginEyebrow">Вход в систему</p><h2 id="loginTitle">Вход в Oimo</h2><small id="loginDescription">Email владельца или логин сотрудника.</small></header>
           <p class="login-notice hidden" id="loginNotice">Администратор обновил доступ точки. Войдите с новым логином и паролем.</p>
           <label><span>Email / логин</span><input id="loginInput" name="login" type="text" autocomplete="username" required autofocus /></label>
           <label><span>Пароль</span><input id="passwordInput" name="password" type="password" autocomplete="current-password" required /></label>
           <p class="login-error hidden" id="loginError">Неверный логин или пароль</p>
           <button class="primary-button login-submit" type="submit"><span id="loginSubmitLabel">Войти</span><svg class="icon"><use href="#icon-arrow"/></svg></button>
-          <p style="font-size:13px;margin:16px 0"><a href="/account" style="color:#61425e;text-decoration:underline;text-underline-offset:3px">Забыли пароль?</a></p>
+          <p class="login-recovery"><a href="/account">Забыли пароль?</a></p>
 
-          <p style="font-size:12px;line-height:1.7;margin:18px 0;color:#827382">Ещё нет аккаунта? <a href="/#connect" style="color:#61425e;text-decoration:underline;text-underline-offset:3px">Подключить заведение</a></p>
+          <p class="login-registration">Нет аккаунта? <a href="/#connect">Создать аккаунт</a></p>
           <div class="demo-access server-access">
             <i><svg class="icon"><use href="#icon-lock"/></svg></i><div><b id="loginSecurityTitle">Защищённый вход</b><small id="loginSecurityText">Доступ проверяется сервером, пароль в браузере не хранится.</small></div>
           </div>

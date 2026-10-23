@@ -22,7 +22,7 @@ try:
    break
   except Exception: time.sleep(1)
  else: raise RuntimeError('health failed')
- for path in ['/','/login','/account','/account.js','/admin','/pos','/platform','/billing','/legal/offer','/legal/privacy','/legal/refunds','/legal/payment','/legal/contacts','/login.html','/admin.html','/index.html','/platform.html','/oimo.css','/mobile-ux.css','/app.js']:
+ for path in ['/','/login','/account','/account.js','/admin','/pos','/platform','/billing','/legal/offer','/legal/privacy','/legal/refunds','/legal/payment','/legal/contacts','/login.html','/admin.html','/index.html','/platform.html','/oimo.css','/mobile-ux.css','/ui-theme.css','/vendor/fonts/InterVariable.woff2','/app.js']:
   with urllib.request.urlopen('http://127.0.0.1:18080'+path) as r: assert r.status==200
  for path in ['/.env','/database/init/002_seed.sql','/tests/pos-ui-smoke.html','/app/main.py']:
   try: urllib.request.urlopen('http://127.0.0.1:18080'+path); raise AssertionError(path)

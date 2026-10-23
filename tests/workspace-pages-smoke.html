@@ -66,7 +66,7 @@
 
           doc.querySelector("#catalogDeleteModal").classList.remove("hidden");
           const deleteStyle = win.getComputedStyle(doc.querySelector("#catalogDeleteModal .admin-modal"));
-          check("delete-keeps-safe-confirmation", parseFloat(deleteStyle.width) < workspaceWidth && deleteStyle.borderRadius !== "0px");
+          check("delete-keeps-safe-confirmation", parseFloat(deleteStyle.width) < workspaceWidth && doc.querySelector("#catalogDeleteModal .admin-modal").getBoundingClientRect().height < win.innerHeight);
         } catch (error) {
           checks.push(`FAIL:runtime:${error.message}`);
         }

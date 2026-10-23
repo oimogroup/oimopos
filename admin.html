@@ -8,6 +8,7 @@
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=clear-ux-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
+    <link rel="stylesheet" href="/ui-theme.css?v=1" />
   </head>
   <body data-ui="admin">
     <svg class="ui-icon-sprite" aria-hidden="true">
@@ -156,35 +157,38 @@
           </div>
           <section class="admin-view active getting-started" id="view-dashboard">
             <div class="page-heading getting-started-heading">
-              <div><h1>Начало работы</h1><p>Всё, что нужно для первой продажи</p></div>
+              <div><h1>Главная</h1></div>
               <button class="secondary-action" id="dashboardOrdersButton" type="button"><svg class="ui-icon"><use href="#ui-receipt"/></svg>История чеков</button>
             </div>
             <div class="getting-started-layout">
               <div>
                 <div class="getting-started-welcome">
-                  <span class="getting-started-icon"><svg class="ui-icon"><use href="#ui-home"/></svg></span>
-                  <div><h2 id="dashboardGreeting">Добро пожаловать в Oimo!</h2><p>Подготовьте меню и склад, добавьте команду и откройте кассу. Начните с любого шага — к остальным можно вернуться позже.</p></div>
+                  <h2 id="dashboardGreeting">Мой аккаунт</h2>
                 </div>
+                <div class="workspace-summary" aria-label="Аккаунт">
+                  <button data-setup-route="branches" type="button"><span>Заведения</span><strong id="dashboardBranchCount">0</strong></button>
+                  <button data-setup-route="menu/products" type="button"><span>Позиций в меню</span><strong id="dashboardMenuCount">0</strong></button>
+                  <button data-setup-route="employees" type="button"><span>Сотрудники</span><strong id="dashboardEmployeeCount">0</strong></button>
+                  <button data-setup-route="registers" type="button"><span>Кассы</span><strong id="dashboardRegisterCount">0</strong></button>
+                </div>
+                <details class="workspace-setup" id="setupDisclosure">
+                <summary>Настройка аккаунта <span id="setupSummaryCount"></span></summary>
                 <article class="setup-guide" id="setupGuide">
                   <header><div><h2>Подготовка к работе</h2><p id="setupProgress" aria-live="polite">0 из 5 шагов выполнено</p></div><span class="setup-progress-icon"><svg class="ui-icon"><use href="#ui-checklist"/></svg></span></header>
                   <progress id="setupProgressBar" max="5" value="0" aria-label="Подготовка к работе"></progress>
                   <div class="setup-steps">
-                    <button data-setup-route="menu/recipes" type="button"><i aria-hidden="true">1</i><span><strong>Заполните меню</strong><small>Добавьте товары, ингредиенты и технологические карты блюд.</small></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
-                    <button data-setup-route="inventory/supplies" type="button"><i aria-hidden="true">2</i><span><strong>Внесите начальные остатки</strong><small>Оформите поставку с количеством и закупочной ценой продуктов.</small></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
-                    <button data-setup-route="employees" type="button"><i aria-hidden="true">3</i><span><strong>Добавьте сотрудников</strong><small>Назначьте должности, права доступа и PIN для работы на кассе.</small></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
-                    <button data-setup-route="registers" type="button"><i aria-hidden="true">4</i><span><strong>Настройте кассу</strong><small>Проверьте кассу вашего заведения и данные для входа.</small></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
-                    <button data-setup-route="pos" type="button"><i aria-hidden="true">5</i><span><strong>Проведите первую продажу</strong><small>Войдите на кассу, откройте смену и примите первый заказ.</small></span><b>Открыть кассу<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
+                    <button data-setup-route="menu/recipes" type="button"><i aria-hidden="true">1</i><span><strong>Меню</strong></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
+                    <button data-setup-route="inventory/supplies" type="button"><i aria-hidden="true">2</i><span><strong>Начальные остатки</strong></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
+                    <button data-setup-route="employees" type="button"><i aria-hidden="true">3</i><span><strong>Сотрудники</strong></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
+                    <button data-setup-route="registers" type="button"><i aria-hidden="true">4</i><span><strong>Кассы</strong></span><b>Настроить<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
+                    <button data-setup-route="pos" type="button"><i aria-hidden="true">5</i><span><strong>Первая продажа</strong></span><b>Открыть кассу<svg class="ui-icon"><use href="#ui-arrow"/></svg></b></button>
                   </div>
                   <footer id="setupNextStep">Ваш прогресс сохраняется автоматически по мере настройки аккаунта.</footer>
                 </article>
+                </details>
+                <a class="workspace-guide-link" href="/docs/user-guide/" target="_blank" rel="noopener">Справка<svg class="ui-icon" aria-hidden="true"><use href="#ui-arrow"/></svg></a>
               </div>
               <aside class="getting-started-help" aria-label="Помощь в начале работы">
-                <article class="start-help-card">
-                  <span class="start-help-icon"><svg class="ui-icon"><use href="#ui-info"/></svg></span>
-                  <h2>Как устроена работа</h2>
-                  <p>От закупки продуктов до первого чека — весь процесс по шагам.</p>
-                  <a href="/docs/user-guide/" target="_blank" rel="noopener">Инструкция со скриншотами<svg class="ui-icon"><use href="#ui-arrow"/></svg></a>
-                </article>
                 <article class="start-help-card start-help-links">
                   <h2>Быстрый переход</h2>
                   <button data-setup-route="menu/products" type="button"><svg class="ui-icon"><use href="#ui-menu"/></svg>Товары<svg class="ui-icon"><use href="#ui-arrow"/></svg></button>
@@ -193,7 +197,6 @@
                   <button data-setup-route="inventory/overview" type="button"><svg class="ui-icon"><use href="#ui-inventory"/></svg>Остатки<svg class="ui-icon"><use href="#ui-arrow"/></svg></button>
                   <button data-setup-route="reports" type="button"><svg class="ui-icon"><use href="#ui-chart"/></svg>Статистика продаж<svg class="ui-icon"><use href="#ui-arrow"/></svg></button>
                 </article>
-                <p class="start-help-note">Данные можно дополнять и менять в соответствующих разделах в любое время.</p>
               </aside>
             </div>
           </section>
@@ -242,7 +245,7 @@
                   <button id="resetIngredientFilters" type="button" class="secondary-action">Сбросить</button></div></details>
                 </div>
                 <table class="data-table poster-menu-table" id="ingredientRegistry"><thead><tr><th>Название</th><th data-ingredient-column="category">Категория</th><th data-ingredient-column="unit">Ед. измерения</th><th data-ingredient-column="cost">Себестоимость</th><th data-ingredient-column="stock">Остаток</th><th data-ingredient-column="usage">В составе</th><th>Действия</th></tr></thead><tbody id="ingredientsTable"></tbody></table>
-                <p class="ingredient-list-note">Остаток и себестоимость показаны для выбранного склада. Детали показывают техкарты и полуфабрикаты, в которых используется ингредиент.</p>
+                <p class="ingredient-list-note">Остатки и себестоимость — для выбранного склада.</p>
               </article>
             </div>
 
@@ -345,10 +348,10 @@
 
             <div class="finance-pane active" id="finance-pane-pnl">
               <div class="finance-main-grid"><article class="panel pnl-panel"><div class="panel-heading"><div><h2>P&L · Прибыли и убытки</h2><p id="financePnlCaption">Вся сеть</p></div><button type="button" class="secondary-action" id="pnlAddExpense" hidden>Добавить расход</button></div><p id="pnlStatus" role="status"></p><div id="financePnlRows"></div><div id="pnlWarnings"></div><p class="payroll-note" id="pnlMethod" hidden>Расход относится к периоду, за который он начислен. Оплата меняет деньги на счетах. Зарплата рассчитывается автоматически по ставкам и завершённому рабочему времени. Налоги учитываются в сумме, внесённой вами.</p></article><article class="panel finance-balance-panel"><div class="panel-heading"><div><h2>Остатки по счетам</h2><p>Фактическое движение денег</p></div></div><div id="financeBalanceList"></div></article></div>
-              <details class="payroll-section" id="pnlExpenseSection" hidden><summary>Расходы по периодам и их оплата</summary><p class="payroll-note">Аренду, коммуналку и другие расходы вносите здесь один раз. Оплату проводите из этой записи, чтобы не задвоить расход отдельной финансовой операцией. Для исправления отмените оплату, затем расход и создайте новую запись.</p><div id="pnlExpenseList"></div></details>
+              <details class="payroll-section" id="pnlExpenseSection" hidden><summary>Расходы по периодам и их оплата</summary><details class="workspace-help"><summary>Справка</summary><p class="payroll-note">Аренду, коммуналку и другие расходы вносите здесь один раз. Оплату проводите из этой записи, чтобы не задвоить расход отдельной финансовой операцией. Для исправления отмените оплату, затем расход и создайте новую запись.</p></details><div id="pnlExpenseList"></div></details>
             </div>
             <div class="finance-pane" id="finance-pane-transactions">
-              <details class="payroll-section" id="offlineReviewSection" hidden><summary>Автономные чеки: требуется проверка</summary><p class="payroll-note">Оплаченные на кассе чеки с расхождениями остаются здесь до решения владельца. Проверьте остатки и смену перед повторным проведением. Старые цены и исходная дата чека сохраняются.</p><p id="offlineReviewStatus" role="status"></p><div id="offlineReviewList"></div></details>
+              <details class="payroll-section" id="offlineReviewSection" hidden><summary>Автономные чеки: требуется проверка</summary><details class="workspace-help"><summary>Справка</summary><p class="payroll-note">Оплаченные на кассе чеки с расхождениями остаются здесь до решения владельца. Проверьте остатки и смену перед повторным проведением. Старые цены и исходная дата чека сохраняются.</p></details><p id="offlineReviewStatus" role="status"></p><div id="offlineReviewList"></div></details>
               <article class="panel table-panel finance-table-panel"><div class="table-toolbar finance-transaction-toolbar"><label class="admin-search"><svg class="ui-icon"><use href="#ui-search"/></svg><input id="financeTransactionSearch" type="search" placeholder="Номер, категория или контрагент" /></label><select id="financeTransactionTypeFilter"><option value="all">Все типы</option><option value="sale">Продажи</option><option value="income">Поступления</option><option value="expense">Расходы</option><option value="transfer">Переводы</option></select><select id="financeTransactionAccountFilter"><option value="all">Все счета</option></select><span class="analytics-result-count" id="financeTransactionCount">0 операций</span></div><div class="table-scroll"><table class="data-table finance-transaction-table"><thead><tr><th>Операция</th><th>Дата</th><th>Точка</th><th>Категория</th><th>Счёт</th><th>Контрагент / комментарий</th><th>Сумма</th><th></th></tr></thead><tbody id="financeTransactionsTable"></tbody></table></div></article>
             </div>
             <div class="finance-pane" id="finance-pane-shifts"><article class="panel table-panel finance-table-panel"><div class="panel-heading"><div><h2>Кассовые смены</h2><p>Открытие, расчётный остаток, факт и расхождения</p></div></div><div class="table-scroll"><table class="data-table finance-shifts-table"><thead><tr><th>Смена</th><th>Касса и точка</th><th>Открыл</th><th>Открытие</th><th>Продажи наличными</th><th>Ожидалось</th><th>Факт</th><th>Расхождение</th><th>Статус</th></tr></thead><tbody id="financeShiftsTable"></tbody></table></div></article></div>
@@ -356,13 +359,13 @@
               <section class="payroll-intro"><div><h2>Зарплата команды</h2><p>Рабочее время → предварительный расчёт → начисление → выплата.</p></div><button class="secondary-action" type="button" id="payrollRefresh">Обновить</button></section>
               <p class="payroll-status" id="payrollStatus" role="status" aria-live="polite"></p>
               <div class="payroll-toolbar"><label>С даты<input id="payrollFrom" type="date"></label><label>По дату<input id="payrollTo" type="date"></label><button id="payrollCalculate" class="secondary-action" type="button">Рассчитать</button><button id="payrollApprove" class="primary-button" type="button" disabled>Начислить за период</button></div>
-              <p class="payroll-note">Проценты фиксируются при продаже. Возврат уменьшает начисление датой возврата. Открытые рабочие смены не входят в часы и фиксированную оплату за смену.</p>
+              <details class="workspace-help"><summary>Справка</summary><p class="payroll-note">Проценты фиксируются при продаже. Возврат уменьшает начисление датой возврата. Открытые рабочие смены не входят в часы и фиксированную оплату за смену.</p></details>
               <div class="payroll-summary" id="payrollSummary"></div>
               <article class="panel table-panel"><div class="document-toolbar"><div><h2>Предварительный расчёт</h2><p>Начисленная ведомость сохраняет суммы и не меняется при изменении ставок.</p></div><button class="secondary-action" id="payrollExport" type="button" disabled>Скачать CSV</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Сотрудник</th><th>Часы / смены</th><th>Ставка</th><th>Проценты и возвраты</th><th>Корректировки</th><th>Начислить</th><th>Общий баланс</th><th></th></tr></thead><tbody id="payrollRows"></tbody></table></div></article>
-              <details class="payroll-section" open><summary>Ставки сотрудников</summary><p class="payroll-note">Новые ставки действуют с выбранной даты, не раньше сегодня. Месячная ставка начисляется по календарным дням, часовая и сменная — по завершённым рабочим сменам. Блокировка доступа не означает увольнение: для прекращения начислений назначьте нулевую ставку.</p><div id="payrollPolicies"></div></details>
-              <details class="payroll-section"><summary>Рабочее время</summary><div class="payroll-section-actions"><p class="payroll-note">Сотрудник отмечает начало и конец рабочего дня в кассе. Владелец может внести или исправить время с основанием.</p><button class="secondary-action" id="payrollAddTime" type="button">Добавить рабочую смену</button></div><div id="payrollTime"></div></details>
+              <details class="payroll-section" open><summary>Ставки сотрудников</summary><details class="workspace-help"><summary>Справка</summary><p class="payroll-note">Новые ставки действуют с выбранной даты, не раньше сегодня. Месячная ставка начисляется по календарным дням, часовая и сменная — по завершённым рабочим сменам. Блокировка доступа не означает увольнение: для прекращения начислений назначьте нулевую ставку.</p></details><div id="payrollPolicies"></div></details>
+              <details class="payroll-section"><summary>Рабочее время</summary><div class="payroll-section-actions"><details class="workspace-help"><summary>Справка</summary><p class="payroll-note">Сотрудник отмечает начало и конец рабочего дня в кассе. Владелец может внести или исправить время с основанием.</p></details><button class="secondary-action" id="payrollAddTime" type="button">Добавить рабочую смену</button></div><div id="payrollTime"></div></details>
               <details class="payroll-section" open><summary>Начисленные ведомости</summary><div id="payrollRuns"></div></details>
-              <details class="payroll-section"><summary>Выплаты и авансы</summary><p class="payroll-note">Выплата создаёт расход в финансах один раз. Аванс засчитывается при начислении. Отмена выплаты создаёт обратный приход и восстанавливает долг.</p><div id="payrollPayments"></div></details>
+              <details class="payroll-section"><summary>Выплаты и авансы</summary><details class="workspace-help"><summary>Справка</summary><p class="payroll-note">Выплата создаёт расход в финансах один раз. Аванс засчитывается при начислении. Отмена выплаты создаёт обратный приход и восстанавливает долг.</p></details><div id="payrollPayments"></div></details>
               <details class="payroll-section"><summary>Основания начислений и корректировок</summary><div id="payrollEvents"></div></details>
             </div>
             <div class="finance-pane" id="finance-pane-accounts"><article class="panel table-panel finance-table-panel"><div class="document-toolbar"><div><h2>Финансовые счета</h2><p>Кассы точек, банк, карты, сейф и другие места хранения денег</p></div><button class="primary-button" id="addFinanceAccountButton" type="button"><svg class="ui-icon"><use href="#ui-plus"/></svg>Добавить счёт</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Счёт</th><th>Тип</th><th>Точка</th><th>Начальный остаток</th><th>Текущий остаток</th><th>Статус</th><th></th></tr></thead><tbody id="financeAccountsTable"></tbody></table></div></article></div>

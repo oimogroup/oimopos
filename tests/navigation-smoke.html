@@ -16,7 +16,15 @@
         const salesKey = "ashkana-pos-sales";
         const savedSales = win.localStorage.getItem(salesKey);
         try {
-          check("getting-started-home", doc.querySelector("#view-dashboard h1").textContent === "Начало работы" && !doc.querySelector("#dashboardRevenue"));
+          check("compact-home", doc.querySelector("#view-dashboard h1").textContent === "Главная" && !doc.querySelector("#setupDisclosure").open && doc.querySelectorAll(".workspace-summary button").length === 4);
+          click('#setupDisclosure>summary');
+          check('setup-remains-accessible', doc.querySelector('#setupDisclosure').open && doc.querySelector('#setupGuide [data-setup-route]').getBoundingClientRect().height >= 44);
+          click('#setupDisclosure>summary');
+          for (const [route, view] of [['branches','branches'],['menu/products','recipes'],['employees','employees'],['registers','registers']]) {
+            click('.workspace-summary [data-setup-route="'+route+'"]');
+            check('overview-link-'+route, doc.querySelector('#view-'+view).classList.contains('active'));
+            win.switchView('dashboard');
+          }
           win.localStorage.setItem(salesKey, "[]");
           win.renderSetupGuide();
           check("first-sale-pending", !doc.querySelector('#setupGuide [data-setup-route="pos"]').classList.contains("complete"));
