@@ -83,7 +83,7 @@
     });
     if (active === "delivery") root().querySelectorAll("[data-area]").forEach(row => row.querySelectorAll("[data-area-field]").forEach(el => { draft.delivery.areas[Number(row.dataset.area)][el.dataset.areaField] = el.type === "number" ? Number(el.value) : el.value; }));
   }
-  function markDirty() { dirty = true; const status = document.querySelector("#settingsSaveStatus"); if (status) status.textContent = "Есть несохранённые изменения"; }
+  function markDirty(message = "Есть несохранённые изменения") { dirty = true; const status = document.querySelector("#settingsSaveStatus"); if (status) status.textContent = message; }
   function open(tab = "general") {
     if (!titles[tab]) tab = "general";
     if (active !== tab) readDraft();
@@ -97,8 +97,10 @@
   async function save(event) {
     event.preventDefault();
     readDraft();
-    const button = document.querySelector("#saveCompanySettings");
-    button.disabled = true;
+    const form = event.currentTarget;
+    const button = form.querySelector("#saveCompanySettings");
+    const status = form.querySelector("#settingsSaveStatus");
+    if (button) button.disabled = true;
     const section = active;
     const values = structuredClone(draft[section]);
     try {
@@ -106,10 +108,10 @@
       if (!result) throw new Error("Не удалось сохранить настройки");
       data[section] = structuredClone(values);
       dirty = JSON.stringify(data) !== JSON.stringify(draft);
-      document.querySelector("#settingsSaveStatus").textContent = "Сохранено. Обновите кассу, чтобы применить настройки.";
+      if (status?.isConnected) status.textContent = "Сохранено. Обновите кассу, чтобы применить настройки.";
     } catch (error) {
-      document.querySelector("#settingsSaveStatus").textContent = error.message;
-    } finally { button.disabled = false; }
+      if (status?.isConnected) status.textContent = error.message || "Не удалось сохранить настройки";
+    } finally { if (button?.isConnected) button.disabled = false; }
   }
   function mount(config) {
     options = config; session = config.session;
@@ -132,7 +134,7 @@
       if (!file) return;
       if (!["image/png", "image/jpeg", "image/gif"].includes(file.type) || file.size > 5 * 1024 * 1024) { options.notify("Выберите JPEG, PNG или GIF размером до 5 МБ"); return; }
       const reader = new FileReader();
-      reader.onload = () => { draft.general.logo = reader.result; markDirty(); render(); };
+      reader.onload = () => { draft.general.logo = reader.result; render(); markDirty("Логотип выбран. Нажмите «Сохранить», чтобы применить его."); };
       reader.onerror = () => options.notify("Не удалось прочитать логотип");
       reader.readAsDataURL(file);
     });
@@ -162,7 +164,7 @@
       if (event.target.closest("[data-add-area]")) { readDraft(); draft.delivery.areas.push({ name: "", cost: 0, freeFrom: 0, minutes: 60 }); markDirty(); render(); }
       const remove = event.target.closest("[data-remove-area]");
       if (remove) { readDraft(); draft.delivery.areas.splice(Number(remove.dataset.removeArea), 1); markDirty(); render(); }
-      if (event.target.closest("[data-remove-logo]")) { draft.general.logo = ""; markDirty(); render(); }
+      if (event.target.closest("[data-remove-logo]")) { draft.general.logo = ""; render(); markDirty("Логотип удалён. Нажмите «Сохранить», чтобы применить изменение."); }
       if (event.target.closest("[data-reset-settings]")) { draft[active] = structuredClone(data[active]); dirty = JSON.stringify(data) !== JSON.stringify(draft); render(); }
     });
     window.addEventListener("beforeunload", event => { if (dirty) { event.preventDefault(); event.returnValue = ""; } });
