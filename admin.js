@@ -6992,6 +6992,19 @@ $("#returnInventoryButton").addEventListener("click", returnInventory);
 $("#postInventoryButton").addEventListener("click", postInventory);
 $("#exportTechnicalCardsButton").addEventListener("click", exportTechnicalCards);
 $("#importTechnicalCardsButton").addEventListener("click", openTechnicalCardsImport);
+$("#exportPreparationsButton").addEventListener("click", exportTechnicalCards);
+$("#importPreparationsButton").addEventListener("click", () => { $("#preparationsImportFile").click(); });
+$("#preparationsImportFile").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const encoded = await readFileAsDataUrl(file);
+    const preview = await AshkanaApi.importTechnicalCardsPreview({ encoded, fileName: file.name });
+    renderTechnicalCardsImportPreview(preview.rows);
+    $("#technicalCardsImportDialog").classList.remove("hidden");
+  } catch (error) { showToast(error.message || "Не удалось прочитать файл"); }
+  finally { event.target.value = ""; }
+});
 $("#technicalCardsImportFile").addEventListener("change", async (event) => {
   const file = event.target.files?.[0];
   if (!file) return;
