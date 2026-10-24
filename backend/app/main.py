@@ -2688,8 +2688,9 @@ def export_technical_cards(user: dict = Depends(current_user), connection: Conne
     from .technical_card_report import workbook, filename
     state = _workspace_row(connection, tenant_id)["payload"]
     recipes = state.get("recipes", [])
+    preparations = state.get("preparations", [])
     ingredients_by_id = {str(item["id"]): item for item in state.get("ingredients", [])}
-    return {"xlsx": workbook(recipes, ingredients_by_id), "filename": filename(len(recipes))}
+    return {"xlsx": workbook(recipes, preparations, ingredients_by_id), "filename": filename(len(recipes) + len(preparations))}
 
 
 @app.post("/api/v1/technical-cards/import/preview", tags=["technical-cards"])
@@ -2733,6 +2734,7 @@ def import_technical_cards_apply(payload: dict, request: Request, user: dict = D
     for name in order:
         group = groups[name]
         first = group[0]
+        kind = str(first.get("kind", "техкарта")).strip()
         components = []
         for item in group:
             ingredient_id = str(item.get("ingredientId", ""))
@@ -2740,20 +2742,34 @@ def import_technical_cards_apply(payload: dict, request: Request, user: dict = D
             net = item.get("net")
             _require(ingredient_id and gross is not None and net is not None, "Проверьте состав техкарты")
             components.append({"ingredientId": ingredient_id, "gross": gross, "net": net})
-        upsert_payload = {
-            "id": first.get("id") or f"recipe-{uuid4().hex[:10]}",
-            "name": name,
-            "category": str(first.get("category", "Без категории")),
-            "station": str(first.get("station", "")).strip(),
-            "price": first.get("price"),
-            "yield": first.get("yield"),
-            "components": components,
-        }
+        if kind == "полуфабрикат":
+            upsert_payload = {
+                "id": first.get("id") or f"pf-{uuid4().hex[:10]}",
+                "name": name,
+                "category": str(first.get("category", "Без категории")),
+                "station": str(first.get("station", "")).strip(),
+                "yield": first.get("yield"),
+                "process": str(first.get("process", "")).strip(),
+                "usedIn": str(first.get("usedIn", "")).strip(),
+                "components": components,
+            }
+            action = "preparation.upsert"
+        else:
+            upsert_payload = {
+                "id": first.get("id") or f"recipe-{uuid4().hex[:10]}",
+                "name": name,
+                "category": str(first.get("category", "Без категории")),
+                "station": str(first.get("station", "")).strip(),
+                "price": first.get("price"),
+                "yield": first.get("yield"),
+                "components": components,
+            }
+            action = "recipe.upsert"
         try:
-            apply_action(state, user, "recipe.upsert", {"requestId": str(uuid4()), **upsert_payload})
+            apply_action(state, user, action, {"requestId": str(uuid4()), **upsert_payload})
         except WorkspaceError as error:
             raise HTTPException(status_code=error.status_code, detail=str(error)) from error
-        results.append({"card": name})
+        results.append({"card": name, "kind": kind})
     version = int(row["version"]) + 1
     connection.execute(
         "UPDATE operational_state SET version = %s, payload = %s, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s",

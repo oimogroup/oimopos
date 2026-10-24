@@ -31,6 +31,7 @@ def _header_name(value):
 
 _ALIASES = {
     "card": ("наименование блюда", "блюдо", "наименование", "name", "карта", "техкарта", "output"),
+    "kind": ("вид", "kind", "тип", "type", "полуфабрикат", "техкарта", "продукция"),
     "category": ("категория", "category", "категория блюда"),
     "station": ("цех", "station", "цех приготовления"),
     "yield": ("выход", "yield", "выход блюда", "выход, г"),
@@ -95,8 +96,12 @@ def _table(rows, header):
             card_yield = _number(mapped.get("yield", ""), number, "выход", zero=True) if mapped.get("yield") else None
             weight = _number(mapped.get("weight", ""), number, "вес", zero=True) if mapped.get("weight") else None
             price = _number(mapped.get("price", ""), number, "цена", zero=True) if mapped.get("price") else None
+            kind = str(mapped.get("kind", "")).strip() or "техкарта"
+            if kind not in {"техкарта", "полуфабрикат"}:
+                raise ValueError(f"Строка {number}: укажите вид — техкарта или полуфабрикат")
             result.append({
                 "row": number,
+                "kind": kind,
                 "card": name,
                 "category": mapped.get("category", ""),
                 "station": mapped.get("station", ""),

@@ -4273,13 +4273,13 @@ function renderTechnicalCardsImportPreview(rows) {
     if (!byCard[row.card]) { byCard[row.card] = []; order.push(row.card); }
     byCard[row.card].push(row);
   }
-  let html = `<p>${rows.length} строк, ${order.length} техкарт</p><table class="data-table"><thead><tr><th>Блюдо</th><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Ед.</th><th>Статус</th></tr></thead><tbody>`;
+  let   html = `<p>${rows.length} строк, ${order.length} техкарт/полуфабрикатов</p><table class="data-table"><thead><tr><th>Блюдо</th><th>Вид</th><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Ед.</th><th>Статус</th></tr></thead><tbody>`;
   for (const card of order) {
     for (const row of byCard[card]) {
       const ingredient = ingredientById(row.ingredientId);
       const status = row.ingredientId ? `Сопоставлено с ${escapeHtml(ingredient?.name || "")}` : 'Ингредиент не найден — создайте в справочнике';
       const cls = row.ingredientId ? "" : "negative";
-      html += `<tr><td><strong>${escapeHtml(row.card)}</strong></td><td>${escapeHtml(row.ingredient)}</td><td>${decimal(row.gross)}</td><td>${decimal(row.net)}</td><td>${escapeHtml(ingredient?.unit || "")}</td><td class="${cls}">${escapeHtml(status)}</td></tr>`;
+      html += `<tr><td><strong>${escapeHtml(row.card)}</strong></td><td>${escapeHtml(row.kind || "техкарта")}</td><td>${escapeHtml(row.ingredient)}</td><td>${decimal(row.gross)}</td><td>${decimal(row.net)}</td><td>${escapeHtml(ingredient?.unit || "")}</td><td class="${cls}">${escapeHtml(status)}</td></tr>`;
     }
   }
   html += "</tbody></table>";

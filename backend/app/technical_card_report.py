@@ -1,4 +1,4 @@
-"""Technical cards and dependency-free Office Open XML export."""
+"""Technical cards and preparations and dependency-free Office Open XML export."""
 import base64
 import io
 import math
@@ -64,36 +64,43 @@ def filename(count):
     return f'техкарты-{count}.xlsx'
 
 
-def workbook(recipes, ingredients_by_id):
-    rows = [['Технологические карты'], ['Всего карт', len(recipes)], [], ['№', 'Наименование', 'Категория', 'Цех', 'Выход, г', 'Себестоимость', 'Цена продажи', 'Компонентов']]
+def workbook(recipes, preparations, ingredients_by_id):
+    items = []
+    for recipe in recipes:
+        items.append({**recipe, 'kind': 'техкарта'})
+    for preparation in preparations:
+        items.append({**preparation, 'kind': 'полуфабрикат'})
+    rows = [['Технологические карты и полуфабрикаты'], ['Всего позиций', len(items)], [], ['№', 'Вид', 'Наименование', 'Категория', 'Цех', 'Выход, г', 'Цена продажи', 'Компонентов']]
     header_row = len(rows)
-    for index, recipe in enumerate(recipes, 1):
-        components = recipe.get('components', []) or []
+    for index, item in enumerate(items, 1):
+        components = item.get('components', []) or []
         rows.append([
             index,
-            recipe.get('name', ''),
-            recipe.get('category', ''),
-            recipe.get('station', ''),
-            _number(recipe.get('yield')),
-            _money(recipe.get('price')),
-            _money(recipe.get('price')),
+            item.get('kind', ''),
+            item.get('name', ''),
+            item.get('category', ''),
+            item.get('station', ''),
+            _number(item.get('yield')),
+            _money(item.get('price')),
             len(components),
         ])
     data_end = len(rows)
-    sheets = [('Техкарты', _sheet(rows, header_row, data_end, {5, 6}, [6, 40, 20, 20, 12, 16, 16, 12]))]
+    sheets = [('Техкарты', _sheet(rows, header_row, data_end, {6}, [6, 16, 40, 20, 20, 12, 16, 12]))]
 
-    rows = [['Состав техкарт'], [], ['Карта', 'Наименование', 'Ингредиент', 'Брутто', 'Нетто', 'Ед.', 'Себестоимость, ед.', 'Сумма строки']]
+    rows = [['Состав'], [], ['Карта', 'Вид', 'Наименование', 'Ингредиент', 'Брутто', 'Нетто', 'Ед.', 'Себестоимость, ед.', 'Сумма строки']]
     header_row = len(rows)
     data_end = header_row
-    for index, recipe in enumerate(recipes, 1):
-        card_name = recipe.get('name', '')
-        for component in recipe.get('components', []) or []:
+    for index, item in enumerate(items, 1):
+        card_name = item.get('name', '')
+        kind = item.get('kind', '')
+        for component in item.get('components', []) or []:
             ingredient = ingredients_by_id.get(str(component.get('ingredientId')), {})
             unit = ingredient.get('unit', '')
             unit_cost = _number(ingredient.get('averageCost'))
             line_cost = (unit_cost or Decimal(0)) * _number(component.get('gross') or 0)
             rows.append([
                 card_name,
+                kind,
                 card_name,
                 ingredient.get('name', str(component.get('ingredientId', ''))),
                 _number(component.get('gross')),
@@ -103,7 +110,7 @@ def workbook(recipes, ingredients_by_id):
                 _money(line_cost),
             ])
             data_end += 1
-    sheets.append(('Состав', _sheet(rows, header_row, data_end, {6, 7}, [40, 40, 40, 12, 12, 10, 16, 16])))
+    sheets.append(('Состав', _sheet(rows, header_row, data_end, {7, 8}, [40, 12, 40, 40, 12, 12, 10, 16, 16])))
 
     types = ''.join(f'<Override PartName="/xl/worksheets/sheet{i}.xml" ContentType="application/vnd.openxmlformats-officedocument.spreadsheetml.worksheet+xml"/>' for i in range(1, len(sheets) + 1))
     relationships = ''.join(f'<Relationship Id="rId{i}" Type="http://schemas.openxmlformats.org/officeDocument/2006/relationships/worksheet" Target="worksheets/sheet{i}.xml"/>' for i in range(1, len(sheets) + 1))
