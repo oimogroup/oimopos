@@ -43,7 +43,7 @@ from .schemas import (
 )
 from . import workspace_address
 from .security import hash_password, hash_pin, new_session_token, token_hash, verify_password, verify_pin
-from .workspace import sale_payment_amount, WorkspaceError, apply_action, new_tenant_state, visible_state, production_context
+from .workspace import sale_payment_amount, WorkspaceError, apply_action, new_tenant_state, visible_state, production_context, _require
 
 
 SESSION_COOKIE = "ashkana_session"
@@ -2681,6 +2681,87 @@ def list_technical_cards(user: dict = Depends(current_user), connection: Connect
     return [_card_response(connection, tenant_id, card_id) for card_id in cards]
 
 
+@app.get("/api/v1/technical-cards/export", tags=["technical-cards"])
+def export_technical_cards(user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
+    _protect_cost_data(user)
+    tenant_id = _tenant_user(user)
+    from .technical_card_report import workbook, filename
+    state = _workspace_row(connection, tenant_id)["payload"]
+    recipes = state.get("recipes", [])
+    ingredients_by_id = {str(item["id"]): item for item in state.get("ingredients", [])}
+    return {"xlsx": workbook(recipes, ingredients_by_id), "filename": filename(len(recipes))}
+
+
+@app.post("/api/v1/technical-cards/import/preview", tags=["technical-cards"])
+def import_technical_cards_preview(payload: dict, request: Request, user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
+    _protect_cost_data(user)
+    _check_origin(request)
+    tenant_id = _tenant_user(user)
+    from .technical_card_import import preview
+    state = _workspace_row(connection, tenant_id)["payload"]
+    encoded = payload.get("encoded")
+    file_name = payload.get("fileName", "import.csv")
+    try:
+        return preview(state, encoded, file_name)
+    except ValueError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
+
+
+@app.post("/api/v1/technical-cards/import/apply", tags=["technical-cards"])
+def import_technical_cards_apply(payload: dict, request: Request, user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
+    _protect_cost_data(user)
+    _check_origin(request)
+    if user.get("role") != "owner":
+        raise HTTPException(403, "Техкарты изменяет главный администратор")
+    tenant_id = _tenant_user(user)
+    row = _workspace_row(connection, tenant_id, for_update=True)
+    state = row["payload"]
+    items = payload.get("items") or []
+    if not isinstance(items, list) or not items:
+        raise HTTPException(status_code=422, detail="Не указаны позиции для импорта")
+    groups = {}
+    order = []
+    for item in items:
+        name = str(item.get("card", "")).strip()
+        if not name:
+            raise HTTPException(status_code=422, detail="Не указано наименование блюда")
+        if name not in groups:
+            groups[name] = []
+            order.append(name)
+        groups[name].append(item)
+    results = []
+    for name in order:
+        group = groups[name]
+        first = group[0]
+        components = []
+        for item in group:
+            ingredient_id = str(item.get("ingredientId", ""))
+            gross = item.get("gross")
+            net = item.get("net")
+            _require(ingredient_id and gross is not None and net is not None, "Проверьте состав техкарты")
+            components.append({"ingredientId": ingredient_id, "gross": gross, "net": net})
+        upsert_payload = {
+            "id": first.get("id") or f"recipe-{uuid4().hex[:10]}",
+            "name": name,
+            "category": str(first.get("category", "Без категории")),
+            "station": str(first.get("station", "")).strip(),
+            "price": first.get("price"),
+            "yield": first.get("yield"),
+            "components": components,
+        }
+        try:
+            apply_action(state, user, "recipe.upsert", {"requestId": str(uuid4()), **upsert_payload})
+        except WorkspaceError as error:
+            raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+        results.append({"card": name})
+    version = int(row["version"]) + 1
+    connection.execute(
+        "UPDATE operational_state SET version = %s, payload = %s, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s",
+        (version, Jsonb(state), tenant_id),
+    )
+    return {"version": version, "results": results}
+
+
 @app.get("/api/v1/technical-cards/{card_id}", tags=["technical-cards"])
 def get_technical_card(card_id: int, user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
     _protect_cost_data(user)
@@ -2918,6 +2999,22 @@ def pnl_report(start: str, end: str, branch: str = 'all', user: dict = Depends(c
         return report(state, start, end, None if branch == 'all' else branch)
     except WorkspaceError as error:
         raise HTTPException(error.status_code, str(error)) from error
+
+
+@app.post('/api/v1/pnl/export', tags=['finance'])
+def pnl_export(start: str = Query(default=None), end: str = Query(default=None), branch: str = Query(default='all'),
+               user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    if user.get('role') != 'owner':
+        raise HTTPException(403, 'P&L доступен только владельцу компании')
+    from .pnl import report
+    from .pnl_report import build_report, filename, workbook
+    state = _workspace_row(connection, _tenant_user(user))['payload']
+    try:
+        report_data = report(state, start, end, None if branch == 'all' else branch)
+    except WorkspaceError as error:
+        raise HTTPException(error.status_code, str(error)) from error
+    return {'xlsx': workbook(report_data), 'filename': filename(report_data)}
+
 
 from .offline_pos import install as install_offline_pos
 install_offline_pos(app)

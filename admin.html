@@ -210,7 +210,7 @@
             <div class="menu-pane active" id="menu-pane-recipes">
               <article class="panel table-panel">
                 <div class="poster-list-meta"><strong><span id="recipeCount">0</span> тех. карт</strong></div>
-                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="recipeSearch" type="search" placeholder="Быстрый поиск" /></label><select id="recipeCategory"><option>Все категории</option><option>Первые</option><option>Горячее</option><option>Салаты</option><option>Выпечка</option></select><select id="recipeStationFilter"><option>Все цеха</option></select><select><option>Столовая №1 — Манаса</option></select></div>
+                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="recipeSearch" type="search" placeholder="Быстрый поиск" /></label><select id="recipeCategory"><option>Все категории</option><option>Первые</option><option>Горячее</option><option>Салаты</option><option>Выпечка</option></select><select id="recipeStationFilter"><option>Все цеха</option></select><button id="exportTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button><button id="importTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><input id="technicalCardsImportFile" type="file" accept=".csv,text/csv,.xlsx" hidden><select><option>Столовая №1 — Манаса</option></select></div>
                 <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Цех</th><th>Выход</th><th>Себестоимость</th><th>Цена</th><th>Наценка</th><th></th><th></th></tr></thead><tbody id="recipesTable"></tbody></table>
               </article>
             </div>
@@ -807,6 +807,17 @@
           <div class="recipe-live-calculation catalog-calculation"><div><span>Себестоимость</span><strong id="recipeLiveCost">0 сом</strong></div><div><span>Фудкост</span><strong id="recipeLiveFoodCost">0%</strong></div><div><span>Наценка</span><strong id="recipeLiveMarkup">0%</strong></div></div>
         </div>
         <div class="modal-actions catalog-editor-footer"><button class="danger-button modal-delete-action hidden" id="deleteRecipeButton" type="button"><svg class="ui-icon"><use href="#ui-trash"/></svg>Удалить</button><span></span><button class="secondary-action" data-close="recipeModal" type="button">Отмена</button><button class="primary-button" id="saveRecipeButton" type="button">Сохранить</button></div>
+      </section>
+    </div>
+
+    <div class="modal-backdrop catalog-editor-backdrop hidden" id="technicalCardsImportDialog">
+      <section class="admin-modal catalog-editor">
+        <header class="catalog-editor-header"><div><p>Меню / Тех. карты</p><h2>Импорт техкарт</h2><small>Проверьте распознанные строки перед применением</small></div><button class="modal-close icon-button" id="closeTechnicalCardsImport" aria-label="Закрыть" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
+        <div class="catalog-editor-body">
+          <div id="technicalCardsImportError" class="payroll-note" style="color:#a13b3b" hidden></div>
+          <div id="technicalCardsImportPreview"></div>
+        </div>
+        <div class="modal-actions catalog-editor-footer"><button class="secondary-action" id="closeTechnicalCardsImportCancel" type="button">Отмена</button><button class="primary-button" id="applyTechnicalCardsImport" type="button">Применить</button></div>
       </section>
     </div>
 

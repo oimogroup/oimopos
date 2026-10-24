@@ -95,6 +95,14 @@
     const url = URL.createObjectURL(new Blob(['\ufeff' + rows.map(row => row.map(cell).join(';')).join('\r\n')], {type:'text/csv;charset=utf-8'}));
     const a = document.createElement('a'); a.href = url; a.download = `P&L-${report.start}-${report.end}.csv`; a.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
   }
-  global.OimoPnl = {refresh, exportCsv, enabled, ready: () => Boolean(report && reportKey === key()), enableForTest() { force = true; refresh(); }};
+  function exportXlsx() {
+    if (!report || reportKey !== key()) { q('#pnlStatus').textContent = 'Дождитесь расчёта выбранного периода.'; return; }
+    global.AshkanaApi.exportPnl(report.start, report.end, report.branchId).then(({xlsx, filename}) => {
+      const bytes = Uint8Array.from(atob(xlsx), character => character.charCodeAt(0));
+      const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+      const link = document.createElement('a'); link.href = url; link.download = filename; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000);
+    }).catch(error => { q('#pnlStatus').textContent = error.message || 'Не удалось выгрузить P&L.'; });
+  }
+  global.OimoPnl = {refresh, exportCsv, exportXlsx, enabled, ready: () => Boolean(report && reportKey === key()), enableForTest() { force = true; refresh(); }};
   refresh();
 })(window);

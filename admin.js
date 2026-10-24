@@ -4214,7 +4214,7 @@ async function deleteFinanceTransaction(transactionId) {
 }
 
 function exportFinanceCsv() {
-  if (typeof activeFinanceTab !== "undefined" && activeFinanceTab === "pnl" && window.OimoPnl?.enabled()) { window.OimoPnl.exportCsv(); return; }
+  if (typeof activeFinanceTab !== "undefined" && activeFinanceTab === "pnl" && window.OimoPnl?.enabled()) { window.OimoPnl.exportXlsx(); return; }
   const context = financeContext();
   const rows = financeTransactionRows(context);
   const csvRows = [["Номер", "Дата", "Тип", "Точка", "Категория", "Счёт", "Контрагент", "Комментарий", "Сумма"], ...rows.map((row) => [row.number, financeDate(row).toLocaleString("ru-RU"), financeTypeLabel(row.type), branchById(row.branchId)?.name || "Вся компания", row.categoryName || financeCategory(row.categoryId)?.name || "Перевод", financeAccount(row.accountId)?.name || "", row.counterparty || "", row.comment || "", row.type === "expense" ? -Number(row.amount || 0) : Number(row.amount || 0)])];
@@ -4223,6 +4223,173 @@ function exportFinanceCsv() {
   link.href = URL.createObjectURL(new Blob([`\ufeff${csv}`], { type: "text/csv;charset=utf-8" }));
   link.download = `ashkana-finance-${$("#financeDateFrom").value}-${$("#financeDateTo").value}.csv`;
   link.click(); URL.revokeObjectURL(link.href);
+}
+
+async function exportTechnicalCards() {
+  const button = $("#exportTechnicalCardsButton");
+  if (!serverMode) { showToast("Экспорт техкарт доступен на сервере"); return; }
+  button.disabled = true;
+  try {
+    const {xlsx, filename} = await AshkanaApi.exportTechnicalCards();
+    const bytes = Uint8Array.from(atob(xlsx), character => character.charCodeAt(0));
+    const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
+    const link = document.createElement("a");
+    link.href = url; link.download = filename; link.click(); URL.revokeObjectURL(url);
+    showToast("Техкарты выгружены");
+  } catch (error) { showToast(error.message || "Не удалось выгрузить техкарты"); }
+  finally { button.disabled = false; }
+}
+
+let technicalCardsPreviewRows = [];
+
+async function openTechnicalCardsImport() {
+  $("#technicalCardsImportFile").value = "";
+  $("#technicalCardsImportFile").click();
+}
+
+async function readFileAsDataUrl(file) {
+  return new Promise((resolve, reject) => {
+    const reader = new FileReader();
+    reader.onload = () => resolve(reader.result.split(",")[1]);
+    reader.onerror = reject;
+    reader.readAsDataURL(file);
+  });
+}
+
+function renderTechnicalCardsImportPreview(rows) {
+  technicalCardsPreviewRows = rows;
+  const errorBox = $("#technicalCardsImportError");
+  errorBox.hidden = true;
+  const container = $("#technicalCardsImportPreview");
+  if (!rows.length) {
+    container.innerHTML = '<p class="payroll-empty">Позиции не найдены</p>';
+    $("#applyTechnicalCardsImport").disabled = true;
+    return;
+  }
+  $("#applyTechnicalCardsImport").disabled = false;
+  const byCard = {};
+  const order = [];
+  for (const row of rows) {
+    if (!byCard[row.card]) { byCard[row.card] = []; order.push(row.card); }
+    byCard[row.card].push(row);
+  }
+  let html = `<p>${rows.length} строк, ${order.length} техкарт</p><table class="data-table"><thead><tr><th>Блюдо</th><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Ед.</th><th>Статус</th></tr></thead><tbody>`;
+  for (const card of order) {
+    for (const row of byCard[card]) {
+      const ingredient = ingredientById(row.ingredientId);
+      const status = row.ingredientId ? `Сопоставлено с ${escapeHtml(ingredient?.name || "")}` : 'Ингредиент не найден — создайте в справочнике';
+      const cls = row.ingredientId ? "" : "negative";
+      html += `<tr><td><strong>${escapeHtml(row.card)}</strong></td><td>${escapeHtml(row.ingredient)}</td><td>${decimal(row.gross)}</td><td>${decimal(row.net)}</td><td>${escapeHtml(ingredient?.unit || "")}</td><td class="${cls}">${escapeHtml(status)}</td></tr>`;
+    }
+  }
+  html += "</tbody></table>";
+  container.innerHTML = html;
+}
+
+async function applyTechnicalCardsImport() {
+  const button = $("#applyTechnicalCardsImport");
+  button.disabled = true;
+  try {
+    const response = await AshkanaApi.importTechnicalCardsApply({ items: technicalCardsPreviewRows });
+    showToast(`Импортировано техкарт: ${response.results.length}`);
+    $("#closeTechnicalCardsImportCancel").click();
+    switchMenuPage("recipes");
+    renderAll();
+  } catch (error) { showToast(error.message || "Не удалось применить импорт"); }
+  finally { button.disabled = false; }
+}
+
+function exportIngredientsCsv() {
+  const rows = [["Наименование","Категория","Ед. изм.","Штрихкод","Лимит","Себестоимость","Потери варки","Потери жарки","Потери выпекания","Потери очистки"]];
+  for (const ing of ingredients) {
+    const losses = ing.losses || {};
+    rows.push([ing.name, ing.category || "", ing.unit || "", ing.barcode || "", ing.limit || "", ing.averageCost || "", losses.boil || "", losses.fry || "", losses.bake || "", losses.clean || ""]);
+  }
+  const csv = rows.map(r => r.map(v => `"${String(v ?? "").replaceAll('"','""')}"`).join(";")).join("\n");
+  const link = document.createElement("a");
+  link.href = URL.createObjectURL(new Blob(["\ufeff"+csv], {type:"text/csv;charset=utf-8"}));
+  link.download = "ingredients.csv";
+  link.click(); URL.revokeObjectURL(link.href);
+}
+
+async function importIngredientsCsv(file) {
+  const text = await file.text();
+  let lines;
+  for (const delim of [";", ","]) {
+    try { lines = csvParse(text, delim); } catch (_) { continue; }
+    if (lines.length > 1 && lines[0].some(c => /наимен|название|ингредиент|name/i.test(c))) break;
+  }
+  if (!lines || lines.length < 2) throw new Error("Не найдены данные в CSV");
+  const header = lines[0].map(c => c.trim().toLowerCase());
+  const idx = {};
+  header.forEach((h, i) => {
+    if (/наимен|название|ингредиент|name/.test(h)) idx.name = i;
+    else if (/категори/.test(h)) idx.category = i;
+    else if (/ед\.|единица|unit/.test(h)) idx.unit = i;
+    else if (/штрих|barcode/.test(h)) idx.barcode = i;
+    else if (/лимит/.test(h)) idx.limit = i;
+    else if (/себесто|cost|cena/.test(h)) idx.cost = i;
+  });
+  if (idx.name === undefined) throw new Error("Не найден столбец «Наименование»");
+  let applied = 0;
+  for (let i = 1; i < lines.length; i++) {
+    const cells = lines[i];
+    if (!cells.some(c => c.trim())) continue;
+    const name = String(cells[idx.name] || "").trim();
+    if (!name) continue;
+    const payload = {
+      id: ingredientIdFromName(name),
+      name,
+      category: (idx.category !== undefined ? String(cells[idx.category] || "").trim() : "") || "Без категории",
+      unit: (idx.unit !== undefined ? String(cells[idx.unit] || "").trim() : "") || "кг",
+      barcode: idx.barcode !== undefined ? String(cells[idx.barcode] || "").trim() : "",
+      limit: Number(cells[idx.limit] || 0) || 0,
+      averageCost: Number(cells[idx.cost] || 0) || 0,
+      losses: {boil: 0, fry: 0, bake: 0, clean: 0},
+    };
+    if (serverMode) {
+      await runServerAction("ingredient.upsert", payload);
+    } else {
+      runLocalIngredientUpsert(payload);
+    }
+    applied++;
+  }
+  showToast(`Импортировано ингредиентов: ${applied}`);
+  renderAll();
+}
+
+function csvParse(text, delim) {
+  const rows = [];
+  let row = [], field = "", inQuotes = false;
+  for (let i = 0; i < text.length; i++) {
+    const ch = text[i];
+    if (inQuotes) {
+      if (ch === '"') {
+        if (i + 1 < text.length && text[i + 1] === '"') { field += '"'; i++; }
+        else inQuotes = false;
+      } else field += ch;
+    } else if (ch === '"') inQuotes = true;
+    else if (ch === delim) { row.push(field); field = ""; }
+    else if (ch === "\n") { row.push(field); rows.push(row); row = []; field = ""; }
+    else if (ch === "\r") {}
+    else field += ch;
+  }
+  row.push(field); rows.push(row);
+  return rows;
+}
+
+function runLocalIngredientUpsert(payload) {
+  let existing = ingredientById(payload.id);
+  if (!existing) {
+    existing = {id: payload.id, stock: 0, averageCost: 0};
+    ingredients.push(existing);
+  }
+  Object.assign(existing, {
+    name: payload.name, category: payload.category, unit: payload.unit,
+    barcode: payload.barcode, limit: payload.limit, averageCost: payload.averageCost,
+    losses: payload.losses,
+  });
+  saveIngredients();
 }
 
 function openRecipe(recipeId) {
@@ -6823,6 +6990,31 @@ $("#submitInventoryButton").addEventListener("click", submitInventory);
 $("#cancelInventoryButton").addEventListener("click", cancelInventory);
 $("#returnInventoryButton").addEventListener("click", returnInventory);
 $("#postInventoryButton").addEventListener("click", postInventory);
+$("#exportTechnicalCardsButton").addEventListener("click", exportTechnicalCards);
+$("#importTechnicalCardsButton").addEventListener("click", openTechnicalCardsImport);
+$("#technicalCardsImportFile").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try {
+    const encoded = await readFileAsDataUrl(file);
+    const preview = await AshkanaApi.importTechnicalCardsPreview({ encoded, fileName: file.name });
+    renderTechnicalCardsImportPreview(preview.rows);
+    $("#technicalCardsImportDialog").classList.remove("hidden");
+  } catch (error) { showToast(error.message || "Не удалось прочитать файл"); }
+  finally { event.target.value = ""; }
+});
+$("#applyTechnicalCardsImport").addEventListener("click", applyTechnicalCardsImport);
+["closeTechnicalCardsImport", "closeTechnicalCardsImportCancel"].forEach((id) => {
+  $("#"+id).addEventListener("click", () => { $("#technicalCardsImportDialog").classList.add("hidden"); });
+});
+$("#exportIngredientsButton").addEventListener("click", exportIngredientsCsv);
+$("#importIngredientsButton").addEventListener("click", () => { $("#ingredientImportFile").click(); });
+$("#ingredientImportFile").addEventListener("change", async (event) => {
+  const file = event.target.files?.[0];
+  if (!file) return;
+  try { await importIngredientsCsv(file); } catch (error) { showToast(error.message || "Не удалось импортировать ингредиенты"); }
+  finally { event.target.value = ""; }
+});
 $("#documentActionButton").addEventListener("click", () => {
   const action = $("#documentActionButton").dataset.action;
   if (action === "requests") openRequestForm();
