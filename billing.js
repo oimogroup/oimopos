@@ -70,6 +70,15 @@
     renderOrders();
   }
   async function load() {data=await api.billing();clearCompletedRequest();render();}
+  let refreshing = false;
+  async function refreshOnReturn() {
+    if (!session || document.hidden || refreshing) return;
+    refreshing = true;
+    try { await load(); } catch (error) { message(error.message); }
+    finally { refreshing = false; }
+  }
+  window.addEventListener('focus', refreshOnReturn);
+  document.addEventListener('visibilitychange', refreshOnReturn);
   $('#billingPeriod').addEventListener('change',()=>{$('#termsAccepted').checked=false;render();message('');});
   $('#reload').addEventListener('click',async()=>{try{await load();message('Информация обновлена.');}catch(error){message(error.message);}});
   $('#logout').addEventListener('click',async()=>{try{await api.logout();sessionStorage.removeItem('ashkana-auth-session-v1');location.replace('/login');}catch(error){message(error.message);}});

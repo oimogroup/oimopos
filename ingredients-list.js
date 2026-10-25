@@ -97,9 +97,6 @@
       const link = event.target.closest("[data-ingredient-link-id]");
       if (link) { if (link.dataset.ingredientLinkKind === "recipe") openRecipeForm(Number(link.dataset.ingredientLinkId)); else openPreparationForm(link.dataset.ingredientLinkId); }
     });
-    el("exportIngredientsButton").addEventListener("click", () => { const url = URL.createObjectURL(new Blob([csvText()], { type: "text/csv;charset=utf-8" })); const link = document.createElement("a"); link.href = url; link.download = "ingredients.csv"; link.click(); setTimeout(() => URL.revokeObjectURL(url), 1000); });
-    el("importIngredientsButton").addEventListener("click", () => el("ingredientImportFile").click());
-    el("ingredientImportFile").addEventListener("change", event => importFile(event.target.files[0]));
     el("confirmIngredientImport").addEventListener("click", async () => {
       if (!pendingImport.length) return;
       const button = el("confirmIngredientImport"); button.disabled = true;

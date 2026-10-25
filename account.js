@@ -31,6 +31,7 @@
   }));
   $('#resendForm').addEventListener('submit',event=>submit(event,async()=>{
     const result=await api.sendVerificationEmail();say(result.message || 'Email уже подтверждён.');
+    if(result.verified){hideForms();$('#accountDescription').textContent='Email аккаунта подтверждён.';$('#workspaceLink').hidden=false;}
   }));
   if(action==='reset' || action==='verify') {
     hideForms();
@@ -41,6 +42,6 @@
     else say('Ссылка неполная. Запросите новое письмо.');
   } else if(new URLSearchParams(location.search).has('verify')) {
     hideForms();$('#accountTitle').textContent='Email аккаунта';$('#accountDescription').textContent='Подтвердите email для оплаты подписки и восстановления доступа.';
-    (async()=>{try{const result=await api.emailStatus();$('#verificationAddress').textContent=result.email;$('#resendForm').hidden=result.verified || !result.canVerify;$('#workspaceLink').hidden=false;if(result.verified)say('Email уже подтверждён.');else if(!result.canVerify)say('Для этой учётной записи нужен email. Обратитесь к администратору.');}catch(error){say(error.status===401?'Войдите в аккаунт, затем откройте подтверждение email.':error.message);}})();
+    (async()=>{try{const result=await api.emailStatus();$('#verificationAddress').textContent=result.email;$('#resendForm').hidden=result.verified || !result.canVerify;$('#workspaceLink').hidden=false;if(result.verified){$('#accountDescription').textContent='Email аккаунта подтверждён.';say('Повторное подтверждение не требуется.');}else if(!result.canVerify)say('Для этой учётной записи нужен email. Обратитесь к администратору.');}catch(error){say(error.status===401?'Войдите в аккаунт, затем откройте подтверждение email.':error.message);}})();
   }
 })();

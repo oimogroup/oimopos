@@ -30,6 +30,8 @@ def _header_name(value):
 
 
 _ALIASES = {
+    "process": ("процесс", "process"),
+    "usedIn": ("используется в", "usedIn"),
     "card": ("наименование блюда", "блюдо", "наименование", "name", "карта", "техкарта", "output"),
     "kind": ("вид", "kind", "тип", "type", "полуфабрикат", "техкарта", "продукция"),
     "category": ("категория", "category", "категория блюда"),
@@ -105,6 +107,8 @@ def _table(rows, header):
                 "card": name,
                 "category": mapped.get("category", ""),
                 "station": mapped.get("station", ""),
+                "process": mapped.get("process", ""),
+                "usedIn": mapped.get("usedIn", ""),
                 "yield": float(card_yield) if card_yield is not None else None,
                 "weight": float(weight) if weight is not None else None,
                 "price": float(price) if price is not None else None,
@@ -342,7 +346,7 @@ def preview(state, encoded, file_name):
     if not raw or len(raw) > MAX_FILE_BYTES:
         raise ValueError("Файл пуст или его размер больше 2 МБ")
     rows = _xlsx(raw) if suffix == "xlsx" else _csv(raw)
-    catalog = {normalize(item.get("name", "")): str(item["id"]) for item in [*state.get("ingredients", []), *state.get("products", [])]}
+    catalog = {normalize(item.get("name", "")): str(item["id"]) for item in state.get("ingredients", [])}
     for row in rows:
         row["ingredientId"] = catalog.get(normalize(row["ingredient"]), "")
     return {"rows": rows, "fileName": file_name}

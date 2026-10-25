@@ -87,7 +87,7 @@ def workbook(recipes, preparations, ingredients_by_id):
     data_end = len(rows)
     sheets = [('Техкарты', _sheet(rows, header_row, data_end, {6}, [6, 16, 40, 20, 20, 12, 16, 12]))]
 
-    rows = [['Состав'], [], ['Карта', 'Вид', 'Наименование', 'Ингредиент', 'Брутто', 'Нетто', 'Ед.', 'Себестоимость, ед.', 'Сумма строки']]
+    rows = [['Состав'], [], ['Карта', 'Вид', 'Категория', 'Ингредиент', 'Брутто', 'Нетто', 'Ед.', 'Себестоимость, ед.', 'Сумма строки', 'Цех', 'Выход', 'Цена продажи', 'Процесс', 'Используется в']]
     header_row = len(rows)
     data_end = header_row
     for index, item in enumerate(items, 1):
@@ -101,13 +101,18 @@ def workbook(recipes, preparations, ingredients_by_id):
             rows.append([
                 card_name,
                 kind,
-                card_name,
+                item.get('category', ''),
                 ingredient.get('name', str(component.get('ingredientId', ''))),
                 _number(component.get('gross')),
                 _number(component.get('net')),
                 unit,
                 unit_cost,
                 _money(line_cost),
+                item.get('station', ''),
+                _number(item.get('yield')),
+                _number(item.get('price')),
+                item.get('process', ''),
+                item.get('usedIn', ''),
             ])
             data_end += 1
     sheets.append(('Состав', _sheet(rows, header_row, data_end, {7, 8}, [40, 12, 40, 40, 12, 12, 10, 16, 16])))

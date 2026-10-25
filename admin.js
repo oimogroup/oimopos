@@ -4266,8 +4266,8 @@ function renderTechnicalCardsImportPreview(rows) {
     $("#applyTechnicalCardsImport").disabled = true;
     return;
   }
-  $("#applyTechnicalCardsImport").disabled = false;
-  const byCard = {};
+  $("#applyTechnicalCardsImport").disabled = rows.some(row => !row.ingredientId);
+  const byCard = Object.create(null);
   const order = [];
   for (const row of rows) {
     if (!byCard[row.card]) { byCard[row.card] = []; order.push(row.card); }
@@ -4291,7 +4291,8 @@ async function applyTechnicalCardsImport() {
   button.disabled = true;
   try {
     const response = await AshkanaApi.importTechnicalCardsApply({ items: technicalCardsPreviewRows });
-    showToast(`Импортировано техкарт: ${response.results.length}`);
+    hydrateServerWorkspace(await AshkanaApi.workspace());
+    showToast(`Импортировано карт: ${response.results.length}`);
     $("#closeTechnicalCardsImportCancel").click();
     switchMenuPage("recipes");
     renderAll();
@@ -4317,7 +4318,7 @@ async function importIngredientsCsv(file) {
   let lines;
   for (const delim of [";", ","]) {
     try { lines = csvParse(text, delim); } catch (_) { continue; }
-    if (lines.length > 1 && lines[0].some(c => /наимен|название|ингредиент|name/i.test(c))) break;
+    if (lines.length > 1 && lines[0].length > 1 && lines[0].some(c => /наимен|название|ингредиент|name/i.test(c))) break;
   }
   if (!lines || lines.length < 2) throw new Error("Не найдены данные в CSV");
   const header = lines[0].map(c => c.trim().toLowerCase());
@@ -4329,26 +4330,44 @@ async function importIngredientsCsv(file) {
     else if (/штрих|barcode/.test(h)) idx.barcode = i;
     else if (/лимит/.test(h)) idx.limit = i;
     else if (/себесто|cost|cena/.test(h)) idx.cost = i;
+    else if (/потери варки/.test(h)) idx.boil = i;
+    else if (/потери жарки/.test(h)) idx.fry = i;
+    else if (/потери выпекания/.test(h)) idx.bake = i;
+    else if (/потери очистки/.test(h)) idx.clean = i;
   });
   if (idx.name === undefined) throw new Error("Не найден столбец «Наименование»");
-  let applied = 0;
+  const parsed = [];
+  const number = (value, label) => {
+    const result = Number(String(value || "0").replace(/\s/g, "").replace(",", "."));
+    if (!Number.isFinite(result) || result < 0) throw new Error(`Некорректное число: ${label}`);
+    return result;
+  };
+  const names = new Set();
   for (let i = 1; i < lines.length; i++) {
     const cells = lines[i];
     if (!cells.some(c => c.trim())) continue;
     const name = String(cells[idx.name] || "").trim();
     if (!name) continue;
     const payload = {
-      id: ingredientIdFromName(name),
+      id: ingredients.find(item => item.name.trim().toLocaleLowerCase("ru") === name.toLocaleLowerCase("ru"))?.id || ingredientIdFromName(name),
       name,
       category: (idx.category !== undefined ? String(cells[idx.category] || "").trim() : "") || "Без категории",
       unit: (idx.unit !== undefined ? String(cells[idx.unit] || "").trim() : "") || "кг",
       barcode: idx.barcode !== undefined ? String(cells[idx.barcode] || "").trim() : "",
-      limit: Number(cells[idx.limit] || 0) || 0,
-      averageCost: Number(cells[idx.cost] || 0) || 0,
-      losses: {boil: 0, fry: 0, bake: 0, clean: 0},
+      limit: number(cells[idx.limit], "Лимит"),
+      averageCost: number(cells[idx.cost], "Себестоимость"),
+      losses: Object.fromEntries(["boil", "fry", "bake", "clean"].map(key => [key, number(cells[idx[key]], "Потери")])),
     };
+    if (!["кг", "л", "шт"].includes(payload.unit)) throw new Error(`Строка ${i + 1}: неизвестная единица измерения`);
+    const key = name.toLocaleLowerCase("ru");
+    if (names.has(key)) throw new Error(`Повторяется ингредиент: ${name}`);
+    names.add(key);
+    parsed.push(payload);
+  }
+  let applied = 0;
+  for (const payload of parsed) {
     if (serverMode) {
-      await runServerAction("ingredient.upsert", payload);
+      if (!await runServerAction("ingredient.upsert", payload)) throw new Error(`Не удалось сохранить: ${payload.name}`);
     } else {
       runLocalIngredientUpsert(payload);
     }
@@ -4374,6 +4393,7 @@ function csvParse(text, delim) {
     else if (ch === "\r") {}
     else field += ch;
   }
+  if (inQuotes) throw new Error("В CSV не закрыты кавычки");
   row.push(field); rows.push(row);
   return rows;
 }
@@ -7122,6 +7142,43 @@ function routeInitialWorkspace() {
   } else if (document.querySelector(`#view-${initialView}`)) switchView(initialView);
 }
 
+function renderAccountNotice() {
+  const notice = document.querySelector('#trialNotice');
+  if (notice) { notice.replaceChildren(); notice.hidden = true; }
+  const trialNotice = document.querySelector('#trialNotice');
+  if (trialNotice && currentRole === 'owner' && currentSession.subscriptionStatus === 'trialing' && currentSession.trialEndsAt) {
+    const end = new Date(currentSession.trialEndsAt);
+    if (Number.isFinite(end.getTime())) {
+      trialNotice.hidden = false;
+      trialNotice.textContent = `Пробный доступ до ${end.toLocaleDateString('ru-RU')}. Осталось дней: ${Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000))}. `;
+      const link = document.createElement('a');
+      link.href = '/billing'; link.textContent = 'Подписка и оплата';
+      trialNotice.append(link);
+    }
+  }
+  if (trialNotice && currentRole === 'owner' && currentSession.emailVerified === false) {
+    trialNotice.hidden=false;
+    const link=document.createElement('a');link.href='/account?verify=1';link.textContent='Подтвердить email аккаунта';
+    trialNotice.append(document.createTextNode(' · '),link);
+  }
+}
+
+let accountStatusRefreshing = false;
+async function refreshAccountStatus() {
+  if (!serverMode || document.hidden || accountStatusRefreshing) return;
+  accountStatusRefreshing = true;
+  try {
+    const response = await window.AshkanaApi.me();
+    if (response.session.login !== currentSession.login || String(response.session.tenantId) !== String(currentSession.tenantId) || response.session.role !== currentRole) return;
+    Object.assign(currentSession, response.session);
+    sessionStorage.setItem(authSessionKey, JSON.stringify(currentSession));
+    renderAccountNotice();
+  } catch (error) { /* Keep the current notice until the server is reachable. */ }
+  finally { accountStatusRefreshing = false; }
+}
+window.addEventListener('focus', refreshAccountStatus);
+document.addEventListener('visibilitychange', refreshAccountStatus);
+
 async function initializeApplication() {
   if (!testMode) {
     try {
@@ -7164,22 +7221,7 @@ async function initializeApplication() {
     }
   }
   applyRoleWorkspace();
-  const trialNotice = document.querySelector('#trialNotice');
-  if (trialNotice && currentRole === 'owner' && currentSession.subscriptionStatus === 'trialing' && currentSession.trialEndsAt) {
-    const end = new Date(currentSession.trialEndsAt);
-    if (Number.isFinite(end.getTime())) {
-      trialNotice.hidden = false;
-      trialNotice.textContent = `Пробный доступ до ${end.toLocaleDateString('ru-RU')}. Осталось дней: ${Math.max(0, Math.ceil((end.getTime() - Date.now()) / 86400000))}. `;
-      const link = document.createElement('a');
-      link.href = '/billing'; link.textContent = 'Подписка и оплата';
-      trialNotice.append(link);
-    }
-  }
-  if (trialNotice && currentRole === 'owner' && currentSession.emailVerified === false) {
-    trialNotice.hidden=false;
-    const link=document.createElement('a');link.href='/account?verify=1';link.textContent='Подтвердить email аккаунта';
-    trialNotice.append(document.createTextNode(' · '),link);
-  }
+  renderAccountNotice();
   renderAll();
   routeInitialWorkspace();
 }
