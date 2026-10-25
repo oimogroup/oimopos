@@ -20,3 +20,15 @@ def test_workbook_roundtrip_preserves_card_metadata_and_components():
         assert (row["ingredientId"], row["gross"], row["net"]) == ("flour", 1000, 900)
     assert result["rows"][1]["process"] == "Замесить"
     assert result["rows"][1]["usedIn"] == "Выпечка"
+
+
+def test_import_accepts_500_catalog_positions():
+    ingredient = {"id": "flour", "name": "Мука", "unit": "кг"}
+    cards = [{"name": f"Карта {index}", "category": "Кухня", "station": "Кухня",
+              "yield": 900, "price": 150,
+              "components": [{"ingredientId": "flour", "gross": 1000, "net": 900}]}
+             for index in range(500)]
+    result = preview({"ingredients": [ingredient]}, workbook(cards, [], {"flour": ingredient}), "catalog.xlsx")
+    assert len(result["rows"]) == 500
+    assert len({row["card"] for row in result["rows"]}) == 500
+    assert all(row["ingredientId"] == "flour" for row in result["rows"])

@@ -48,7 +48,7 @@ class TechnicalCardCreate(BaseModel):
     yield_quantity: PositiveQuantity
     yield_weight_grams: PositiveWeight | None = None
     station: NonEmptyText
-    components: Annotated[list[ComponentInput], Field(min_length=1, max_length=100)]
+    components: Annotated[list[ComponentInput], Field(min_length=1, max_length=500)]
 
     @model_validator(mode="after")
     def validate_card(self) -> "TechnicalCardCreate":
@@ -72,7 +72,7 @@ class TechnicalCardUpdate(BaseModel):
     yield_quantity: PositiveQuantity
     yield_weight_grams: PositiveWeight | None = None
     station: NonEmptyText
-    components: Annotated[list[ComponentInput], Field(min_length=1, max_length=100)]
+    components: Annotated[list[ComponentInput], Field(min_length=1, max_length=500)]
 
     @model_validator(mode="after")
     def validate_components(self) -> "TechnicalCardUpdate":
