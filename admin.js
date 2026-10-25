@@ -2896,7 +2896,7 @@ function renderRecipes() {
   $("#ingredientCount").textContent = ingredients.length;
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
-    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${recipe.name}</strong><small>Код ${recipe.id}</small></div></div></td><td>${recipe.category}</td><td>${recipeStation(recipe)}</td><td>${decimal(recipe.yield / 1000, 3)} кг</td><td><strong>${money(cost)}</strong></td><td><strong>${money(recipe.price)}</strong></td><td><span class="margin-value">${decimal(markup(recipe))}%</span></td><td><button class="poster-action secondary-action" data-recipe-compose="${recipe.id}" type="button">Состав</button></td><td><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button></td></tr>`;
+    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${recipe.name}</strong><small>Код ${recipe.id}</small></div></div></td><td>${recipe.category}</td><td>${recipeStation(recipe)}</td><td>${decimal(recipe.yield / 1000, 3)} кг</td><td><strong>${money(cost)}</strong></td><td><strong>${money(recipe.price)}</strong></td><td><span class="margin-value">${decimal(markup(recipe))}%</span></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-recipe-compose="${recipe.id}" type="button">Состав</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button></div></td></tr>`;
   }).join("");
 }
 
@@ -2938,7 +2938,7 @@ function renderPreparations() {
     const batchCost = preparationCost(preparation);
     const unitCost = Number(preparation.yield) > 0 ? batchCost / (Number(preparation.yield) / 1000) : 0;
     const id = escapeHtml(String(preparation.id));
-    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong><small>${escapeHtml(String(preparation.id).toUpperCase())}</small></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td>${escapeHtml(preparation.station || "Кухня")}</td><td>${decimal(preparation.yield / 1000, 3)} кг</td><td><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td>${escapeHtml(preparation.usedIn || "Не указано")}</td><td><div class="preparation-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button></div></td></tr>`;
+    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong><small>${escapeHtml(String(preparation.id).toUpperCase())}</small></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td>${escapeHtml(preparation.station || "Кухня")}</td><td>${decimal(preparation.yield / 1000, 3)} кг</td><td><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td>${escapeHtml(preparation.usedIn || "Не указано")}</td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button></div></td></tr>`;
   }).join("") : `<tr class="table-empty"><td colspan="7">${preparations.length ? "По заданным условиям полуфабрикаты не найдены" : "Полуфабрикаты ещё не настроены"}</td></tr>`;
 }
 
@@ -7486,7 +7486,7 @@ $('#inventorySelectionList').addEventListener('change', renderInventorySelection
 
 // Compact records show the useful summary first; full data stays in the same row.
 (() => {
-  const registries = {productsTable:[0,4,6,7],recipesTable:[0,3,5,7,8],employeesTable:[0,1,4,5],registersTable:[0,1,4,5]};
+  const registries = {productsTable:[0,4,6,7],recipesTable:[0,3,5,7],employeesTable:[0,1,4,5],registersTable:[0,1,4,5]};
   for (const [id, summary] of Object.entries(registries)) {
     const body = document.getElementById(id), table = body.closest('table');
     table.classList.add('mobile-record-table');

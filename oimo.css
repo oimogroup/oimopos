@@ -1094,3 +1094,30 @@ button:disabled {cursor:default;}
  [data-ui=pos] .app-shell .topbar :is(#servingSurplusButton,#servingWriteoffButton,#supplyButton,#cashMenuButton,#posAdminLink) {display:none;}
  [data-ui=pos] .app-shell .topbar #terminalFunctionsButton {font-size:13px;white-space:nowrap;}
 }
+
+/* Reserve one predictable column for catalog actions. */
+@media screen {
+ body[data-ui=admin] #view-recipes .table-panel {overflow-x:auto;}
+ body[data-ui=admin] #view-recipes .data-table .poster-action {
+  white-space:nowrap;overflow-wrap:normal;word-break:normal;flex:0 0 auto;
+  height:36px;min-width:max-content;
+ }
+ body[data-ui=admin] #view-recipes .catalog-row-actions {
+  display:inline-flex;align-items:center;justify-content:flex-end;
+  flex-wrap:nowrap;gap:4px;width:max-content;max-width:none;
+ }
+ body[data-ui=admin] #view-recipes .data-table:has(.catalog-actions-heading) :is(th,td):last-child {
+  width:1%;white-space:nowrap;text-align:right;
+ }
+ body[data-ui=admin] #view-recipes .data-table:has(.catalog-actions-heading) td[colspan] {
+  width:auto;white-space:normal;text-align:left;
+ }
+ @media(max-width:700px) {
+  body[data-ui=admin] #view-recipes .data-table .poster-action {height:44px;}
+  body[data-ui=admin] #view-recipes .mobile-record-table td:last-child {
+   width:auto;justify-content:flex-end;
+  }
+  body[data-ui=admin] #view-recipes .mobile-record-table td:last-child::before {display:none;}
+  body[data-ui=admin] #view-recipes .mobile-record-toggle {margin-left:0;}
+ }
+}
