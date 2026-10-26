@@ -2720,39 +2720,19 @@ def import_technical_cards_apply(payload: dict, request: Request, user: dict = D
     items = payload.get("items") or []
     if not isinstance(items, list) or not items:
         raise HTTPException(status_code=422, detail="Не указаны позиции для импорта")
-    from .technical_card_import import normalize
-    groups = {}
-    order = []
-    for item in items:
-        if not isinstance(item, dict):
-            raise HTTPException(422, "Некорректная строка импорта")
-        name = str(item.get("card", "")).strip()
-        if not name:
-            raise HTTPException(status_code=422, detail="Не указано наименование блюда")
-        kind = str(item.get("kind", "техкарта")).strip()
-        if kind not in {"техкарта", "полуфабрикат"}:
-            raise HTTPException(422, "Неизвестный вид карты")
-        key = (kind, normalize(name))
-        if key not in groups:
-            groups[key] = []
-            order.append(key)
-        groups[key].append(item)
+    from .technical_card_import import normalize, prepare_import
+    try:
+        groups = prepare_import(state, items)
+    except ValueError as error:
+        raise HTTPException(422, str(error)) from error
     results = []
-    for key in order:
-        group = groups[key]
-        name = str(group[0]["card"]).strip()
-        first = group[0]
-        kind = str(first.get("kind", "техкарта")).strip()
+    for first in groups:
+        name = first["card"]
+        kind = first["kind"]
         collection = state.get("preparations" if kind == "полуфабрикат" else "recipes", [])
         existing = next((entry for entry in collection if normalize(entry.get("name", "")) == normalize(name)), {})
         first = {**first, "id": existing.get("id")}
-        components = []
-        for item in group:
-            ingredient_id = str(item.get("ingredientId", ""))
-            gross = item.get("gross")
-            net = item.get("net")
-            _require(ingredient_id and gross is not None and net is not None, "Проверьте состав техкарты")
-            components.append({"ingredientId": ingredient_id, "gross": gross, "net": net})
+        components = first["components"]
         if kind == "полуфабрикат":
             upsert_payload = {
                 "id": first.get("id") or f"pf-{uuid4().hex[:10]}",

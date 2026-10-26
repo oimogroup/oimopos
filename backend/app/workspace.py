@@ -751,20 +751,26 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         items = payload.get("items")
         _require(isinstance(items, list) and 0 < len(items) <= 500, "Импортируйте от 1 до 500 ингредиентов")
         imported_state = deepcopy(state)
-        names = {str(item["name"]).strip().casefold() for item in state["ingredients"]}
+        update_existing = payload.get("updateExisting") is True
+        existing_by_name = {str(item["name"]).strip().casefold(): item for item in state["ingredients"]}
+        names = set()
         for index, item in enumerate(items):
             _require(isinstance(item, dict), f"Строка {index + 1}: неверные данные")
             name = str(item.get("name", "")).strip()
-            _require(name and len(name) <= 200 and name.casefold() not in names, f"Строка {index + 1}: название пустое или уже существует")
+            key = name.casefold()
+            existing = existing_by_name.get(key)
+            _require(name and len(name) <= 200 and key not in names and (not existing or update_existing), f"Строка {index + 1}: название пустое или уже существует")
             _require(item.get("unit") in {"кг", "л", "шт"}, f"Строка {index + 1}: неверная единица измерения")
-            limit = item.get("limit", 0)
-            _require(isinstance(limit, (int, float)) and isfinite(limit) and limit >= 0, f"Строка {index + 1}: неверный лимит")
-            names.add(name.casefold())
+            _require(not existing or existing.get("unit") == item["unit"], f"Строка {index + 1}: нельзя менять единицу существующего ингредиента через импорт")
+            values = {key: item.get(key, (existing or {}).get(key, 0)) for key in ("limit", "averageCost")}
+            _require(all(isinstance(value, (int, float)) and isfinite(value) and value >= 0 for value in values.values()), f"Строка {index + 1}: неверный лимит или себестоимость")
+            losses = item.get("losses", (existing or {}).get("losses", {}))
+            _require(isinstance(losses, dict) and all(isinstance(value, (int, float)) and isfinite(value) and 0 <= value <= 99 for value in losses.values()), f"Строка {index + 1}: потери должны быть от 0 до 99%")
+            names.add(key)
             apply_action(imported_state, user, "ingredient.upsert", {
-                "id": f"i-{uuid4().hex[:12]}", "name": name, "unit": item["unit"],
+                "id": existing["id"] if existing else f"i-{uuid4().hex[:12]}", "name": name, "unit": item["unit"],
                 "category": str(item.get("category") or "Без категории"),
-                "barcode": str(item.get("barcode") or "")[:64], "limit": limit,
-                "averageCost": 0,
+                "barcode": str(item.get("barcode") or "")[:64], **values, "losses": losses,
             })
         state.clear()
         state.update(imported_state)

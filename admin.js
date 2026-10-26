@@ -4256,37 +4256,67 @@ async function readFileAsDataUrl(file) {
   });
 }
 
+function importCardKey(row) { return `${row.kind || "техкарта"}:${row.card.trim().toLocaleLowerCase("ru")}`; }
+function importUnitFamily(unit) { return ({"кг":"mass","г":"mass","л":"volume","мл":"volume","шт":"count"})[unit]; }
+function technicalImportIssues() {
+  const issues = new Set();
+  for (const row of technicalCardsPreviewRows) {
+    const ingredient = ingredientById(row.ingredientId);
+    if (!ingredient) issues.add("Сопоставьте все ингредиенты со справочником.");
+    else if (row.unit && (!importUnitFamily(row.unit) || importUnitFamily(row.unit) !== importUnitFamily(ingredient.unit))) issues.add(`«${row.ingredient}»: в файле ${row.unit}, в справочнике ${ingredient.unit}. Исправьте единицу и количество.`);
+    if (!Number.isFinite(Number(row.gross)) || !Number.isFinite(Number(row.net)) || Number(row.net) <= 0 || Number(row.gross) < Number(row.net)) issues.add("Проверьте брутто и нетто: оба больше нуля, нетто не больше брутто.");
+    if (!row.station?.trim()) issues.add("Укажите цех для каждой карты.");
+    if (!Number.isFinite(Number(row.yield)) || Number(row.yield) <= 0) issues.add("Укажите фактический выход каждой карты в граммах.");
+  }
+  const error = $("#technicalCardsImportError");
+  error.textContent = [...issues].join(" "); error.hidden = !issues.size;
+  $("#applyTechnicalCardsImport").disabled = !technicalCardsPreviewRows.length || issues.size > 0;
+  return issues.size;
+}
 function renderTechnicalCardsImportPreview(rows) {
   technicalCardsPreviewRows = rows;
-  const errorBox = $("#technicalCardsImportError");
-  errorBox.hidden = true;
+  const groups = new Map();
+  rows.forEach((row, index) => {
+    const key = importCardKey(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push({row, index});
+  });
+  const options = selected => '<option value="">Выберите ингредиент</option>' + ingredients.map(item => `<option value="${escapeHtml(item.id)}" ${String(item.id) === String(selected) ? "selected" : ""}>${escapeHtml(item.name)} · ${escapeHtml(item.unit)}</option>`).join("");
+  let html = `<p>${rows.length} строк состава · ${groups.size} карт. Повторы одного ингредиента внутри карты будут объединены. Выход укажите по фактической массе готовой продукции. При смене единицы вручную пересчитайте брутто и нетто; масса, объём и штуки не взаимозаменяемы.</p>`;
+  for (const entries of groups.values()) {
+    const {row: first, index: firstIndex} = entries[0];
+    html += `<section class="import-card-review"><h3>${escapeHtml(first.card)} <small>${escapeHtml(first.kind)}</small></h3><div class="import-card-fields"><label>Цех<input data-import-station="${firstIndex}" value="${escapeHtml(first.station || "")}" required></label><label>Выход готового продукта, г<input data-import-yield="${firstIndex}" type="number" min="0.001" step="any" value="${first.yield ?? ""}" required></label></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Из файла</th><th>Ингредиент в справочнике</th><th>Брутто</th><th>Нетто</th><th>Единица файла</th></tr></thead><tbody>`;
+    for (const {row, index} of entries) html += `<tr><td>${escapeHtml(row.ingredient)}</td><td><select data-import-ingredient="${index}" aria-label="Сопоставление ${escapeHtml(row.ingredient)}">${options(row.ingredientId)}</select></td><td><input aria-label="Брутто" data-import-gross="${index}" type="number" min="0" step="any" value="${row.gross}"></td><td><input aria-label="Нетто" data-import-net="${index}" type="number" min="0" step="any" value="${row.net}"></td><td><select aria-label="Единица количества" data-import-unit="${index}">${["", "кг", "г", "л", "мл", "шт"].map(unit => `<option value="${unit}" ${unit === (row.unit || "") ? "selected" : ""}>${unit || "Старый формат"}</option>`).join("")}</select></td></tr>`;
+    html += '</tbody></table></div></section>';
+  }
   const container = $("#technicalCardsImportPreview");
-  if (!rows.length) {
-    container.innerHTML = '<p class="payroll-empty">Позиции не найдены</p>';
-    $("#applyTechnicalCardsImport").disabled = true;
-    return;
-  }
-  $("#applyTechnicalCardsImport").disabled = rows.some(row => !row.ingredientId);
-  const byCard = Object.create(null);
-  const order = [];
-  for (const row of rows) {
-    if (!byCard[row.card]) { byCard[row.card] = []; order.push(row.card); }
-    byCard[row.card].push(row);
-  }
-  let   html = `<p>${rows.length} строк, ${order.length} техкарт/полуфабрикатов</p><table class="data-table"><thead><tr><th>Блюдо</th><th>Вид</th><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Ед.</th><th>Статус</th></tr></thead><tbody>`;
-  for (const card of order) {
-    for (const row of byCard[card]) {
-      const ingredient = ingredientById(row.ingredientId);
-      const status = row.ingredientId ? `Сопоставлено с ${escapeHtml(ingredient?.name || "")}` : 'Ингредиент не найден — создайте в справочнике';
-      const cls = row.ingredientId ? "" : "negative";
-      html += `<tr><td><strong>${escapeHtml(row.card)}</strong></td><td>${escapeHtml(row.kind || "техкарта")}</td><td>${escapeHtml(row.ingredient)}</td><td>${decimal(row.gross)}</td><td>${decimal(row.net)}</td><td>${escapeHtml(ingredient?.unit || "")}</td><td class="${cls}">${escapeHtml(status)}</td></tr>`;
-    }
-  }
-  html += "</tbody></table>";
   container.innerHTML = html;
+  container.oninput = event => {
+    const input = event.target;
+    if (input.matches('[data-import-ingredient]')) {
+      const source = rows[Number(input.dataset.importIngredient)];
+      // Apply the same explicit mapping to equal names throughout this file.
+      rows.filter(row => row.ingredient.trim().toLocaleLowerCase("ru") === source.ingredient.trim().toLocaleLowerCase("ru")).forEach(row => { row.ingredientId = input.value; });
+      container.querySelectorAll('[data-import-ingredient]').forEach(select => { select.value = rows[Number(select.dataset.importIngredient)].ingredientId; });
+    } else if (input.matches('[data-import-gross],[data-import-net],[data-import-unit]')) {
+      const field = input.dataset.importGross !== undefined ? 'gross' : input.dataset.importNet !== undefined ? 'net' : 'unit';
+      const index = Number(input.dataset.importGross ?? input.dataset.importNet ?? input.dataset.importUnit);
+      rows[index][field] = field === 'unit' ? input.value : Number(input.value);
+    } else if (input.matches('[data-import-station],[data-import-yield]')) {
+      const index = Number(input.dataset.importStation ?? input.dataset.importYield);
+      const key = importCardKey(rows[index]);
+      rows.filter(row => importCardKey(row) === key).forEach(row => {
+        if (input.dataset.importStation !== undefined) row.station = input.value;
+        else row.yield = input.value === "" ? null : Number(input.value);
+      });
+    }
+    technicalImportIssues();
+  };
+  technicalImportIssues();
 }
 
 async function applyTechnicalCardsImport() {
+  if (technicalImportIssues()) return;
   const button = $("#applyTechnicalCardsImport");
   button.disabled = true;
   try {
@@ -4294,10 +4324,10 @@ async function applyTechnicalCardsImport() {
     hydrateServerWorkspace(await AshkanaApi.workspace());
     showToast(`Импортировано карт: ${response.results.length}`);
     $("#closeTechnicalCardsImportCancel").click();
-    switchMenuPage("recipes");
+    switchMenuPage(technicalCardsPreviewRows.every(row => row.kind === "полуфабрикат") ? "preparations" : "recipes");
     renderAll();
   } catch (error) { showToast(error.message || "Не удалось применить импорт"); }
-  finally { button.disabled = false; }
+  finally { technicalImportIssues(); }
 }
 
 function exportIngredientsCsv() {
@@ -4348,15 +4378,16 @@ async function importIngredientsCsv(file) {
     if (!cells.some(c => c.trim())) continue;
     const name = String(cells[idx.name] || "").trim();
     if (!name) continue;
+    const existing = ingredients.find(item => item.name.trim().toLocaleLowerCase("ru") === name.toLocaleLowerCase("ru"));
     const payload = {
-      id: ingredients.find(item => item.name.trim().toLocaleLowerCase("ru") === name.toLocaleLowerCase("ru"))?.id || ingredientIdFromName(name),
+      id: existing?.id || ingredientIdFromName(name),
       name,
       category: (idx.category !== undefined ? String(cells[idx.category] || "").trim() : "") || "Без категории",
       unit: (idx.unit !== undefined ? String(cells[idx.unit] || "").trim() : "") || "кг",
       barcode: idx.barcode !== undefined ? String(cells[idx.barcode] || "").trim() : "",
-      limit: number(cells[idx.limit], "Лимит"),
-      averageCost: number(cells[idx.cost], "Себестоимость"),
-      losses: Object.fromEntries(["boil", "fry", "bake", "clean"].map(key => [key, number(cells[idx[key]], "Потери")])),
+      limit: idx.limit === undefined ? existing?.limit || 0 : number(cells[idx.limit], "Лимит"),
+      averageCost: idx.cost === undefined ? existing?.averageCost || 0 : number(cells[idx.cost], "Себестоимость"),
+      losses: Object.fromEntries(["boil", "fry", "bake", "clean"].map(key => [key, idx[key] === undefined ? existing?.losses?.[key] || 0 : number(cells[idx[key]], "Потери")])),
     };
     if (!["кг", "л", "шт"].includes(payload.unit)) throw new Error(`Строка ${i + 1}: неизвестная единица измерения`);
     const key = name.toLocaleLowerCase("ru");
@@ -4364,16 +4395,11 @@ async function importIngredientsCsv(file) {
     names.add(key);
     parsed.push(payload);
   }
-  let applied = 0;
-  for (const payload of parsed) {
-    if (serverMode) {
-      if (!await runServerAction("ingredient.upsert", payload)) throw new Error(`Не удалось сохранить: ${payload.name}`);
-    } else {
-      runLocalIngredientUpsert(payload);
-    }
-    applied++;
-  }
-  showToast(`Импортировано ингредиентов: ${applied}`);
+  if (!parsed.length || parsed.length > 500) throw new Error("Импортируйте от 1 до 500 ингредиентов");
+  if (serverMode) {
+    if (!await runServerAction("ingredient.import", {items: parsed, updateExisting: true})) return;
+  } else parsed.forEach(runLocalIngredientUpsert);
+  showToast(`Импортировано ингредиентов: ${parsed.length}`);
   renderAll();
 }
 

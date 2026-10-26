@@ -30,6 +30,7 @@ def _header_name(value):
 
 
 _ALIASES = {
+    "unit": ("ед", "ед.", "единица", "ед. изм.", "ед. измерения", "unit"),
     "process": ("процесс", "process"),
     "usedIn": ("используется в", "usedIn"),
     "card": ("наименование блюда", "блюдо", "наименование", "name", "карта", "техкарта", "output"),
@@ -113,6 +114,7 @@ def _table(rows, header):
                 "weight": float(weight) if weight is not None else None,
                 "price": float(price) if price is not None else None,
                 "ingredient": ingredient_name,
+                "unit": normalize(mapped.get("unit", "")),
                 "gross": float(gross),
                 "net": float(net),
             })
@@ -346,7 +348,64 @@ def preview(state, encoded, file_name):
     if not raw or len(raw) > MAX_FILE_BYTES:
         raise ValueError("Файл пуст или его размер больше 2 МБ")
     rows = _xlsx(raw) if suffix == "xlsx" else _csv(raw)
-    catalog = {normalize(item.get("name", "")): str(item["id"]) for item in state.get("ingredients", [])}
+    catalog = {}
+    for item in state.get("ingredients", []):
+        key = normalize(item.get("name", ""))
+        catalog[key] = "" if key in catalog else str(item["id"])
     for row in rows:
         row["ingredientId"] = catalog.get(normalize(row["ingredient"]), "")
     return {"rows": rows, "fileName": file_name}
+
+
+def prepare_import(state, items):
+    """Validate every card before writes; convert to workspace milli stock units."""
+    if not isinstance(items, list) or not 0 < len(items) <= MAX_ROWS:
+        raise ValueError("Импортируйте от 1 до 1000 строк состава")
+    catalog = {str(item["id"]): item for item in state.get("ingredients", [])}
+    units = {"кг": ("mass", Decimal(1000)), "г": ("mass", Decimal(1)),
+             "л": ("volume", Decimal(1000)), "мл": ("volume", Decimal(1)),
+             "шт": ("count", Decimal(1000))}
+    groups = {}
+    for index, item in enumerate(items, 1):
+        if not isinstance(item, dict):
+            raise ValueError(f"Строка {index}: некорректные данные")
+        name = str(item.get("card", "")).strip()
+        kind = item.get("kind", "техкарта")
+        if not name or kind not in {"техкарта", "полуфабрикат"}:
+            raise ValueError(f"Строка {index}: укажите название и вид карты")
+        station = str(item.get("station", "")).strip()
+        output = _number(item.get("yield", ""), index, f"выход «{name}» в граммах")
+        if not math.isfinite(float(output)):
+            raise ValueError(f"«{name}»: выход должен быть конечным числом")
+        if not station:
+            raise ValueError(f"«{name}»: укажите цех")
+        ingredient_id = str(item.get("ingredientId", ""))
+        ingredient = catalog.get(ingredient_id)
+        if not ingredient:
+            raise ValueError(f"Строка {index}: сопоставьте ингредиент «{item.get('ingredient', '')}»")
+        source = normalize(item.get("unit", ""))
+        target = normalize(ingredient.get("unit", ""))
+        # Legacy tables without a unit column already contain workspace quantities.
+        factor = Decimal(1)
+        if source:
+            if source not in units or target not in units or units[source][0] != units[target][0]:
+                raise ValueError(f"Строка {index}: единица «{source}» не соответствует «{target}». Массу, объём и штуки нельзя смешивать")
+            factor = units[source][1]
+        gross = _number(item.get("gross", ""), index, "брутто") * factor
+        net = _number(item.get("net", ""), index, "нетто") * factor
+        if net > gross or not math.isfinite(float(gross)) or not math.isfinite(float(net)):
+            raise ValueError(f"Строка {index}: проверьте брутто и нетто")
+        key = (kind, normalize(name))
+        group = groups.setdefault(key, {**item, "card": name, "kind": kind, "station": station, "yield": float(output), "components": {}})
+        if group["station"] != station or group["yield"] != float(output):
+            raise ValueError(f"«{name}»: цех и выход должны совпадать во всех строках")
+        component = group["components"].setdefault(ingredient_id, {"ingredientId": ingredient_id, "gross": Decimal(0), "net": Decimal(0)})
+        component["gross"] += gross
+        component["net"] += net
+    result = []
+    for group in groups.values():
+        components = [{**c, "gross": float(c["gross"]), "net": float(c["net"])} for c in group["components"].values()]
+        if len(components) > 500 or any(not math.isfinite(c[k]) for c in components for k in ("gross", "net")):
+            raise ValueError("Проверьте состав: максимум 500 ингредиентов и конечные количества")
+        result.append({**group, "components": components})
+    return result

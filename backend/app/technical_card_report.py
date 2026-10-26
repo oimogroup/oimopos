@@ -97,14 +97,14 @@ def workbook(recipes, preparations, ingredients_by_id):
             ingredient = ingredients_by_id.get(str(component.get('ingredientId')), {})
             unit = ingredient.get('unit', '')
             unit_cost = _number(ingredient.get('averageCost'))
-            line_cost = (unit_cost or Decimal(0)) * _number(component.get('gross') or 0)
+            line_cost = (unit_cost or Decimal(0)) * _number(component.get('gross') or 0) / 1000
             rows.append([
                 card_name,
                 kind,
                 item.get('category', ''),
                 ingredient.get('name', str(component.get('ingredientId', ''))),
-                _number(component.get('gross')),
-                _number(component.get('net')),
+                _number(component.get('gross') or 0) / 1000,
+                _number(component.get('net') or 0) / 1000,
                 unit,
                 unit_cost,
                 _money(line_cost),
