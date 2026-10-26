@@ -35,3 +35,8 @@ def test_export_import_keeps_piece_volume_mass_and_cost():
     state = {'ingredients':ingredients}
     data = preview(state, workbook([], [card], {i['id']:i for i in ingredients}), 'cards.xlsx')
     assert prepare_import(state, data['rows'])[0]['components'] == card['components']
+
+
+def test_missing_yield_names_the_card_and_required_unit():
+    with pytest.raises(ValueError, match='Тесто.*граммах'):
+        prepare_import({'ingredients':[{'id':'raw','unit':'кг'}]}, [row(**{'yield':None})])

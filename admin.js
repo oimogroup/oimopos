@@ -4241,6 +4241,8 @@ async function exportTechnicalCards() {
 }
 
 let technicalCardsPreviewRows = [];
+let technicalCardsImportBusy = false;
+let technicalCardsServerError = "";
 
 async function openTechnicalCardsImport() {
   $("#technicalCardsImportFile").value = "";
@@ -4266,15 +4268,22 @@ function technicalImportIssues() {
     else if (row.unit && (!importUnitFamily(row.unit) || importUnitFamily(row.unit) !== importUnitFamily(ingredient.unit))) issues.add(`«${row.ingredient}»: в файле ${row.unit}, в справочнике ${ingredient.unit}. Исправьте единицу и количество.`);
     if (!Number.isFinite(Number(row.gross)) || !Number.isFinite(Number(row.net)) || Number(row.net) <= 0 || Number(row.gross) < Number(row.net)) issues.add("Проверьте брутто и нетто: оба больше нуля, нетто не больше брутто.");
     if (!row.station?.trim()) issues.add("Укажите цех для каждой карты.");
-    if (!Number.isFinite(Number(row.yield)) || Number(row.yield) <= 0) issues.add("Укажите фактический выход каждой карты в граммах.");
+    if (!Number.isFinite(Number(row.yield)) || Number(row.yield) <= 0) issues.add(`«${row.card}»: укажите выход готового продукта в граммах (число больше нуля).`);
   }
+  document.querySelectorAll('#technicalCardsImportPreview [data-import-yield]').forEach(input => {
+    const row = technicalCardsPreviewRows[Number(input.dataset.importYield)];
+    const invalid = !row || !Number.isFinite(Number(row.yield)) || Number(row.yield) <= 0;
+    input.setAttribute('aria-invalid', String(invalid));
+    input.setCustomValidity(invalid ? 'Укажите фактический выход готового продукта в граммах' : '');
+  });
   const error = $("#technicalCardsImportError");
-  error.textContent = [...issues].join(" "); error.hidden = !issues.size;
-  $("#applyTechnicalCardsImport").disabled = !technicalCardsPreviewRows.length || issues.size > 0;
+  error.textContent = [...issues, technicalCardsServerError].filter(Boolean).join(" "); error.hidden = !error.textContent;
+  $("#applyTechnicalCardsImport").disabled = technicalCardsImportBusy || !technicalCardsPreviewRows.length || issues.size > 0;
   return issues.size;
 }
 function renderTechnicalCardsImportPreview(rows) {
   technicalCardsPreviewRows = rows;
+  technicalCardsServerError = "";
   const groups = new Map();
   rows.forEach((row, index) => {
     const key = importCardKey(row);
@@ -4292,6 +4301,7 @@ function renderTechnicalCardsImportPreview(rows) {
   const container = $("#technicalCardsImportPreview");
   container.innerHTML = html;
   container.oninput = event => {
+    technicalCardsServerError = "";
     const input = event.target;
     if (input.matches('[data-import-ingredient]')) {
       const source = rows[Number(input.dataset.importIngredient)];
@@ -4316,9 +4326,10 @@ function renderTechnicalCardsImportPreview(rows) {
 }
 
 async function applyTechnicalCardsImport() {
-  if (technicalImportIssues()) return;
-  const button = $("#applyTechnicalCardsImport");
-  button.disabled = true;
+  if (technicalCardsImportBusy || technicalImportIssues()) return;
+  technicalCardsImportBusy = true;
+  technicalCardsServerError = "";
+  technicalImportIssues();
   try {
     const response = await AshkanaApi.importTechnicalCardsApply({ items: technicalCardsPreviewRows });
     hydrateServerWorkspace(await AshkanaApi.workspace());
@@ -4326,8 +4337,14 @@ async function applyTechnicalCardsImport() {
     $("#closeTechnicalCardsImportCancel").click();
     switchMenuPage(technicalCardsPreviewRows.every(row => row.kind === "полуфабрикат") ? "preparations" : "recipes");
     renderAll();
-  } catch (error) { showToast(error.message || "Не удалось применить импорт"); }
-  finally { technicalImportIssues(); }
+  } catch (error) {
+    technicalCardsServerError = error.message || "Не удалось применить импорт";
+    showToast(technicalCardsServerError);
+    $("#technicalCardsImportError").scrollIntoView({block:"nearest", behavior:"smooth"});
+  } finally {
+    technicalCardsImportBusy = false;
+    technicalImportIssues();
+  }
 }
 
 function exportIngredientsCsv() {

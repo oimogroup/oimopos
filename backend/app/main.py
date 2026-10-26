@@ -2759,7 +2759,7 @@ def import_technical_cards_apply(payload: dict, request: Request, user: dict = D
         try:
             apply_action(state, user, action, {"requestId": str(uuid4()), **upsert_payload})
         except WorkspaceError as error:
-            raise HTTPException(status_code=error.status_code, detail=str(error)) from error
+            raise HTTPException(status_code=422, detail=f"«{name}»: {error}") from error
         results.append({"card": name, "kind": kind})
     version = int(row["version"]) + 1
     connection.execute(

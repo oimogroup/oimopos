@@ -1467,3 +1467,5 @@ body:has([data-role-navigation="branch"]:not(.hidden)) .settings-mobile-tabs { d
 
 .import-card-review td input {width:100px;min-height:44px;padding:8px;border:1px solid var(--line);border-radius:8px;}
 .import-card-review [data-import-unit] {width:130px;}
+
+.import-card-fields input[aria-invalid="true"] {border-color:#a13b3b;background:#fff7f6;}

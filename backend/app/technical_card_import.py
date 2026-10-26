@@ -374,7 +374,10 @@ def prepare_import(state, items):
         if not name or kind not in {"техкарта", "полуфабрикат"}:
             raise ValueError(f"Строка {index}: укажите название и вид карты")
         station = str(item.get("station", "")).strip()
-        output = _number(item.get("yield", ""), index, f"выход «{name}» в граммах")
+        try:
+            output = _number(item.get("yield", ""), index, "выход")
+        except ValueError:
+            raise ValueError(f"«{name}»: укажите выход готового продукта в граммах — число больше нуля") from None
         if not math.isfinite(float(output)):
             raise ValueError(f"«{name}»: выход должен быть конечным числом")
         if not station:
