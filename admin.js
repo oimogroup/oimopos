@@ -2887,17 +2887,37 @@ async function saveEmployee() {
   }
 }
 
+const catalogSortDescending = {recipes:false,preparations:false};
+function syncCatalogSortHeading(page) {
+  const button=document.querySelector(`[data-catalog-sort="${page}"]`);
+  button.closest('th').setAttribute('aria-sort',catalogSortDescending[page] ? 'descending' : 'ascending');
+  button.querySelector('span').textContent=catalogSortDescending[page] ? '↓' : '↑';
+}
+document.querySelectorAll('[data-catalog-sort]').forEach(button=>button.addEventListener('click',()=>{
+  const page=button.dataset.catalogSort;
+  catalogSortDescending[page]=!catalogSortDescending[page];
+  if(page === 'recipes') renderRecipes(); else renderPreparations();
+}));
+document.querySelectorAll('[data-catalog-print]').forEach(button=>button.addEventListener('click',()=>{
+  document.querySelectorAll('[popover]').forEach(menu=>{if(menu.matches(':popover-open'))menu.hidePopover();});
+  document.body.classList.add('print-catalog');
+  window.print();
+}));
+window.addEventListener('afterprint',()=>document.body.classList.remove('print-catalog'));
+
 function renderRecipes() {
   const query = $("#recipeSearch").value.trim().toLowerCase();
   const category = $("#recipeCategory").value;
   const station = $("#recipeStationFilter").value;
   const visible = recipes.filter((recipe) => (!query || recipe.name.toLowerCase().includes(query)) && (category === "Все категории" || recipe.category === category) && (station === "Все цеха" || recipeStation(recipe) === station));
+  visible.sort((a,b)=>(catalogSortDescending.recipes ? -1 : 1)*a.name.localeCompare(b.name,'ru',{numeric:true}));
+  syncCatalogSortHeading('recipes');
   $("#recipeCount").textContent = recipes.length;
   $("#ingredientCount").textContent = ingredients.length;
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
-    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${recipe.name}</strong><small>Код ${recipe.id}</small></div></div></td><td>${escapeHtml(recipe.category)}</td><td>${decimal(recipe.yield, 3)} г</td><td><strong>${money(cost)}</strong></td><td><strong>${money(recipe.price)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-recipe-compose="${recipe.id}" type="button">Состав</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button></div></td></tr>`;
-  }).join("");
+    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.name)}</strong></div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${decimal(recipe.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(cost)}</strong></td><td class="catalog-number"><strong>${money(recipe.price)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-recipe-compose="${recipe.id}" type="button">Состав</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button></div></td></tr>`;
+  }).join("") || '<tr class="table-empty"><td colspan="6">Техкарты не найдены. Измените поиск или категорию.</td></tr>';
 }
 
 function renderProducts() {
@@ -2933,12 +2953,14 @@ function renderPreparations() {
   const query = $("#preparationSearch").value.trim().toLowerCase();
   const category = $("#preparationCategoryFilter").value;
   const visible = preparations.filter((preparation) => (!query || preparation.name.toLowerCase().includes(query) || String(preparation.usedIn || "").toLowerCase().includes(query)) && (category === "Все категории" || preparation.category === category));
+  visible.sort((a,b)=>(catalogSortDescending.preparations ? -1 : 1)*a.name.localeCompare(b.name,'ru',{numeric:true}));
+  syncCatalogSortHeading('preparations');
   $("#preparationsCount").textContent = preparations.length;
   $("#preparationsTable").innerHTML = visible.length ? visible.map((preparation) => {
     const batchCost = preparationCost(preparation);
     const unitCost = Number(preparation.yield) > 0 ? batchCost / (Number(preparation.yield) / 1000) : 0;
     const id = escapeHtml(String(preparation.id));
-    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong><small>${escapeHtml(String(preparation.id).toUpperCase())}</small></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td>${decimal(preparation.yield, 3)} г</td><td><strong>${money(batchCost)}</strong><small>${money(unitCost/10)} / 100 г</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button></div></td></tr>`;
+    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost/10)} / 100 г</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button></div></td></tr>`;
   }).join("") : `<tr class="table-empty"><td colspan="5">${preparations.length ? "По заданным условиям полуфабрикаты не найдены" : "Полуфабрикаты ещё не настроены"}</td></tr>`;
 }
 
@@ -7514,7 +7536,7 @@ $('#inventorySelectionList').addEventListener('change', renderInventorySelection
   const extraFilters = document.querySelector('.ux-advanced-filters');
   const updateExtraFilterCount = () => {
     if (!extraFilters) return;
-    const count = [...extraFilters.querySelectorAll('select')].filter(select => select.value !== (select.id === 'ingredientSort' ? 'name' : '')).length;
+    const count = [...extraFilters.querySelectorAll('select')].filter(select => select.id !== 'ingredientSort' && select.value !== '').length;
     const badge = document.querySelector('#ingredientExtraFilterCount');
     badge.hidden = !count;
     badge.textContent = count ? String(count) : '';

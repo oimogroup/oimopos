@@ -1,6 +1,6 @@
 (function (global) {
-  let expanded = null, pendingImport = [], hiddenColumns = new Set(["category", "unit", "usage"]);
-  const columns = { category: "Категория", unit: "Ед. измерения", cost: "Себестоимость", stock: "Остаток", usage: "В составе" };
+  let expanded = null, pendingImport = [], hiddenColumns = new Set(["unit", "losses", "usage"]);
+  const columns = { category: "Категория", unit: "Ед. измерения", cost: "Себестоимость", stock: "Остаток", value: "Сумма остатков", losses: "Потери", usage: "В составе" };
   const el = id => document.getElementById(id);
   const links = item => [
     ...recipes.filter(row => (row.components || []).some(c => String(c.ingredientId) === String(item.id))).map(row => ({ ...row, kind: "recipe", label: "Техкарта" })),
@@ -38,9 +38,20 @@
     el("ingredientFilteredCount").textContent = `· показано ${visible.length}`;
     el("ingredientsTable").innerHTML = visible.length ? visible.map(row => {
       const { item, stock, cost } = row, id = escapeHtml(item.id);
-      const main = `<tr><td><div class="dish-cell">${CatalogCover.thumb(item)}<div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(CatalogUnits.label(item.unit))}${item.category ? ` · ${escapeHtml(item.category)}` : ""}</small></div></div></td><td data-ingredient-column="category">${escapeHtml(item.category || "Без категории")}</td><td data-ingredient-column="unit">${escapeHtml(CatalogUnits.label(item.unit))}</td><td data-ingredient-column="cost"><strong>${money(item.unit === "шт" ? cost : cost/10)} / ${item.unit === "шт" ? "шт" : `100 ${escapeHtml(CatalogUnits.label(item.unit))}`}</strong></td><td data-ingredient-column="stock">${decimal(CatalogUnits.quantity(stock,item.unit), 3)} ${escapeHtml(CatalogUnits.label(item.unit))}${stock < Number(item.limit || 0) ? '<small class="negative">Ниже лимита</small>' : ""}</td><td data-ingredient-column="usage">${row.links.filter(r => r.kind === "recipe").length} тех. карт · ${row.links.filter(r => r.kind === "preparation").length} п/ф</td><td><div class="ingredient-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-ingredient-edit="${id}" type="button">Изменить</button><button class="poster-action secondary-action" data-ingredient-details="${id}" aria-expanded="${expanded === String(item.id)}" type="button">Детали</button><button class="icon-button danger-button ingredient-delete-action" type="button" data-ingredient-delete="${id}" title="Удалить ингредиент" aria-label="Удалить ингредиент ${escapeHtml(item.name)}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div></td></tr>`;
-      return main + (expanded === String(item.id) ? `<tr class="ingredient-usage-row"><td colspan="7"><strong>В составе: ${escapeHtml(item.name)}</strong>${row.links.length ? `<ul>${row.links.map(link => `<li><span>${link.label}</span><button type="button" data-ingredient-link-kind="${link.kind}" data-ingredient-link-id="${escapeHtml(link.id)}">${escapeHtml(link.name)}</button></li>`).join("")}</ul>` : '<p>Не используется в техкартах и полуфабрикатах.</p>'}</td></tr>` : "");
-    }).join("") : '<tr class="table-empty"><td colspan="7">Ингредиенты не найдены. Измените поиск или сбросьте фильтры.</td></tr>';
+      const lossLabels = {clean:'Очистка',boil:'Варка',fry:'Жарка',bake:'Запекание'};
+      const lossText = item.unit === 'шт' ? '—' : Object.entries(item.losses || {}).filter(([key,value])=>lossLabels[key] && Number(value)>0).map(([key,value])=>`${lossLabels[key]} ${decimal(value)}%`).join(' · ') || '—';
+      const menuId = `ingredient-menu-${id}`;
+      const price = item.unit === 'шт' ? cost : cost/10;
+      const priceUnit = item.unit === 'шт' ? 'шт' : `100 ${CatalogUnits.label(item.unit)}`;
+      const main = `<tr><td><div class="dish-cell">${CatalogCover.thumb(item)}<div><strong>${escapeHtml(item.name)}</strong>${item.barcode ? `<small>${escapeHtml(item.barcode)}</small>` : ''}</div></div></td><td data-ingredient-column="category">${escapeHtml(item.category || 'Без категории')}</td><td data-ingredient-column="unit">${escapeHtml(CatalogUnits.label(item.unit))}</td><td data-ingredient-column="losses" class="catalog-losses" title="${escapeHtml(lossText)}">${escapeHtml(lossText)}</td><td data-ingredient-column="stock" class="catalog-number ${stock < 0 ? 'negative' : ''}"><strong>${decimal(CatalogUnits.quantity(stock,item.unit),3)}</strong> <span class="catalog-unit">${escapeHtml(CatalogUnits.label(item.unit))}</span>${stock < Number(item.limit || 0) ? '<small class="negative">Ниже лимита</small>' : ''}</td><td data-ingredient-column="cost" class="catalog-number ${cost === 0 ? 'catalog-zero' : ''}"><strong>${money(price)}</strong><small>за ${escapeHtml(priceUnit)}</small></td><td data-ingredient-column="value" class="catalog-number ${cost === 0 ? 'catalog-zero' : ''}"><strong>${money(stock*cost)}</strong></td><td data-ingredient-column="usage">${row.links.filter(r=>r.kind==='recipe').length} тех. карт · ${row.links.filter(r=>r.kind==='preparation').length} п/ф</td><td class="catalog-actions-cell"><div class="ingredient-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-ingredient-details="${id}" aria-expanded="${expanded === String(item.id)}" type="button">Детали</button><button class="poster-action secondary-action" data-ingredient-edit="${id}" type="button">Изменить</button><button class="catalog-more" data-ingredient-more="${id}" popovertarget="${menuId}" type="button" aria-label="Другие действия: ${escapeHtml(item.name)}">•••</button><div class="catalog-row-menu" id="${menuId}" popover><button type="button" class="catalog-delete-link" data-ingredient-delete="${id}">${uiIcon('trash')}Удалить ингредиент</button></div></div></td></tr>`;
+      return main + (expanded === String(item.id) ? `<tr class="ingredient-usage-row"><td colspan="9"><strong>В составе: ${escapeHtml(item.name)}</strong>${row.links.length ? `<ul>${row.links.map(link => `<li><span>${link.label}</span><button type="button" data-ingredient-link-kind="${link.kind}" data-ingredient-link-id="${escapeHtml(link.id)}">${escapeHtml(link.name)}</button></li>`).join('')}</ul>` : '<p>Не используется в техкартах и полуфабрикатах.</p>'}</td></tr>` : '');
+    }).join('') : '<tr class="table-empty"><td colspan="9">Ингредиенты не найдены. Измените поиск или сбросьте фильтры.</td></tr>';
+    const value = visible.reduce((sum,row)=>sum+row.stock*row.cost,0);
+    el('ingredientTotals').innerHTML = `<tr><td><strong>Итого</strong><small>${visible.length} из ${ingredients.length} позиций</small></td><td data-ingredient-column="category"></td><td data-ingredient-column="unit"></td><td data-ingredient-column="losses"></td><td data-ingredient-column="stock"></td><td data-ingredient-column="cost"></td><td data-ingredient-column="value" class="catalog-number"><strong>${money(value)}</strong></td><td data-ingredient-column="usage"></td><td class="catalog-actions-cell"></td></tr>`;
+    const sort = el('ingredientSort').value;
+    const heading = el('ingredientNameSort').closest('th');
+    heading.setAttribute('aria-sort',sort === 'name' ? 'ascending' : sort === 'name-desc' ? 'descending' : 'none');
+    el('ingredientNameSort').querySelector('span').textContent = sort === 'name' ? '↑' : sort === 'name-desc' ? '↓' : '↕';
     applyColumns();
   }
   function csvText() {
@@ -85,16 +96,24 @@
     el("ingredientImportFile").value = "";
   }
   function mount() {
-    try { hiddenColumns = new Set(JSON.parse(sessionStorage.getItem("ashkana-ingredient-columns-v2") || '["category","unit","usage"]').filter(key => key in columns)); } catch {}
+    try { hiddenColumns = new Set(JSON.parse(sessionStorage.getItem("ashkana-ingredient-columns-v3") || '["unit","losses","usage"]').filter(key => key in columns)); } catch {}
     el("ingredientColumnOptions").innerHTML = Object.entries(columns).map(([key,label]) => `<label><input type="checkbox" data-ingredient-column-toggle="${key}" ${hiddenColumns.has(key) ? "" : "checked"}>${label}</label>`).join("");
-    el("ingredientColumnOptions").addEventListener("change", event => { const key = event.target.dataset.ingredientColumnToggle; if (!key) return; if (event.target.checked) hiddenColumns.delete(key); else hiddenColumns.add(key); try { sessionStorage.setItem("ashkana-ingredient-columns-v2", JSON.stringify([...hiddenColumns])); } catch {} applyColumns(); });
+    el("ingredientColumnOptions").addEventListener("change", event => { const key = event.target.dataset.ingredientColumnToggle; if (!key) return; if (event.target.checked) hiddenColumns.delete(key); else hiddenColumns.add(key); try { sessionStorage.setItem("ashkana-ingredient-columns-v3", JSON.stringify([...hiddenColumns])); } catch {} applyColumns(); });
     for (const id of ["ingredientCategoryFilter", "ingredientUnitFilter", "ingredientBranchFilter", "ingredientStockFilter", "ingredientUsageFilter", "ingredientSort"]) el(id).addEventListener("change", render);
     el("resetIngredientFilters").addEventListener("click", () => { ["ingredientSearch", "ingredientCategoryFilter", "ingredientUnitFilter", "ingredientStockFilter", "ingredientUsageFilter"].forEach(id => { el(id).value = ""; }); el("ingredientSort").value = "name"; expanded = null; render(); });
+    el('ingredientNameSort').addEventListener('click',()=>{el('ingredientSort').value = el('ingredientSort').value === 'name' ? 'name-desc' : 'name';render();});
     el("ingredientsTable").addEventListener("click", event => {
+      const more = event.target.closest('[data-ingredient-more]');
+      if (more) {
+        const menu = document.getElementById(more.getAttribute('popovertarget'));
+        const bounds = more.getBoundingClientRect();
+        menu.style.left = `${Math.max(8,Math.min(innerWidth-220,bounds.right-210))}px`;
+        menu.style.top = `${Math.min(innerHeight-68,bounds.bottom+4)}px`;
+      }
       const detail = event.target.closest("[data-ingredient-details]");
       if (detail) { expanded = expanded === detail.dataset.ingredientDetails ? null : detail.dataset.ingredientDetails; render(); }
       const remove = event.target.closest("[data-ingredient-delete]");
-      if (remove) { const item = ingredientById(remove.dataset.ingredientDelete); if (item) { requestCatalogDelete("ingredient", item.id, item.name); } }
+      if (remove) { remove.closest("[popover]")?.hidePopover(); const item = ingredientById(remove.dataset.ingredientDelete); if (item) { requestCatalogDelete("ingredient", item.id, item.name); } }
       const link = event.target.closest("[data-ingredient-link-id]");
       if (link) { if (link.dataset.ingredientLinkKind === "recipe") openRecipeForm(Number(link.dataset.ingredientLinkId)); else openPreparationForm(link.dataset.ingredientLinkId); }
     });

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=catalog-poster-7" />
+    <link rel="stylesheet" href="admin.css?v=catalog-ledger-8" />
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=catalog-actions-2" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
@@ -209,9 +209,9 @@
 
             <div class="menu-pane active" id="menu-pane-recipes">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong><span id="recipeCount">0</span> тех. карт</strong></div>
-                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="recipeSearch" type="search" placeholder="Быстрый поиск" /></label><select id="recipeCategory"><option>Все категории</option><option>Первые</option><option>Горячее</option><option>Салаты</option><option>Выпечка</option></select><select id="recipeStationFilter"><option>Все цеха</option></select><button id="exportTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button><button id="importTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><input id="technicalCardsImportFile" type="file" accept=".csv,text/csv,.xlsx" hidden><select><option>Столовая №1 — Манаса</option></select></div>
-                <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Выход</th><th>Себестоимость</th><th>Цена</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="recipesTable"></tbody></table>
+                <div class="poster-list-meta"><strong><span id="recipeCount">0</span> тех. карт</strong><div class="catalog-list-actions"><button id="exportTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button id="importTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><button class="secondary-action" data-catalog-print="recipes" type="button">Печать</button></div></div>
+                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="recipeSearch" type="search" placeholder="Быстрый поиск" /></label><select id="recipeCategory"><option>Все категории</option><option>Первые</option><option>Горячее</option><option>Салаты</option><option>Выпечка</option></select><select id="recipeStationFilter"><option>Все цеха</option></select><input id="technicalCardsImportFile" type="file" accept=".csv,text/csv,.xlsx" hidden></div>
+                <table class="data-table poster-menu-table catalog-ledger"><thead><tr><th aria-sort="ascending"><button class="catalog-sort" data-catalog-sort="recipes" type="button">Название <span aria-hidden="true">↑</span></button></th><th>Категория</th><th>Выход</th><th>Себестоимость</th><th>Цена</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="recipesTable"></tbody></table>
               </article>
             </div>
 
@@ -225,15 +225,15 @@
 
             <div class="menu-pane" id="menu-pane-preparations">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong><span id="preparationsCount">0</span> полуфабриката</strong></div>
-                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="preparationSearch" type="search" placeholder="Быстрый поиск" /></label><select id="preparationCategoryFilter"><option>Все категории</option><option>Заготовки кухни</option><option>Холодный цех</option><option>Соусы и заправки</option><option>Выпечка</option></select><button id="exportPreparationsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button><button id="importPreparationsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><input id="preparationsImportFile" type="file" accept=".csv,text/csv,.xlsx" hidden></div>
-                <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Выход</th><th>Себестоимость</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="preparationsTable"></tbody></table>
+                <div class="poster-list-meta"><strong><span id="preparationsCount">0</span> полуфабриката</strong><div class="catalog-list-actions"><button id="exportPreparationsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button id="importPreparationsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><button class="secondary-action" data-catalog-print="preparations" type="button">Печать</button></div></div>
+                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="preparationSearch" type="search" placeholder="Быстрый поиск" /></label><select id="preparationCategoryFilter"><option>Все категории</option><option>Заготовки кухни</option><option>Холодный цех</option><option>Соусы и заправки</option><option>Выпечка</option></select><input id="preparationsImportFile" type="file" accept=".csv,text/csv,.xlsx" hidden></div>
+                <table class="data-table poster-menu-table catalog-ledger"><thead><tr><th aria-sort="ascending"><button class="catalog-sort" data-catalog-sort="preparations" type="button">Название <span aria-hidden="true">↑</span></button></th><th>Категория</th><th>Выход</th><th>Себестоимость</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="preparationsTable"></tbody></table>
               </article>
             </div>
 
             <div class="menu-pane" id="menu-pane-ingredients">
               <article class="panel table-panel">
-                <div class="poster-list-meta"><strong><span id="ingredientCount">0</span> ингредиентов <small id="ingredientFilteredCount"></small></strong><details class="ux-tools"><summary>Действия со списком <svg class="ui-icon" aria-hidden="true"><use href="#ui-chevron"/></svg></summary><div class="ux-tools-panel"><details class="ingredient-columns"><summary>Столбцы</summary><div id="ingredientColumnOptions"></div></details><button class="secondary-action" type="button" id="exportIngredientsButton">Экспорт CSV</button><button class="secondary-action" type="button" id="importIngredientsButton">Импорт CSV</button><input id="ingredientImportFile" type="file" accept=".csv,text/csv" hidden></div></details></div>
+                <div class="poster-list-meta"><strong><span id="ingredientCount">0</span> ингредиентов <small id="ingredientFilteredCount"></small></strong><div class="catalog-list-actions"><details class="ux-tools ingredient-columns"><summary>Столбцы <svg class="ui-icon" aria-hidden="true"><use href="#ui-chevron"/></svg></summary><div class="ux-tools-panel" id="ingredientColumnOptions"></div></details><button class="secondary-action" type="button" id="exportIngredientsButton"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Экспорт</button><button class="secondary-action" type="button" id="importIngredientsButton"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><button class="secondary-action" data-catalog-print="ingredients" type="button">Печать</button><input id="ingredientImportFile" type="file" accept=".csv,text/csv" hidden></div></div>
                 <div class="table-toolbar poster-toolbar ingredient-filters">
                   <label class="admin-search"><svg class="ui-icon"><use href="#ui-search"/></svg><input id="ingredientSearch" type="search" placeholder="Название, код или штрихкод" aria-label="Поиск ингредиентов"></label>
                   <select id="ingredientCategoryFilter" aria-label="Категория"><option value="">Все категории</option></select>
@@ -244,8 +244,8 @@
                   <select id="ingredientSort" aria-label="Сортировка"><option value="name">Название А–Я</option><option value="name-desc">Название Я–А</option><option value="cost">Себестоимость по возрастанию</option><option value="cost-desc">Себестоимость по убыванию</option><option value="stock">Остаток по возрастанию</option><option value="stock-desc">Остаток по убыванию</option></select>
                   <button id="resetIngredientFilters" type="button" class="secondary-action">Сбросить</button></div></details>
                 </div>
-                <table class="data-table poster-menu-table" id="ingredientRegistry"><thead><tr><th>Название</th><th data-ingredient-column="category">Категория</th><th data-ingredient-column="unit">Ед. измерения</th><th data-ingredient-column="cost">Себестоимость</th><th data-ingredient-column="stock">Остаток</th><th data-ingredient-column="usage">В составе</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="ingredientsTable"></tbody></table>
-                <p class="ingredient-list-note">Остатки и себестоимость — для выбранного склада.</p>
+                <table class="data-table poster-menu-table catalog-ledger" id="ingredientRegistry"><thead><tr><th aria-sort="ascending"><button class="catalog-sort" id="ingredientNameSort" type="button">Название <span aria-hidden="true">↑</span></button></th><th data-ingredient-column="category">Категория</th><th data-ingredient-column="unit">Ед.</th><th data-ingredient-column="losses">Потери</th><th data-ingredient-column="stock" class="catalog-number">Остаток</th><th data-ingredient-column="cost" class="catalog-number">Себестоимость</th><th data-ingredient-column="value" class="catalog-number">Сумма остатков</th><th data-ingredient-column="usage">В составе</th><th class="catalog-actions-heading"><span class="sr-only">Действия</span></th></tr></thead><tbody id="ingredientsTable"></tbody><tfoot id="ingredientTotals"></tfoot></table>
+                <p class="ingredient-list-note">Остатки, цены и итоговая сумма — по выбранному складу. Экспорт учитывает фильтры.</p>
               </article>
             </div>
 
@@ -1125,11 +1125,11 @@
     <script src="company-settings.js?v=actions-15"></script>
     <script src="catalog-cover.js?v=catalog-poster-7"></script>
     <script src="catalog-units.js?v=1"></script>
-    <script src="ingredients-list.js?v=catalog-poster-7"></script>
+    <script src="ingredients-list.js?v=catalog-ledger-8"></script>
     <script src="ingredient-picker.js?v=1"></script>
     <script src="product-variants.js?v=actions-15"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=catalog-poster-7"></script>
+    <script src="admin.js?v=catalog-ledger-8"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>
