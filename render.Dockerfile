@@ -7,7 +7,7 @@ RUN pip install --no-cache-dir -r requirements.txt
 COPY backend/app ./app
 COPY database ./database
 COPY scripts/render_migrate.py ./render_migrate.py
-COPY index.html admin.html login.html platform.html numeric-inputs.js app.js admin.js company-settings.js catalog-cover.js ingredients-list.js ingredient-picker.js product-variants.js custody.js oimo.css mobile-ux.css ui-theme.css minimal.css auth.js api-client.js password-visibility.js platform.js styles.css admin.css auth.css platform.css ./public/
+COPY index.html admin.html login.html platform.html numeric-inputs.js app.js admin.js company-settings.js catalog-cover.js catalog-units.js ingredients-list.js ingredient-picker.js product-variants.js custody.js oimo.css mobile-ux.css ui-theme.css minimal.css auth.js api-client.js password-visibility.js platform.js styles.css admin.css auth.css platform.css ./public/
 COPY docs/program-process-flow.html ./public/docs/program-process-flow.html
 COPY docs/user-guide ./public/docs/user-guide/
 COPY work-time.js ./public/
