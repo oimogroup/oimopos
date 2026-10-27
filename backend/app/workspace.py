@@ -771,6 +771,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 "id": existing["id"] if existing else f"i-{uuid4().hex[:12]}", "name": name, "unit": item["unit"],
                 "category": str(item.get("category") or "Без категории"),
                 "barcode": str(item.get("barcode") or "")[:64], **values, "losses": losses,
+                "pieceWeightGrams": item.get("pieceWeightGrams", (existing or {}).get("pieceWeightGrams", 0)),
             })
         state.clear()
         state.update(imported_state)
@@ -1041,6 +1042,14 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         })
         return "station", name
 
+    if action in {"preparation.upsert", "recipe.upsert"}:
+        for component in payload.get("components", []):
+            if isinstance(component, dict):
+                for key in ("netWeightGrams", "pieceWeightGrams"):
+                    if key in component:
+                        value = component[key]
+                        _require(isinstance(value, (int, float)) and isfinite(value) and value > 0, "Нетто и масса штуки должны быть положительными числами в граммах")
+
     if action == "preparation.upsert":
         _owner(user)
         preparations = state.setdefault("preparations", [])
@@ -1065,7 +1074,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             net = _number(raw.get("net"))
             _require(ingredient is not None and gross > 0 and net > 0 and net <= gross and ingredient_id not in seen, "Проверьте состав полуфабриката")
             seen.add(ingredient_id)
-            components.append({"ingredientId": ingredient_id, "gross": gross, "net": net})
+            components.append({**{key: raw[key] for key in ("netWeightGrams", "pieceWeightGrams", "method") if key in raw}, "ingredientId": ingredient_id, "gross": gross, "net": net})
             branch_costs = [
                 _number(costs.get(ingredient_id))
                 for costs in state["logisticsState"].get("branchCosts", {}).values()
@@ -1142,6 +1151,11 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 for branch in state["branches"]:
                     _set_stock(state, branch["id"], entry_id, 0, 0)
         if collection_name == "ingredients":
+            _require(str(payload.get("unit", "кг")) in {"кг", "л", "шт"}, "Выберите граммы, миллилитры или штуки")
+            if "pieceWeightGrams" in payload:
+                weight = payload["pieceWeightGrams"]
+                _require(isinstance(weight, (float, int)) and isfinite(weight) and weight >= 0, "Укажите корректную массу штуки в граммах")
+                entry["pieceWeightGrams"] = weight
             losses = payload.get("losses") if isinstance(payload.get("losses"), dict) else {}
             entry.update({
                 "name": name, "category": str(payload.get("category", "Без категории")),

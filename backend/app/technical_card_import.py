@@ -30,6 +30,8 @@ def _header_name(value):
 
 
 _ALIASES = {
+    "netWeightGrams": ("масса нетто г", "netWeightGrams"),
+    "pieceWeightGrams": ("масса штуки г", "pieceWeightGrams"),
     "unit": ("ед", "ед.", "единица", "ед. изм.", "ед. измерения", "unit"),
     "process": ("процесс", "process"),
     "usedIn": ("используется в", "usedIn"),
@@ -115,6 +117,7 @@ def _table(rows, header):
                 "price": float(price) if price is not None else None,
                 "ingredient": ingredient_name,
                 "unit": normalize(mapped.get("unit", "")),
+                **{key: float(_number(mapped[key], number, key)) for key in ("netWeightGrams", "pieceWeightGrams") if mapped.get(key)},
                 "gross": float(gross),
                 "net": float(net),
             })
@@ -404,7 +407,13 @@ def prepare_import(state, items):
         group = groups.setdefault(key, {**item, "card": name, "kind": kind, "station": station, "yield": float(output) if output is not None else None, "components": {}, "calculatedYield": Decimal(0), "missingPieceWeight": False})
         if group["station"] != station or group["yield"] != (float(output) if output is not None else None):
             raise ValueError(f"«{name}»: цех и выход должны совпадать во всех строках")
-        if target == "шт":
+        explicit_mass = item.get("netWeightGrams")
+        if explicit_mass is not None:
+            explicit_mass = _number(explicit_mass, index, "нетто, г")
+            if not math.isfinite(float(explicit_mass)):
+                raise ValueError(f"Строка {index}: нетто должно быть конечным числом")
+            group["calculatedYield"] += explicit_mass
+        elif target == "шт":
             piece_weight = item.get("pieceWeightGrams", ingredient.get("pieceWeightGrams"))
             if piece_weight in (None, ""):
                 group["missingPieceWeight"] = True
@@ -416,9 +425,13 @@ def prepare_import(state, items):
         component = group["components"].setdefault(ingredient_id, {"ingredientId": ingredient_id, "gross": Decimal(0), "net": Decimal(0)})
         component["gross"] += gross
         component["net"] += net
+        if explicit_mass is not None:
+            component["netWeightGrams"] = component.get("netWeightGrams", Decimal(0)) + explicit_mass
+        if item.get("pieceWeightGrams") not in (None, ""):
+            component["pieceWeightGrams"] = float(_number(item["pieceWeightGrams"], index, "масса штуки"))
     result = []
     for group in groups.values():
-        components = [{**c, "gross": float(c["gross"]), "net": float(c["net"])} for c in group["components"].values()]
+        components = [{key: float(value) if isinstance(value, Decimal) else value for key, value in c.items()} for c in group["components"].values()]
         if len(components) > 500 or any(not math.isfinite(c[k]) for c in components for k in ("gross", "net")):
             raise ValueError("Проверьте состав: максимум 500 ингредиентов и конечные количества")
         if group["yield"] is None:

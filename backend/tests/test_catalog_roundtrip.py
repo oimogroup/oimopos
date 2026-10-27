@@ -17,7 +17,7 @@ def test_workbook_roundtrip_preserves_card_metadata_and_components():
         assert row["station"] == card["station"]
         assert row["yield"] == 900
         assert row["price"] == 150
-        assert (row["ingredientId"], row["gross"], row["net"]) == ("flour", 1, .9)
+        assert (row["ingredientId"], row["gross"], row["net"]) == ("flour", 1000, 900)
     assert result["rows"][1]["process"] == "Замесить"
     assert result["rows"][1]["usedIn"] == "Выпечка"
 

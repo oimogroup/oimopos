@@ -20,6 +20,11 @@ window.CatalogCover = (() => {
     const modal=document.getElementById(prefix+'Modal');
     let root=document.getElementById(prefix+'CoverEditor');
     if (!root) {root=document.createElement('div');root.id=prefix+'CoverEditor';root.className='catalog-cover-editor';modal.querySelector('.catalog-form-section').append(root);}
+    if (['ingredient','preparation','recipe'].includes(prefix) && !root.closest('details')) {
+      const details=document.createElement('details');details.className='catalog-disclosure catalog-appearance';
+      const summary=document.createElement('summary');summary.textContent='Фото и цвет';
+      root.replaceWith(details);details.append(summary,root);
+    }
     drafts.get(prefix)?.controller.abort();
     const controller=new AbortController();
     const draft={controller,image:safeImage(item?.image),color:safeColor(item?.color),busy:false,token:0};drafts.set(prefix,draft);

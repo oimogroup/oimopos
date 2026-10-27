@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=import-yield-5" />
+    <link rel="stylesheet" href="admin.css?v=catalog-poster-7" />
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=catalog-actions-2" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
@@ -211,7 +211,7 @@
               <article class="panel table-panel">
                 <div class="poster-list-meta"><strong><span id="recipeCount">0</span> тех. карт</strong></div>
                 <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="recipeSearch" type="search" placeholder="Быстрый поиск" /></label><select id="recipeCategory"><option>Все категории</option><option>Первые</option><option>Горячее</option><option>Салаты</option><option>Выпечка</option></select><select id="recipeStationFilter"><option>Все цеха</option></select><button id="exportTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button><button id="importTechnicalCardsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><input id="technicalCardsImportFile" type="file" accept=".csv,text/csv,.xlsx" hidden><select><option>Столовая №1 — Манаса</option></select></div>
-                <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Цех</th><th>Выход</th><th>Себестоимость</th><th>Цена</th><th>Наценка</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="recipesTable"></tbody></table>
+                <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Выход</th><th>Себестоимость</th><th>Цена</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="recipesTable"></tbody></table>
               </article>
             </div>
 
@@ -227,7 +227,7 @@
               <article class="panel table-panel">
                 <div class="poster-list-meta"><strong><span id="preparationsCount">0</span> полуфабриката</strong></div>
                 <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="preparationSearch" type="search" placeholder="Быстрый поиск" /></label><select id="preparationCategoryFilter"><option>Все категории</option><option>Заготовки кухни</option><option>Холодный цех</option><option>Соусы и заправки</option><option>Выпечка</option></select><button id="exportPreparationsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-download"/></svg>Excel</button><button id="importPreparationsButton" class="secondary-action" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-upload"/></svg>Импорт</button><input id="preparationsImportFile" type="file" accept=".csv,text/csv,.xlsx" hidden></div>
-                <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Цех</th><th>Выход</th><th>Себестоимость</th><th>Используется</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="preparationsTable"></tbody></table>
+                <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Выход</th><th>Себестоимость</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="preparationsTable"></tbody></table>
               </article>
             </div>
 
@@ -238,7 +238,7 @@
                   <label class="admin-search"><svg class="ui-icon"><use href="#ui-search"/></svg><input id="ingredientSearch" type="search" placeholder="Название, код или штрихкод" aria-label="Поиск ингредиентов"></label>
                   <select id="ingredientCategoryFilter" aria-label="Категория"><option value="">Все категории</option></select>
                   <select id="ingredientBranchFilter" aria-label="Склад"></select>
-                  <details class="ux-advanced-filters"><summary>Ещё фильтры <span id="ingredientExtraFilterCount" hidden></span><svg class="ui-icon" aria-hidden="true"><use href="#ui-chevron"/></svg></summary><div class="ux-filter-fields">                  <select id="ingredientUnitFilter" aria-label="Единица измерения"><option value="">Все единицы</option><option>кг</option><option>л</option><option>шт</option></select>
+                  <details class="ux-advanced-filters"><summary>Ещё фильтры <span id="ingredientExtraFilterCount" hidden></span><svg class="ui-icon" aria-hidden="true"><use href="#ui-chevron"/></svg></summary><div class="ux-filter-fields">                  <select id="ingredientUnitFilter" aria-label="Единица измерения"><option value="">Все единицы</option><option value="кг">г</option><option value="л">мл</option><option>шт</option></select>
                   <select id="ingredientStockFilter" aria-label="Наличие"><option value="">Любой остаток</option><option value="positive">Есть в наличии</option><option value="zero">Нулевой остаток</option><option value="low">Ниже лимита</option></select>
                   <select id="ingredientUsageFilter" aria-label="Использование"><option value="">Любое использование</option><option value="used">Используется в составах</option><option value="unused">Не используется</option></select>
                   <select id="ingredientSort" aria-label="Сортировка"><option value="name">Название А–Я</option><option value="name-desc">Название Я–А</option><option value="cost">Себестоимость по возрастанию</option><option value="cost-desc">Себестоимость по убыванию</option><option value="stock">Остаток по возрастанию</option><option value="stock-desc">Остаток по убыванию</option></select>
@@ -483,7 +483,7 @@
     <div class="side-drawer-backdrop hidden" id="preparationCompositionDrawer">
       <aside class="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="preparationCompositionName">
         <header><div><p>Полуфабрикат</p><h2 id="preparationCompositionName"></h2></div><button class="drawer-close icon-button" id="closePreparationComposition" aria-label="Закрыть состав" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
-        <div class="recipe-overview"><div><span>Выход партии</span><strong id="preparationCompositionYield"></strong></div><div><span>Себестоимость партии</span><strong id="preparationCompositionCost"></strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationCompositionUnitCost"></strong></div></div>
+        <div class="recipe-overview"><div><span>Выход партии</span><strong id="preparationCompositionYield"></strong></div><div><span>Себестоимость партии</span><strong id="preparationCompositionCost"></strong></div><div><span>Себестоимость 100 г</span><strong id="preparationCompositionUnitCost"></strong></div></div>
         <div class="drawer-section-title"><h3>Состав на партию</h3><button class="secondary-action" id="editPreparationComposition" type="button">Изменить</button></div>
         <table class="composition-table"><thead><tr><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Стоимость</th></tr></thead><tbody id="preparationCompositionTable"></tbody></table>
         <section id="preparationCompositionProcessSection" hidden><h3>Приготовление</h3><p id="preparationCompositionProcess"></p></section>
@@ -798,11 +798,11 @@
           <div id="recipeImportNotes" hidden></div>
           <section class="catalog-form-section">
             <div class="catalog-section-heading"><span>1</span><div><h3>Основные данные</h3><p>Название, категория, цех, выход и цена блюда</p></div></div>
-            <div class="recipe-form-grid catalog-form-grid"><label class="catalog-field-wide"><span>Название блюда</span><input id="recipeNameInput" type="text" placeholder="Например, Плов" /></label><label><span>Категория</span><select id="recipeCategoryInput"><option>Горячее</option><option>Первые</option><option>Салаты</option><option>Выпечка</option><option>Напитки</option></select></label><label><span>Цех приготовления</span><select id="recipeStationInput"></select></label><label class="catalog-calculated-field"><span>Выход блюда</span><div class="unit-input"><input id="recipeYieldInput" type="number" min="0.001" step="0.001" value="0" /><b>г</b></div><small>Выход готового блюда по техкарте</small></label><label><span>Цена продажи</span><div class="unit-input"><input id="recipePriceInput" type="number" min="0" value="0" /><b>сом</b></div></label></div>
+            <div class="recipe-form-grid catalog-form-grid"><label class="catalog-field-wide"><span>Название блюда</span><input id="recipeNameInput" type="text" placeholder="Например, Плов" /></label><label><span>Категория</span><select id="recipeCategoryInput"><option>Горячее</option><option>Первые</option><option>Салаты</option><option>Выпечка</option><option>Напитки</option></select></label><label><span>Цех приготовления</span><select id="recipeStationInput"></select></label><label><span>Цена продажи</span><div class="unit-input"><input id="recipePriceInput" type="number" min="0" value="0" /><b>сом</b></div></label></div>
           </section>
           <section class="catalog-form-section">
             <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Расход продуктов на одну порцию: брутто и нетто</p></div><button class="catalog-add-row secondary-action" id="addComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
-            <div class="recipe-components-editor" id="recipeComponentsEditor"></div>
+            <div class="recipe-components-editor" id="recipeComponentsEditor"></div><div class="composition-output"><label class="catalog-calculated-field"><span>Выход блюда</span><div class="unit-input"><input id="recipeYieldInput" type="number" min="0.001" step="0.001" value="0" /><b>г</b></div><button id="recipeAutoYieldButton" class="catalog-auto-link" type="button">Рассчитать по нетто</button></label></div>
           </section>
           <div class="recipe-live-calculation catalog-calculation"><div><span>Себестоимость</span><strong id="recipeLiveCost">0 сом</strong></div><div><span>Фудкост</span><strong id="recipeLiveFoodCost">0%</strong></div><div><span>Наценка</span><strong id="recipeLiveMarkup">0%</strong></div></div>
         </div>
@@ -829,16 +829,17 @@
             <div class="catalog-section-heading"><span>1</span><div><h3>Основные данные</h3><p>Укажите название, группу и единицу складского учёта</p></div></div>
             <div class="ingredient-form-grid catalog-form-grid">
               <label class="wide catalog-field-wide"><span>Название ингредиента</span><input id="ingredientNameInput" type="text" placeholder="Например, Говядина" /></label>
-              <label><span>Категория ингредиентов</span><select id="ingredientCategoryInput"></select></label>
-              <label><span>Единица измерения</span><select id="ingredientUnitInput"><option value="кг">кг</option><option value="л">л</option><option value="шт">шт</option></select></label>
-              <label><span>Штрихкод</span><input id="ingredientBarcodeInput" type="text" maxlength="64" /></label>
-              <label><span>Лимит остатка</span><input id="ingredientLimitInput" type="number" min="0" step="0.001" value="0" /></label>
+
+              <label><span>Единица измерения</span><select id="ingredientUnitInput"><option value="кг">г</option><option value="л">мл</option><option value="шт">шт</option></select></label>
+              <label id="ingredientPieceWeightField" hidden><span>Масса одной штуки</span><div class="unit-input"><input id="ingredientPieceWeightInput" type="number" min="0" step="any" placeholder="Например, 55"><b>г</b></div><small>Для расчёта нетто и выхода</small></label>
+
+
             </div>
           </section>
 
           <details class="catalog-disclosure">
             <summary><div><strong>Дополнительно</strong><small>Проценты потерь при обработке продукта</small></div><svg class="ui-icon" aria-hidden="true"><use href="#ui-chevron"/></svg></summary>
-            <div class="catalog-disclosure-body"><div class="loss-grid"><label><span>Очистка, %</span><input id="lossCleanInput" type="number" min="0" max="99" value="0" /></label><label><span>Варка, %</span><input id="lossBoilInput" type="number" min="0" max="99" value="0" /></label><label><span>Жарка, %</span><input id="lossFryInput" type="number" min="0" max="99" value="0" /></label><label><span>Тушение / запекание, %</span><input id="lossBakeInput" type="number" min="0" max="99" value="0" /></label></div><p class="catalog-field-help">Потери нужны для автоматического расчёта брутто по указанному нетто в составе блюда.</p></div>
+            <div class="catalog-disclosure-body"><label><span>Категория ингредиентов</span><select id="ingredientCategoryInput"></select></label>              <label><span>Лимит остатка</span><input id="ingredientLimitInput" type="number" min="0" step="0.001" value="0" /></label>              <label><span>Штрихкод</span><input id="ingredientBarcodeInput" type="text" maxlength="64" /></label><div class="loss-grid"><label><span>Очистка, %</span><input id="lossCleanInput" type="number" min="0" max="99" value="0" /></label><label><span>Варка, %</span><input id="lossBoilInput" type="number" min="0" max="99" value="0" /></label><label><span>Жарка, %</span><input id="lossFryInput" type="number" min="0" max="99" value="0" /></label><label><span>Тушение / запекание, %</span><input id="lossBakeInput" type="number" min="0" max="99" value="0" /></label></div><p class="catalog-field-help">Потери нужны для автоматического расчёта брутто по указанному нетто в составе блюда.</p></div>
           </details>
 
           <section class="catalog-form-section catalog-stock-section" id="ingredientOpeningBlock">
@@ -858,21 +859,22 @@
         <header class="catalog-editor-header"><div><p>Меню / Полуфабрикаты</p><h2 id="preparationModalTitle">Новый полуфабрикат</h2><small>Заготовка для использования в нескольких блюдах</small></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="preparationModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
           <section class="catalog-form-section">
-            <div class="catalog-section-heading"><span>1</span><div><h3>Основные данные</h3><p>Полуфабрикаты учитываются в килограммах и отдельно не продаются</p></div></div>
+            <div class="catalog-section-heading"><span>1</span><div><h3>Основные данные</h3><p>Название и процесс приготовления. Выход рассчитывается по составу.</p></div></div>
             <div class="recipe-form-grid preparation-form-grid catalog-form-grid">
               <label class="catalog-field-wide"><span>Название</span><input id="preparationNameInput" type="text" placeholder="Например, Тесто для лагмана" /></label>
-              <label><span>Категория</span><select id="preparationCategoryInput"><option>Заготовки кухни</option><option>Холодный цех</option><option>Соусы и заправки</option><option>Выпечка</option><option>Без категории</option></select></label>
-              <label><span>Цех приготовления</span><select id="preparationStationInput"></select></label>
-              <label><span>Выход партии</span><div class="unit-input"><input id="preparationYieldInput" type="number" min="1" step="1" value="1000" /><b>г</b></div></label>
+
+
+
               <label class="catalog-field-full"><span>Процесс приготовления</span><textarea id="preparationProcessInput" rows="3" placeholder="Опишите основные шаги приготовления"></textarea></label>
-              <label class="catalog-field-full"><span>Комментарий</span><input id="preparationUsedInInput" type="text" placeholder="Например, используется для лагмана и супов" /></label>
+
             </div>
-          </section>
+          <details class="catalog-disclosure"><summary>Категория и цех</summary><div class="catalog-form-grid catalog-disclosure-body"><label><span>Категория</span><select id="preparationCategoryInput"><option>Заготовки кухни</option><option>Холодный цех</option><option>Соусы и заправки</option><option>Выпечка</option><option>Без категории</option></select></label><label><span>Цех приготовления</span><select id="preparationStationInput"></select></label></div></details></section>
           <section class="catalog-form-section">
             <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Укажите брутто и нетто сырья на одну производственную партию</p></div><button class="catalog-add-row secondary-action" id="addPreparationComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
-            <div class="recipe-components-editor" id="preparationComponentsEditor"></div>
+            <div class="recipe-components-editor" id="preparationComponentsEditor"></div><div class="composition-output"><label><span>Выход партии</span><div class="unit-input"><input id="preparationYieldInput" type="number" min="0.001" step="any" /><b>г</b></div><button id="preparationAutoYieldButton" class="catalog-auto-link" type="button">Рассчитать по нетто</button></label></div>
+            <details class="catalog-disclosure"><summary>Комментарий</summary>              <label class="catalog-field-full"><span>Комментарий</span><input id="preparationUsedInInput" type="text" placeholder="Например, используется для лагмана и супов" /></label></details>
           </section>
-          <div class="recipe-live-calculation preparation-live-calculation catalog-calculation"><div><span>Сырья нетто</span><strong id="preparationNetWeight">0 г</strong></div><div><span>Себестоимость партии</span><strong id="preparationBatchCost">0 сом</strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationUnitCost">0 сом</strong></div></div>
+          <div class="recipe-live-calculation preparation-live-calculation catalog-calculation"><div><span>Выход по составу</span><strong id="preparationNetWeight">0 г</strong></div><div><span>Себестоимость партии</span><strong id="preparationBatchCost">0 сом</strong></div><div><span>Себестоимость 100 г</span><strong id="preparationUnitCost">0 сом</strong></div></div>
           <div class="calculation-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p><strong>Себестоимость считается автоматически.</strong>При изменении закупочных цен ингредиентов расчёт будет обновляться.</p></div>
         </div>
         <div class="modal-actions catalog-editor-footer"><button class="icon-button danger-button modal-delete-action hidden" id="deletePreparationButton" type="button" title="Удалить полуфабрикат" aria-label="Удалить полуфабрикат"><svg class="ui-icon" aria-hidden="true"><use href="#ui-trash"/></svg></button><span></span><button class="secondary-action" data-close="preparationModal" type="button">Отмена</button><button class="primary-button" id="savePreparationButton" type="button">Сохранить</button></div>
@@ -916,7 +918,7 @@
         <header class="catalog-editor-header"><div><p>Меню / Товары</p><h2 id="productModalTitle">Новый товар</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="productModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
         <div class="catalog-editor-body">
           <section class="catalog-form-section">
-            
+
             <div class="product-form-grid catalog-form-grid">
               <label class="wide catalog-field-wide"><span>Название товара</span><input id="productNameInput" type="text" placeholder="Например, Вода 0,5 л" /></label>
               <div class="product-category-field"><label for="productCategorySearch">Категория меню</label><select id="productCategoryInput" hidden></select><div class="inline-category-controls"><input id="productCategorySearch" list="productCategoryOptions" placeholder="Найти или добавить категорию" maxlength="80" autocomplete="off" /><datalist id="productCategoryOptions"></datalist><button id="createProductCategory" class="secondary-action" type="button">+ Создать</button></div><small id="productCategoryHint" aria-live="polite"></small></div>
@@ -1121,12 +1123,13 @@
     <script src="numeric-inputs.js?v=1"></script>
     <script src="api-client.js?v=technical-cards-url-2"></script>
     <script src="company-settings.js?v=actions-15"></script>
-    <script src="catalog-cover.js?v=actions-15"></script>
-    <script src="ingredients-list.js?v=catalog-actions-2"></script>
+    <script src="catalog-cover.js?v=catalog-poster-7"></script>
+    <script src="catalog-units.js?v=1"></script>
+    <script src="ingredients-list.js?v=catalog-poster-7"></script>
     <script src="ingredient-picker.js?v=1"></script>
     <script src="product-variants.js?v=actions-15"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=import-auto-yield-6"></script>
+    <script src="admin.js?v=catalog-poster-7"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

@@ -1,5 +1,5 @@
 (function (global) {
-  let expanded = null, pendingImport = [], hiddenColumns = new Set();
+  let expanded = null, pendingImport = [], hiddenColumns = new Set(["category", "unit", "usage"]);
   const columns = { category: "Категория", unit: "Ед. измерения", cost: "Себестоимость", stock: "Остаток", usage: "В составе" };
   const el = id => document.getElementById(id);
   const links = item => [
@@ -38,14 +38,14 @@
     el("ingredientFilteredCount").textContent = `· показано ${visible.length}`;
     el("ingredientsTable").innerHTML = visible.length ? visible.map(row => {
       const { item, stock, cost } = row, id = escapeHtml(item.id);
-      const main = `<tr><td><div class="dish-cell">${CatalogCover.thumb(item)}<div><strong>${escapeHtml(item.name)}</strong><small>${id}${item.barcode ? ` · ${escapeHtml(item.barcode)}` : ""}</small></div></div></td><td data-ingredient-column="category">${escapeHtml(item.category || "Без категории")}</td><td data-ingredient-column="unit">${escapeHtml(item.unit)}</td><td data-ingredient-column="cost"><strong>${money(cost)} / ${escapeHtml(item.unit)}</strong></td><td data-ingredient-column="stock">${decimal(stock, 3)} ${escapeHtml(item.unit)}${stock < Number(item.limit || 0) ? '<small class="negative">Ниже лимита</small>' : ""}</td><td data-ingredient-column="usage">${row.links.filter(r => r.kind === "recipe").length} тех. карт · ${row.links.filter(r => r.kind === "preparation").length} п/ф</td><td><div class="ingredient-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-ingredient-edit="${id}" type="button">Изменить</button><button class="poster-action secondary-action" data-ingredient-details="${id}" aria-expanded="${expanded === String(item.id)}" type="button">Детали</button><button class="icon-button danger-button ingredient-delete-action" type="button" data-ingredient-delete="${id}" title="Удалить ингредиент" aria-label="Удалить ингредиент ${escapeHtml(item.name)}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div></td></tr>`;
+      const main = `<tr><td><div class="dish-cell">${CatalogCover.thumb(item)}<div><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(CatalogUnits.label(item.unit))}${item.category ? ` · ${escapeHtml(item.category)}` : ""}</small></div></div></td><td data-ingredient-column="category">${escapeHtml(item.category || "Без категории")}</td><td data-ingredient-column="unit">${escapeHtml(CatalogUnits.label(item.unit))}</td><td data-ingredient-column="cost"><strong>${money(item.unit === "шт" ? cost : cost/10)} / ${item.unit === "шт" ? "шт" : `100 ${escapeHtml(CatalogUnits.label(item.unit))}`}</strong></td><td data-ingredient-column="stock">${decimal(CatalogUnits.quantity(stock,item.unit), 3)} ${escapeHtml(CatalogUnits.label(item.unit))}${stock < Number(item.limit || 0) ? '<small class="negative">Ниже лимита</small>' : ""}</td><td data-ingredient-column="usage">${row.links.filter(r => r.kind === "recipe").length} тех. карт · ${row.links.filter(r => r.kind === "preparation").length} п/ф</td><td><div class="ingredient-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-ingredient-edit="${id}" type="button">Изменить</button><button class="poster-action secondary-action" data-ingredient-details="${id}" aria-expanded="${expanded === String(item.id)}" type="button">Детали</button><button class="icon-button danger-button ingredient-delete-action" type="button" data-ingredient-delete="${id}" title="Удалить ингредиент" aria-label="Удалить ингредиент ${escapeHtml(item.name)}"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div></td></tr>`;
       return main + (expanded === String(item.id) ? `<tr class="ingredient-usage-row"><td colspan="7"><strong>В составе: ${escapeHtml(item.name)}</strong>${row.links.length ? `<ul>${row.links.map(link => `<li><span>${link.label}</span><button type="button" data-ingredient-link-kind="${link.kind}" data-ingredient-link-id="${escapeHtml(link.id)}">${escapeHtml(link.name)}</button></li>`).join("")}</ul>` : '<p>Не используется в техкартах и полуфабрикатах.</p>'}</td></tr>` : "");
     }).join("") : '<tr class="table-empty"><td colspan="7">Ингредиенты не найдены. Измените поиск или сбросьте фильтры.</td></tr>';
     applyColumns();
   }
   function csvText() {
     const escapeCell = value => `"${String(value ?? "").replace(/^[=+@-]/, "'$&").replaceAll('"', '""')}"`;
-    return '\ufeff' + [["Название", "Категория", "Ед. измерения", "Штрихкод", "Лимит остатка", "Себестоимость", "Остаток"], ...rows().map(({ item, stock, cost }) => [item.name, item.category, item.unit, item.barcode || "", item.limit || 0, cost, stock])].map(row => row.map(escapeCell).join(";")).join("\r\n");
+    return '\ufeff' + [["Название", "Категория", "Ед. измерения", "Штрихкод", "Лимит остатка", "Себестоимость", "Потери варки", "Потери жарки", "Потери выпекания", "Потери очистки", "Масса штуки г"], ...rows().map(({item,cost}) => [item.name, item.category, CatalogUnits.label(item.unit), item.barcode || "", CatalogUnits.quantity(item.limit,item.unit), CatalogUnits.price(cost,item.unit), item.losses?.boil || 0, item.losses?.fry || 0, item.losses?.bake || 0, item.losses?.clean || 0, item.pieceWeightGrams || ""])].map(row => row.map(escapeCell).join(";")).join("\r\n");
   }
   function parseCsv(text) {
     text = text.replace(/^\ufeff/, "");
@@ -67,6 +67,7 @@
     return data.map((values, index) => {
       const value = key => (values[headers.indexOf(key)] || "").trim();
       const item = { name: value("Название"), category: value("Категория") || "Без категории", unit: value("Ед. измерения"), barcode: value("Штрихкод"), limit: Number(value("Лимит остатка").replace(",", ".") || 0) };
+      if (['г','мл'].includes(item.unit)) {item.unit = item.unit === 'г' ? 'кг' : 'л';item.limit /= 1000;}
       if (!item.name || !["кг", "л", "шт"].includes(item.unit) || !Number.isFinite(item.limit) || item.limit < 0) throw new Error(`Строка ${index + 2}: проверьте название, единицу и лимит`);
       const name = item.name.toLocaleLowerCase("ru");
       if (names.has(name)) throw new Error(`Строка ${index + 2}: ингредиент «${item.name}» уже существует или повторяется`);
@@ -84,9 +85,9 @@
     el("ingredientImportFile").value = "";
   }
   function mount() {
-    try { hiddenColumns = new Set(JSON.parse(sessionStorage.getItem("ashkana-ingredient-columns") || "[]").filter(key => key in columns)); } catch {}
+    try { hiddenColumns = new Set(JSON.parse(sessionStorage.getItem("ashkana-ingredient-columns-v2") || '["category","unit","usage"]').filter(key => key in columns)); } catch {}
     el("ingredientColumnOptions").innerHTML = Object.entries(columns).map(([key,label]) => `<label><input type="checkbox" data-ingredient-column-toggle="${key}" ${hiddenColumns.has(key) ? "" : "checked"}>${label}</label>`).join("");
-    el("ingredientColumnOptions").addEventListener("change", event => { const key = event.target.dataset.ingredientColumnToggle; if (!key) return; if (event.target.checked) hiddenColumns.delete(key); else hiddenColumns.add(key); try { sessionStorage.setItem("ashkana-ingredient-columns", JSON.stringify([...hiddenColumns])); } catch {} applyColumns(); });
+    el("ingredientColumnOptions").addEventListener("change", event => { const key = event.target.dataset.ingredientColumnToggle; if (!key) return; if (event.target.checked) hiddenColumns.delete(key); else hiddenColumns.add(key); try { sessionStorage.setItem("ashkana-ingredient-columns-v2", JSON.stringify([...hiddenColumns])); } catch {} applyColumns(); });
     for (const id of ["ingredientCategoryFilter", "ingredientUnitFilter", "ingredientBranchFilter", "ingredientStockFilter", "ingredientUsageFilter", "ingredientSort"]) el(id).addEventListener("change", render);
     el("resetIngredientFilters").addEventListener("click", () => { ["ingredientSearch", "ingredientCategoryFilter", "ingredientUnitFilter", "ingredientStockFilter", "ingredientUsageFilter"].forEach(id => { el(id).value = ""; }); el("ingredientSort").value = "name"; expanded = null; render(); });
     el("ingredientsTable").addEventListener("click", event => {

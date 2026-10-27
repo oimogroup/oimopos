@@ -87,7 +87,7 @@ def workbook(recipes, preparations, ingredients_by_id):
     data_end = len(rows)
     sheets = [('Техкарты', _sheet(rows, header_row, data_end, {6}, [6, 16, 40, 20, 20, 12, 16, 12]))]
 
-    rows = [['Состав'], [], ['Карта', 'Вид', 'Категория', 'Ингредиент', 'Брутто', 'Нетто', 'Ед.', 'Себестоимость, ед.', 'Сумма строки', 'Цех', 'Выход', 'Цена продажи', 'Процесс', 'Используется в']]
+    rows = [['Состав'], [], ['Карта', 'Вид', 'Категория', 'Ингредиент', 'Брутто', 'Нетто', 'Ед.', 'Себестоимость, ед.', 'Сумма строки', 'Цех', 'Выход', 'Цена продажи', 'Процесс', 'Используется в', 'Масса нетто г', 'Масса штуки г']]
     header_row = len(rows)
     data_end = header_row
     for index, item in enumerate(items, 1):
@@ -103,16 +103,18 @@ def workbook(recipes, preparations, ingredients_by_id):
                 kind,
                 item.get('category', ''),
                 ingredient.get('name', str(component.get('ingredientId', ''))),
-                _number(component.get('gross') or 0) / 1000,
-                _number(component.get('net') or 0) / 1000,
-                unit,
-                unit_cost,
+                _number(component.get('gross') or 0) / (1000 if unit == 'шт' else 1),
+                _number(component.get('net') or 0) / (1000 if unit == 'шт' else 1),
+                {'кг': 'г', 'л': 'мл'}.get(unit, unit),
+                unit_cost / 1000 if unit_cost is not None and unit != 'шт' else unit_cost,
                 _money(line_cost),
                 item.get('station', ''),
                 _number(item.get('yield')),
                 _number(item.get('price')),
                 item.get('process', ''),
                 item.get('usedIn', ''),
+                _number(component.get('netWeightGrams')),
+                _number(component.get('pieceWeightGrams') or ingredient.get('pieceWeightGrams')),
             ])
             data_end += 1
     sheets.append(('Состав', _sheet(rows, header_row, data_end, {7, 8}, [40, 12, 40, 40, 12, 12, 10, 16, 16])))
