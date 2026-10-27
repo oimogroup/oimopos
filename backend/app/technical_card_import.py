@@ -56,7 +56,7 @@ def _columns(cells):
             if key in columns:
                 duplicates.add(key)
             columns[key] = column
-    if {"card", "ingredient", "gross", "net"} <= columns.keys():
+    if {"card", "ingredient", "gross"} <= columns.keys():
         if duplicates:
             raise ValueError("В заголовке повторяются столбцы. Оставьте по одному столбцу каждого вида")
         return columns
@@ -93,7 +93,7 @@ def _table(rows, header):
             if not ingredient_name:
                 raise ValueError(f"Строка {number}: не указан ингредиент")
             gross = _number(mapped["gross"], number, "брутто")
-            net = _number(mapped["net"], number, "нетто")
+            net = _number(mapped["net"], number, "нетто") if mapped.get("net") else gross
             if net > gross:
                 raise ValueError(f"Строка {number}: нетто не может быть больше брутто")
             card_yield = _number(mapped.get("yield", ""), number, "выход", zero=True) if mapped.get("yield") else None
@@ -374,12 +374,14 @@ def prepare_import(state, items):
         if not name or kind not in {"техкарта", "полуфабрикат"}:
             raise ValueError(f"Строка {index}: укажите название и вид карты")
         station = str(item.get("station", "")).strip()
-        try:
-            output = _number(item.get("yield", ""), index, "выход")
-        except ValueError:
-            raise ValueError(f"«{name}»: укажите выход готового продукта в граммах — число больше нуля") from None
-        if not math.isfinite(float(output)):
-            raise ValueError(f"«{name}»: выход должен быть конечным числом")
+        output = None
+        if item.get("yield") not in (None, ""):
+            try:
+                output = _number(item["yield"], index, "выход")
+            except ValueError:
+                raise ValueError(f"«{name}»: выход должен быть числом больше нуля") from None
+            if not math.isfinite(float(output)):
+                raise ValueError(f"«{name}»: выход должен быть конечным числом")
         if not station:
             raise ValueError(f"«{name}»: укажите цех")
         ingredient_id = str(item.get("ingredientId", ""))
@@ -395,13 +397,22 @@ def prepare_import(state, items):
                 raise ValueError(f"Строка {index}: единица «{source}» не соответствует «{target}». Массу, объём и штуки нельзя смешивать")
             factor = units[source][1]
         gross = _number(item.get("gross", ""), index, "брутто") * factor
-        net = _number(item.get("net", ""), index, "нетто") * factor
+        net = _number(item.get("net") if item.get("net") not in (None, "") else item.get("gross", ""), index, "нетто") * factor
         if net > gross or not math.isfinite(float(gross)) or not math.isfinite(float(net)):
             raise ValueError(f"Строка {index}: проверьте брутто и нетто")
         key = (kind, normalize(name))
-        group = groups.setdefault(key, {**item, "card": name, "kind": kind, "station": station, "yield": float(output), "components": {}})
-        if group["station"] != station or group["yield"] != float(output):
+        group = groups.setdefault(key, {**item, "card": name, "kind": kind, "station": station, "yield": float(output) if output is not None else None, "components": {}, "calculatedYield": Decimal(0), "missingPieceWeight": False})
+        if group["station"] != station or group["yield"] != (float(output) if output is not None else None):
             raise ValueError(f"«{name}»: цех и выход должны совпадать во всех строках")
+        if target == "шт":
+            piece_weight = item.get("pieceWeightGrams", ingredient.get("pieceWeightGrams"))
+            if piece_weight in (None, ""):
+                group["missingPieceWeight"] = True
+            else:
+                group["calculatedYield"] += net / 1000 * _number(piece_weight, index, "масса штуки, г")
+        else:
+            # Default calculation: 1 ml = 1 g until an explicit yield is supplied.
+            group["calculatedYield"] += net
         component = group["components"].setdefault(ingredient_id, {"ingredientId": ingredient_id, "gross": Decimal(0), "net": Decimal(0)})
         component["gross"] += gross
         component["net"] += net
@@ -410,5 +421,11 @@ def prepare_import(state, items):
         components = [{**c, "gross": float(c["gross"]), "net": float(c["net"])} for c in group["components"].values()]
         if len(components) > 500 or any(not math.isfinite(c[k]) for c in components for k in ("gross", "net")):
             raise ValueError("Проверьте состав: максимум 500 ингредиентов и конечные количества")
-        result.append({**group, "components": components})
+        if group["yield"] is None:
+            if group["missingPieceWeight"]:
+                raise ValueError(f"«{group['card']}»: укажите массу штуки для расчёта выхода или задайте выход вручную")
+            group["yield"] = float(group["calculatedYield"])
+            if not math.isfinite(group["yield"]) or group["yield"] <= 0:
+                raise ValueError(f"«{group['card']}»: проверьте состав для расчёта выхода")
+        result.append({k: v for k, v in {**group, "components": components}.items() if k not in {"calculatedYield", "missingPieceWeight"}})
     return result

@@ -20,7 +20,7 @@ def test_duplicates_merge_before_save():
     assert result[0]['components'] == [{'ingredientId':'raw','gross':1500,'net':1200}]
 
 
-@pytest.mark.parametrize('updates', [{'yield':None}, {'station':''}, {'ingredientId':''}, {'unit':'л'}, {'net':2}, {'gross':float('inf')}])
+@pytest.mark.parametrize('updates', [{'station':''}, {'ingredientId':''}, {'unit':'л'}, {'net':2}, {'gross':float('inf')}])
 def test_invalid_rows_rejected(updates):
     with pytest.raises(ValueError):
         prepare_import({'ingredients':[{'id':'raw','unit':'кг'}]}, [row(**updates)])
@@ -37,6 +37,29 @@ def test_export_import_keeps_piece_volume_mass_and_cost():
     assert prepare_import(state, data['rows'])[0]['components'] == card['components']
 
 
-def test_missing_yield_names_the_card_and_required_unit():
-    with pytest.raises(ValueError, match='Тесто.*граммах'):
-        prepare_import({'ingredients':[{'id':'raw','unit':'кг'}]}, [row(**{'yield':None})])
+def test_missing_yield_is_sum_of_net_and_missing_net_defaults_to_gross():
+    result = prepare_import({'ingredients':[{'id':'raw','unit':'кг'}]}, [row(**{'yield':None,'net':None})])
+    assert result[0]['yield'] == 1000
+    assert result[0]['components'][0]['net'] == 1000
+
+
+def test_automatic_yield_uses_piece_weight_and_volume_default():
+    state = {'ingredients':[{'id':'egg','unit':'шт'}, {'id':'milk','unit':'л'}]}
+    items = [row(**{'ingredientId':'egg','unit':'шт','gross':2,'net':None,'yield':None,'pieceWeightGrams':50}),
+             row(**{'ingredientId':'milk','unit':'л','gross':.2,'net':None,'yield':None})]
+    assert prepare_import(state, items)[0]['yield'] == 300
+
+
+def test_piece_weight_required_only_when_yield_is_automatic():
+    state = {'ingredients':[{'id':'raw','unit':'шт'}]}
+    with pytest.raises(ValueError, match='массу штуки'):
+        prepare_import(state, [row(**{'unit':'шт','yield':None})])
+    assert prepare_import(state, [row(unit='шт')])[0]['yield'] == 800
+
+
+def test_csv_without_net_column_uses_gross():
+    data = 'Карта;Вид;Ингредиент;Брутто;Ед.;Цех\nТесто;полуфабрикат;Мука;0,5;кг;Кухня'
+    state = {'ingredients':[{'id':'raw','name':'Мука','unit':'кг'}]}
+    rows = preview(state, base64.b64encode(data.encode()).decode(), 'test.csv')['rows']
+    assert rows[0]['net'] == .5
+    assert prepare_import(state, rows)[0]['yield'] == 500

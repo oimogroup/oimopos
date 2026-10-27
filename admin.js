@@ -4260,15 +4260,43 @@ async function readFileAsDataUrl(file) {
 
 function importCardKey(row) { return `${row.kind || "техкарта"}:${row.card.trim().toLocaleLowerCase("ru")}`; }
 function importUnitFamily(unit) { return ({"кг":"mass","г":"mass","л":"volume","мл":"volume","шт":"count"})[unit]; }
+function calculateImportYields() {
+  const groups = new Map();
+  for (const row of technicalCardsPreviewRows) {
+    const key = importCardKey(row);
+    if (!groups.has(key)) groups.set(key, []);
+    groups.get(key).push(row);
+  }
+  for (const rows of groups.values()) {
+    if (!rows[0].autoYield) continue;
+    let output = 0, complete = true;
+    for (const row of rows) {
+      const net = row.net === null || row.net === undefined || row.net === '' ? Number(row.gross) : Number(row.net);
+      const ingredient = ingredientById(row.ingredientId);
+      const unit = row.unit || (ingredient?.unit === 'шт' ? 'legacy-count' : 'г');
+      if (unit === 'шт' || unit === 'legacy-count') {
+        const weight = Number(row.pieceWeightGrams || ingredient?.pieceWeightGrams);
+        if (!Number.isFinite(weight) || weight <= 0) {complete = false; continue;}
+        output += net * weight / (unit === 'legacy-count' ? 1000 : 1);
+      } else output += net * (['кг', 'л'].includes(unit) ? 1000 : 1);
+    }
+    rows.forEach(row => {row.yield = complete && output > 0 ? Number(output.toFixed(9)) : null;});
+  }
+  document.querySelectorAll('#technicalCardsImportPreview [data-import-yield]').forEach(input => {
+    const row = technicalCardsPreviewRows[Number(input.dataset.importYield)];
+    if (row?.autoYield) input.value = row.yield ?? '';
+  });
+}
 function technicalImportIssues() {
+  calculateImportYields();
   const issues = new Set();
   for (const row of technicalCardsPreviewRows) {
     const ingredient = ingredientById(row.ingredientId);
     if (!ingredient) issues.add("Сопоставьте все ингредиенты со справочником.");
     else if (row.unit && (!importUnitFamily(row.unit) || importUnitFamily(row.unit) !== importUnitFamily(ingredient.unit))) issues.add(`«${row.ingredient}»: в файле ${row.unit}, в справочнике ${ingredient.unit}. Исправьте единицу и количество.`);
-    if (!Number.isFinite(Number(row.gross)) || !Number.isFinite(Number(row.net)) || Number(row.net) <= 0 || Number(row.gross) < Number(row.net)) issues.add("Проверьте брутто и нетто: оба больше нуля, нетто не больше брутто.");
+    if (!Number.isFinite(Number(row.gross)) || (row.net !== null && row.net !== undefined && row.net !== '' && (!Number.isFinite(Number(row.net)) || Number(row.net) <= 0 || Number(row.gross) < Number(row.net))) || Number(row.gross) <= 0) issues.add("Проверьте брутто и нетто: оба больше нуля, нетто не больше брутто.");
     if (!row.station?.trim()) issues.add("Укажите цех для каждой карты.");
-    if (!Number.isFinite(Number(row.yield)) || Number(row.yield) <= 0) issues.add(`«${row.card}»: укажите выход готового продукта в граммах (число больше нуля).`);
+    if (!Number.isFinite(Number(row.yield)) || Number(row.yield) <= 0) issues.add(`«${row.card}»: для автоматического выхода укажите массу штучных ингредиентов или задайте выход вручную.`);
   }
   document.querySelectorAll('#technicalCardsImportPreview [data-import-yield]').forEach(input => {
     const row = technicalCardsPreviewRows[Number(input.dataset.importYield)];
@@ -4282,7 +4310,9 @@ function technicalImportIssues() {
   return issues.size;
 }
 function renderTechnicalCardsImportPreview(rows) {
+  rows.forEach(row => {row.autoYield = row.yield === null || row.yield === undefined || row.yield === "";});
   technicalCardsPreviewRows = rows;
+  calculateImportYields();
   technicalCardsServerError = "";
   const groups = new Map();
   rows.forEach((row, index) => {
@@ -4291,15 +4321,23 @@ function renderTechnicalCardsImportPreview(rows) {
     groups.get(key).push({row, index});
   });
   const options = selected => '<option value="">Выберите ингредиент</option>' + ingredients.map(item => `<option value="${escapeHtml(item.id)}" ${String(item.id) === String(selected) ? "selected" : ""}>${escapeHtml(item.name)} · ${escapeHtml(item.unit)}</option>`).join("");
-  let html = `<p>${rows.length} строк состава · ${groups.size} карт. Повторы одного ингредиента внутри карты будут объединены. Выход укажите по фактической массе готовой продукции. При смене единицы вручную пересчитайте брутто и нетто; масса, объём и штуки не взаимозаменяемы.</p>`;
+  let html = `<p>${rows.length} строк состава · ${groups.size} карт. Повторы одного ингредиента внутри карты будут объединены. Пустое нетто принимается равным брутто. Выход автоматически считается по сумме нетто; для жидкостей по умолчанию 1 мл = 1 г. Массу штуки укажите отдельно. Выход можно изменить вручную. При смене единицы вручную пересчитайте брутто и нетто; масса, объём и штуки не взаимозаменяемы.</p>`;
   for (const entries of groups.values()) {
     const {row: first, index: firstIndex} = entries[0];
-    html += `<section class="import-card-review"><h3>${escapeHtml(first.card)} <small>${escapeHtml(first.kind)}</small></h3><div class="import-card-fields"><label>Цех<input data-import-station="${firstIndex}" value="${escapeHtml(first.station || "")}" required></label><label>Выход готового продукта, г<input data-import-yield="${firstIndex}" type="number" min="0.001" step="any" value="${first.yield ?? ""}" required></label></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Из файла</th><th>Ингредиент в справочнике</th><th>Брутто</th><th>Нетто</th><th>Единица файла</th></tr></thead><tbody>`;
-    for (const {row, index} of entries) html += `<tr><td>${escapeHtml(row.ingredient)}</td><td><select data-import-ingredient="${index}" aria-label="Сопоставление ${escapeHtml(row.ingredient)}">${options(row.ingredientId)}</select></td><td><input aria-label="Брутто" data-import-gross="${index}" type="number" min="0" step="any" value="${row.gross}"></td><td><input aria-label="Нетто" data-import-net="${index}" type="number" min="0" step="any" value="${row.net}"></td><td><select aria-label="Единица количества" data-import-unit="${index}">${["", "кг", "г", "л", "мл", "шт"].map(unit => `<option value="${unit}" ${unit === (row.unit || "") ? "selected" : ""}>${unit || "Старый формат"}</option>`).join("")}</select></td></tr>`;
+    html += `<section class="import-card-review"><h3>${escapeHtml(first.card)} <small>${escapeHtml(first.kind)}</small></h3><div class="import-card-fields"><label>Цех<input data-import-station="${firstIndex}" value="${escapeHtml(first.station || "")}" required></label><label>Выход готового продукта, г<input data-import-yield="${firstIndex}" type="number" min="0.001" step="any" value="${first.yield ?? ""}" placeholder="Автоматически по нетто"></label><button type="button" class="secondary-action" data-import-auto-yield="${firstIndex}">Рассчитать по нетто</button></div><div class="table-scroll"><table class="data-table"><thead><tr><th>Из файла</th><th>Ингредиент в справочнике</th><th>Брутто</th><th>Нетто</th><th>Единица файла</th><th>Масса 1 шт., г</th></tr></thead><tbody>`;
+    for (const {row, index} of entries) html += `<tr><td>${escapeHtml(row.ingredient)}</td><td><select data-import-ingredient="${index}" aria-label="Сопоставление ${escapeHtml(row.ingredient)}">${options(row.ingredientId)}</select></td><td><input aria-label="Брутто" data-import-gross="${index}" type="number" min="0" step="any" value="${row.gross}"></td><td><input aria-label="Нетто" data-import-net="${index}" type="number" min="0" step="any" value="${row.net ?? ""}" placeholder="Как брутто"></td><td><select aria-label="Единица количества" data-import-unit="${index}">${["", "кг", "г", "л", "мл", "шт"].map(unit => `<option value="${unit}" ${unit === (row.unit || "") ? "selected" : ""}>${unit || "Старый формат"}</option>`).join("")}</select></td><td><input aria-label="Масса штуки в граммах" data-import-piece-weight="${index}" type="number" min="0" step="any" value="${row.pieceWeightGrams ?? ""}" placeholder="Для шт."></td></tr>`;
     html += '</tbody></table></div></section>';
   }
   const container = $("#technicalCardsImportPreview");
   container.innerHTML = html;
+  container.onclick = event => {
+    const button = event.target.closest('[data-import-auto-yield]');
+    if (!button) return;
+    const key = importCardKey(rows[Number(button.dataset.importAutoYield)]);
+    rows.filter(row => importCardKey(row) === key).forEach(row => {row.autoYield = true;});
+    technicalCardsServerError = "";
+    technicalImportIssues();
+  };
   container.oninput = event => {
     technicalCardsServerError = "";
     const input = event.target;
@@ -4308,16 +4346,18 @@ function renderTechnicalCardsImportPreview(rows) {
       // Apply the same explicit mapping to equal names throughout this file.
       rows.filter(row => row.ingredient.trim().toLocaleLowerCase("ru") === source.ingredient.trim().toLocaleLowerCase("ru")).forEach(row => { row.ingredientId = input.value; });
       container.querySelectorAll('[data-import-ingredient]').forEach(select => { select.value = rows[Number(select.dataset.importIngredient)].ingredientId; });
+    } else if (input.matches('[data-import-piece-weight]')) {
+      rows[Number(input.dataset.importPieceWeight)].pieceWeightGrams = input.value === '' ? null : Number(input.value);
     } else if (input.matches('[data-import-gross],[data-import-net],[data-import-unit]')) {
       const field = input.dataset.importGross !== undefined ? 'gross' : input.dataset.importNet !== undefined ? 'net' : 'unit';
       const index = Number(input.dataset.importGross ?? input.dataset.importNet ?? input.dataset.importUnit);
-      rows[index][field] = field === 'unit' ? input.value : Number(input.value);
+      rows[index][field] = field === 'unit' ? input.value : input.value === '' ? null : Number(input.value);
     } else if (input.matches('[data-import-station],[data-import-yield]')) {
       const index = Number(input.dataset.importStation ?? input.dataset.importYield);
       const key = importCardKey(rows[index]);
       rows.filter(row => importCardKey(row) === key).forEach(row => {
         if (input.dataset.importStation !== undefined) row.station = input.value;
-        else row.yield = input.value === "" ? null : Number(input.value);
+        else {row.autoYield = input.value === ""; row.yield = input.value === "" ? null : Number(input.value);}
       });
     }
     technicalImportIssues();
