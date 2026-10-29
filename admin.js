@@ -7393,7 +7393,24 @@ async function refreshAccountStatus() {
 window.addEventListener('focus', refreshAccountStatus);
 document.addEventListener('visibilitychange', refreshAccountStatus);
 
+// Show the requested section before waiting for authentication and workspace data.
+// Otherwise the HTML's default dashboard flashes on every network-backed reload.
+function previewStartupWorkspace() {
+  const [section, tab] = startupWorkspaceRoute.split('/');
+  const view = section === 'menu' ? 'recipes' : section;
+  if (!canAccessView(view) || !document.getElementById(`view-${view}`)) return;
+  document.querySelectorAll('.admin-view').forEach(node => node.classList.toggle('active', node.id === `view-${view}`));
+  if (section === 'menu' && menuPageConfig[tab]) {
+    document.querySelectorAll('.menu-pane').forEach(node => node.classList.toggle('active', node.id === `menu-pane-${tab}`));
+    document.querySelectorAll('[data-menu-page]').forEach(node => node.classList.toggle('active', node.dataset.menuPage === tab));
+    $('#menuPageTitle').textContent = menuPageConfig[tab].title;
+    $('#menuPageDescription').textContent = menuPageConfig[tab].description;
+    $('#breadcrumbTitle').textContent = `Меню / ${menuPageConfig[tab].title}`;
+  }
+}
+
 async function initializeApplication() {
+  previewStartupWorkspace();
   if (!testMode) {
     try {
       const authResponse = await window.AshkanaApi.me();
