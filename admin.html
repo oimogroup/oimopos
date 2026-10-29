@@ -483,7 +483,7 @@
     <div class="side-drawer-backdrop hidden" id="preparationCompositionDrawer">
       <aside class="detail-drawer" role="dialog" aria-modal="true" aria-labelledby="preparationCompositionName">
         <header><div><p>Полуфабрикат</p><h2 id="preparationCompositionName"></h2></div><button class="drawer-close icon-button" id="closePreparationComposition" aria-label="Закрыть состав" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
-        <div class="recipe-overview"><div><span>Выход партии</span><strong id="preparationCompositionYield"></strong></div><div><span>Себестоимость партии</span><strong id="preparationCompositionCost"></strong></div><div><span>Себестоимость 100 г</span><strong id="preparationCompositionUnitCost"></strong></div></div>
+        <div class="recipe-overview"><div><span>Выход партии</span><strong id="preparationCompositionYield"></strong></div><div><span>Себестоимость партии</span><strong id="preparationCompositionCost"></strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationCompositionUnitCost"></strong></div></div>
         <div class="drawer-section-title"><h3>Состав на партию</h3><button class="secondary-action" id="editPreparationComposition" type="button">Изменить</button></div>
         <table class="composition-table"><thead><tr><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Стоимость</th></tr></thead><tbody id="preparationCompositionTable"></tbody></table>
         <section id="preparationCompositionProcessSection" hidden><h3>Приготовление</h3><p id="preparationCompositionProcess"></p></section>
@@ -874,7 +874,7 @@
             <div class="recipe-components-editor" id="preparationComponentsEditor"></div><div class="composition-output"><label><span>Выход партии</span><div class="unit-input"><input id="preparationYieldInput" type="number" min="0.001" step="any" /><b>г</b></div><button id="preparationAutoYieldButton" class="catalog-auto-link" type="button">Рассчитать по нетто</button></label></div>
             <details class="catalog-disclosure"><summary>Комментарий</summary>              <label class="catalog-field-full"><span>Комментарий</span><input id="preparationUsedInInput" type="text" placeholder="Например, используется для лагмана и супов" /></label></details>
           </section>
-          <div class="recipe-live-calculation preparation-live-calculation catalog-calculation"><div><span>Выход по составу</span><strong id="preparationNetWeight">0 г</strong></div><div><span>Себестоимость партии</span><strong id="preparationBatchCost">0 сом</strong></div><div><span>Себестоимость 100 г</span><strong id="preparationUnitCost">0 сом</strong></div></div>
+          <div class="recipe-live-calculation preparation-live-calculation catalog-calculation"><div><span>Выход по составу</span><strong id="preparationNetWeight">0 г</strong></div><div><span>Себестоимость партии</span><strong id="preparationBatchCost">0 сом</strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationUnitCost">0 сом</strong></div></div>
           <div class="calculation-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p><strong>Себестоимость считается автоматически.</strong>При изменении закупочных цен ингредиентов расчёт будет обновляться.</p></div>
         </div>
         <div class="modal-actions catalog-editor-footer"><button class="icon-button danger-button modal-delete-action hidden" id="deletePreparationButton" type="button" title="Удалить полуфабрикат" aria-label="Удалить полуфабрикат"><svg class="ui-icon" aria-hidden="true"><use href="#ui-trash"/></svg></button><span></span><button class="secondary-action" data-close="preparationModal" type="button">Отмена</button><button class="primary-button" id="savePreparationButton" type="button">Сохранить</button></div>
@@ -1125,11 +1125,11 @@
     <script src="company-settings.js?v=actions-15"></script>
     <script src="catalog-cover.js?v=catalog-poster-7"></script>
     <script src="catalog-units.js?v=1"></script>
-    <script src="ingredients-list.js?v=catalog-ledger-8"></script>
+    <script src="ingredients-list.js?v=prices-per-kg-9"></script>
     <script src="ingredient-picker.js?v=1"></script>
     <script src="product-variants.js?v=actions-15"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=catalog-ledger-8"></script>
+    <script src="admin.js?v=prices-per-kg-9"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

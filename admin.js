@@ -2960,7 +2960,7 @@ function renderPreparations() {
     const batchCost = preparationCost(preparation);
     const unitCost = Number(preparation.yield) > 0 ? batchCost / (Number(preparation.yield) / 1000) : 0;
     const id = escapeHtml(String(preparation.id));
-    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost/10)} / 100 г</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button></div></td></tr>`;
+    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button></div></td></tr>`;
   }).join("") : `<tr class="table-empty"><td colspan="5">${preparations.length ? "По заданным условиям полуфабрикаты не найдены" : "Полуфабрикаты ещё не настроены"}</td></tr>`;
 }
 
@@ -4458,6 +4458,7 @@ async function importIngredientsCsv(file) {
   header.forEach((h, i) => {
     if (/наимен|название|ингредиент|name/.test(h)) idx.name = i;
     else if (/категори/.test(h)) idx.category = i;
+    else if (/цена за|единица цены|price unit/.test(h)) idx.priceUnit = i;
     else if (/ед\.|единица|unit/.test(h)) idx.unit = i;
     else if (/штрих|barcode/.test(h)) idx.barcode = i;
     else if (/лимит/.test(h)) idx.limit = i;
@@ -4496,7 +4497,13 @@ async function importIngredientsCsv(file) {
     if (['г','мл'].includes(inputUnit)) {
       payload.unit = inputUnit === 'г' ? 'кг' : 'л';
       if (idx.limit !== undefined) payload.limit /= 1000;
-      if (idx.cost !== undefined) payload.averageCost *= 1000;
+      if (idx.cost !== undefined && idx.priceUnit === undefined) payload.averageCost *= 1000;
+    }
+    if (idx.priceUnit !== undefined && idx.cost !== undefined) {
+      const priceUnit = String(cells[idx.priceUnit] || '').trim();
+      const stockUnit = ({'г':'кг','мл':'л'})[priceUnit] || priceUnit;
+      if (stockUnit !== payload.unit) throw new Error(`Строка ${i+1}: единица цены не соответствует ингредиенту`);
+      if (['г','мл'].includes(priceUnit)) payload.averageCost *= 1000;
     }
     payload.pieceWeightGrams = idx.pieceWeight === undefined ? existing?.pieceWeightGrams || 0 : number(cells[idx.pieceWeight], 'Масса штуки');
     if (!["кг", "л", "шт"].includes(payload.unit)) throw new Error(`Строка ${i + 1}: неизвестная единица измерения`);
@@ -4564,7 +4571,7 @@ function openRecipe(recipeId) {
     const ingredient = ingredientById(component.ingredientId);
     const scale = ingredient?.unit === "шт" ? 1000 : 1;
     const measure = ingredient?.unit === "шт" ? "шт" : ingredient?.unit === "л" ? "мл" : "г";
-    return `<tr><td><strong>${ingredient?.name || "Не найден"}</strong><small>${money(ingredient?.unit === "шт" ? ingredient.averageCost : (ingredient?.averageCost || 0)/10)} / ${ingredient?.unit === "шт" ? "шт" : `100 ${CatalogUnits.label(ingredient?.unit || "кг")}`}</small></td><td>${decimal(component.gross / scale)} ${measure}</td><td>${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),3)} г`}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
+    return `<tr><td><strong>${ingredient?.name || "Не найден"}</strong><small>${money(ingredient?.averageCost || 0)} / ${ingredient?.unit || "кг"}</small></td><td>${decimal(component.gross / scale)} ${measure}</td><td>${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),3)} г`}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
   }).join("");
   $("#recipeDrawer").classList.remove("hidden");
 }
@@ -4712,7 +4719,7 @@ function openPreparationComposition(preparationId) {
   $('#preparationCompositionName').textContent = preparation.name;
   $('#preparationCompositionYield').textContent = `${decimal(Number(preparation.yield || 0), 3)} г`;
   $('#preparationCompositionCost').textContent = money(cost);
-  $('#preparationCompositionUnitCost').textContent = money(Number(preparation.yield) > 0 ? cost / Number(preparation.yield) * 100 : 0);
+  $('#preparationCompositionUnitCost').textContent = money(Number(preparation.yield) > 0 ? cost / Number(preparation.yield) * 1000 : 0);
   const components = Array.isArray(preparation.components) ? preparation.components : [];
   $('#preparationCompositionTable').innerHTML = components.length ? components.map(component => {
     const ingredient = ingredientById(component.ingredientId);
@@ -4756,7 +4763,7 @@ function updatePreparationCalculation(event) {
   const cost=preparationDraftComponents.reduce((sum,c)=>sum+preparationIngredientCost(c),0);
   $('#preparationNetWeight').textContent=output == null ? 'Укажите массу штуки в ингредиенте' : `${decimal(output,3)} г`;
   $('#preparationBatchCost').textContent=money(cost);
-  $('#preparationUnitCost').textContent=money(outputWeight ? cost/outputWeight*100 : 0);
+  $('#preparationUnitCost').textContent=money(outputWeight ? cost/outputWeight*1000 : 0);
   document.querySelectorAll('.preparation-component-row').forEach((row,index)=>{row.querySelector('.component-cost').textContent=money(preparationIngredientCost(preparationDraftComponents[index]));});
 }
 
@@ -4881,15 +4888,15 @@ function updateIngredientOpeningTotal() {
   $('#ingredientPieceWeightField').hidden = unit !== 'шт';
   const displayUnit = CatalogUnits.label(unit);
   $('#ingredientStockInput').closest('label').querySelector('span').textContent = `Количество, ${displayUnit}`;
-  $('#ingredientCostInput').closest('label').querySelector('span').textContent = `Цена за ${displayUnit}`;
+  $('#ingredientCostInput').closest('label').querySelector('span').textContent = `Цена за 1 ${unit}`;
   $('#ingredientLimitInput').closest('label').querySelector('span').textContent = `Лимит остатка, ${displayUnit}`;
   $('#ingredientStockInput').setAttribute('aria-label', `Количество, ${displayUnit}`);
-  $('#ingredientCostInput').setAttribute('aria-label', `Цена за ${displayUnit}`);
+  $('#ingredientCostInput').setAttribute('aria-label', `Цена за 1 ${unit}`);
   $('#ingredientLimitInput').setAttribute('aria-label', `Лимит остатка, ${displayUnit}`);
-  $('#ingredientOpeningBlock .catalog-field-help').textContent = `Количество в ${displayUnit}, цена за ${displayUnit}. После сохранения будет создано складское поступление.`;
+  $('#ingredientOpeningBlock .catalog-field-help').textContent = `Количество в ${displayUnit}, цена за 1 ${unit}. После сохранения будет создано складское поступление.`;
   const stock = Math.max(0, Number($("#ingredientStockInput").value || 0));
   const cost = Math.max(0, Number($("#ingredientCostInput").value || 0));
-  $("#ingredientOpeningTotal").textContent = money(stock * cost);
+  $("#ingredientOpeningTotal").textContent = money(CatalogUnits.stockQuantity(stock,unit) * cost);
 }
 
 function ingredientIdFromName(name) {
@@ -4942,7 +4949,7 @@ async function saveIngredientForm() {
     Object.assign(existing, details);
   } else {
     const stock = CatalogUnits.stockQuantity($("#ingredientStockInput").value, details.unit);
-    const averageCost = CatalogUnits.stockPrice($("#ingredientCostInput").value, details.unit);
+    const averageCost = Math.max(0, Number($("#ingredientCostInput").value || 0));
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
     if (stock > 0 && !ensureBranchStockUnlocked(branchId)) return;
     const ingredient = { id: ingredientIdFromName(name), ...details, stock: 0, averageCost };
