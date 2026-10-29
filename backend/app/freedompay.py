@@ -1,6 +1,7 @@
 """Freedom Pay KG hosted checkout: bounded requests and signed flat/form/XML messages."""
 import hashlib
 import hmac
+import logging
 import re
 import secrets
 from email import policy
@@ -9,6 +10,19 @@ from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qsl, urlencode, urlsplit
 from urllib.request import HTTPRedirectHandler, Request, build_opener
 import xml.etree.ElementTree as ET
+
+logger=logging.getLogger(__name__)
+
+
+def safe_error_description(value, sensitive_values):
+    """Limit untrusted provider text and remove request secrets and identifiers."""
+    if not isinstance(value,str):
+        return 'unavailable'
+    for sensitive in sorted((str(item) for item in sensitive_values if item),key=len,reverse=True):
+        value=value.replace(sensitive,'[redacted]')
+    value=re.sub(r'https?://\S+|\S+@\S+|[A-Za-z0-9_+/=-]{24,}|\d{4,}', '[redacted]',value)
+    value=' '.join(value.split())
+    return ''.join(char for char in value if char.isprintable())[:240]
 
 
 class ProviderError(Exception):
@@ -150,10 +164,17 @@ def request_api(settings,path,values):
         with build_opener(NoRedirect).open(request,timeout=12) as result:
             raw=result.read(131073)
         parsed=parse_xml(raw)
-        # Error responses may be unsigned. Use their numeric code only for
-        # diagnostics; never return them as verified payment data.
+        # Error responses may be unsigned: log bounded diagnostics only,
+        # never return them as verified payment data.
         if parsed.get('pg_status')=='error':
-            raise ProviderError('Provider rejected request',code=parsed.get('pg_error_code'))
+            error=ProviderError('Provider rejected request',code=parsed.get('pg_error_code'))
+            description=safe_error_description(parsed.get('pg_error_description'),[secret,*data.values()])
+            merchant=data['pg_merchant_id']
+            logger.warning(
+                'Freedom Pay request rejected: method=%s api=%s merchant_id=%s merchant_present=%s lookup=%s content_type=application/x-www-form-urlencoded provider_code=%s unverified_description=%r',
+                path,api_base(settings),merchant if isinstance(merchant,str) and re.fullmatch(r'[0-9]{1,20}',merchant) else '[invalid]',
+                bool(merchant),'payment_id' if 'pg_payment_id' in data else 'order_id' if 'pg_order_id' in data else 'none',error.code or 'unknown',description)
+            raise error
         if not verify(path.rsplit('/',1)[-1],parsed,secret):
             raise ProviderError('Invalid provider signature')
         return parsed

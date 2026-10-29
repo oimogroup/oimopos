@@ -17,7 +17,7 @@ from app import freedompay as fp
     (b'<response><pg_status>ok</pg_status><pg_payment_status>success</pg_payment_status></response>',
      'invalid_signature'),
 ])
-def test_error_codes_are_bounded_and_unsigned_success_is_rejected(monkeypatch,body,expected):
+def test_error_codes_are_bounded_and_unsigned_success_is_rejected(monkeypatch,caplog,body,expected):
     cfg=SimpleNamespace(freedompay_api_base='https://api.freedompay.kg',
                         freedompay_merchant_id='123',
                         freedompay_secret_key=SimpleNamespace(get_secret_value=lambda:'test-secret'))
@@ -33,3 +33,17 @@ def test_error_codes_are_bounded_and_unsigned_success_is_rejected(monkeypatch,bo
     with pytest.raises(fp.ProviderError) as captured:
         fp.request_api(cfg,'/get_status3.php',{'pg_payment_id':'456'})
     assert fp.diagnostic(captured.value)==expected
+    if expected.startswith('provider_error_response'):
+        assert 'merchant_id=123 merchant_present=True lookup=payment_id' in caplog.text
+        assert 'api=https://api.freedompay.kg' in caplog.text
+        assert 'test-secret' not in caplog.text
+
+
+def test_description_redacts_secrets_identifiers_and_log_injection():
+    text='Invalid signature\nsecret-key salt-value 4111111111111111 user@example.com https://example.com/private'
+    safe=fp.safe_error_description(text,['secret-key','salt-value'])
+    assert 'Invalid signature' in safe
+    for value in ['secret-key','salt-value','4111111111111111','user@example.com','https://','\n']:
+        assert value not in safe
+    assert len(fp.safe_error_description('x '*500,[]))<=240
+    assert fp.safe_error_description({'nested':'private'},[])=='unavailable'
