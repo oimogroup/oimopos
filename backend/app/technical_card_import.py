@@ -76,7 +76,16 @@ def _number(value, row, label, *, zero=False):
         raise ValueError(f"Строка {row}: некорректное значение «{label}»") from None
     if not number.is_finite() or number < 0 or (not zero and number == 0):
         raise ValueError(f"Строка {row}: {label} должно быть положительным конечным числом")
-    return number
+    # Remove binary spreadsheet/JSON noise while retaining 15 significant digits.
+    with localcontext() as context:
+        context.prec = 15
+        return +number
+
+
+def _import_float(value):
+    with localcontext() as context:
+        context.prec = 15
+        return float(+Decimal(str(value)))
 
 
 def _table(rows, header):
@@ -112,14 +121,14 @@ def _table(rows, header):
                 "station": mapped.get("station", ""),
                 "process": mapped.get("process", ""),
                 "usedIn": mapped.get("usedIn", ""),
-                "yield": float(card_yield) if card_yield is not None else None,
-                "weight": float(weight) if weight is not None else None,
-                "price": float(price) if price is not None else None,
+                "yield": _import_float(card_yield) if card_yield is not None else None,
+                "weight": _import_float(weight) if weight is not None else None,
+                "price": _import_float(price) if price is not None else None,
                 "ingredient": ingredient_name,
                 "unit": normalize(mapped.get("unit", "")),
-                **{key: float(_number(mapped[key], number, key)) for key in ("netWeightGrams", "pieceWeightGrams") if mapped.get(key)},
-                "gross": float(gross),
-                "net": float(net),
+                **{key: _import_float(_number(mapped[key], number, key)) for key in ("netWeightGrams", "pieceWeightGrams") if mapped.get(key)},
+                "gross": _import_float(gross),
+                "net": _import_float(net),
             })
             if len(result) > MAX_ROWS:
                 raise ValueError("В файле должно быть не больше 1000 позиций")
@@ -383,7 +392,7 @@ def prepare_import(state, items):
                 output = _number(item["yield"], index, "выход")
             except ValueError:
                 raise ValueError(f"«{name}»: выход должен быть числом больше нуля") from None
-            if not math.isfinite(float(output)):
+            if not math.isfinite(_import_float(output)):
                 raise ValueError(f"«{name}»: выход должен быть конечным числом")
         if not station:
             raise ValueError(f"«{name}»: укажите цех")
@@ -401,16 +410,16 @@ def prepare_import(state, items):
             factor = units[source][1]
         gross = _number(item.get("gross", ""), index, "брутто") * factor
         net = _number(item.get("net") if item.get("net") not in (None, "") else item.get("gross", ""), index, "нетто") * factor
-        if net > gross or not math.isfinite(float(gross)) or not math.isfinite(float(net)):
+        if net > gross or not math.isfinite(_import_float(gross)) or not math.isfinite(_import_float(net)):
             raise ValueError(f"Строка {index}: проверьте брутто и нетто")
         key = (kind, normalize(name))
-        group = groups.setdefault(key, {**item, "card": name, "kind": kind, "station": station, "yield": float(output) if output is not None else None, "components": {}, "calculatedYield": Decimal(0), "missingPieceWeight": False})
-        if group["station"] != station or group["yield"] != (float(output) if output is not None else None):
+        group = groups.setdefault(key, {**item, "card": name, "kind": kind, "station": station, "yield": _import_float(output) if output is not None else None, "components": {}, "calculatedYield": Decimal(0), "missingPieceWeight": False})
+        if group["station"] != station or group["yield"] != (_import_float(output) if output is not None else None):
             raise ValueError(f"«{name}»: цех и выход должны совпадать во всех строках")
         explicit_mass = item.get("netWeightGrams")
         if explicit_mass is not None:
             explicit_mass = _number(explicit_mass, index, "нетто, г")
-            if not math.isfinite(float(explicit_mass)):
+            if not math.isfinite(_import_float(explicit_mass)):
                 raise ValueError(f"Строка {index}: нетто должно быть конечным числом")
             group["calculatedYield"] += explicit_mass
         elif target == "шт":
@@ -428,16 +437,16 @@ def prepare_import(state, items):
         if explicit_mass is not None:
             component["netWeightGrams"] = component.get("netWeightGrams", Decimal(0)) + explicit_mass
         if item.get("pieceWeightGrams") not in (None, ""):
-            component["pieceWeightGrams"] = float(_number(item["pieceWeightGrams"], index, "масса штуки"))
+            component["pieceWeightGrams"] = _import_float(_number(item["pieceWeightGrams"], index, "масса штуки"))
     result = []
     for group in groups.values():
-        components = [{key: float(value) if isinstance(value, Decimal) else value for key, value in c.items()} for c in group["components"].values()]
+        components = [{key: _import_float(value) if isinstance(value, Decimal) else value for key, value in c.items()} for c in group["components"].values()]
         if len(components) > 500 or any(not math.isfinite(c[k]) for c in components for k in ("gross", "net")):
             raise ValueError("Проверьте состав: максимум 500 ингредиентов и конечные количества")
         if group["yield"] is None:
             if group["missingPieceWeight"]:
                 raise ValueError(f"«{group['card']}»: укажите массу штуки для расчёта выхода или задайте выход вручную")
-            group["yield"] = float(group["calculatedYield"])
+            group["yield"] = _import_float(group["calculatedYield"])
             if not math.isfinite(group["yield"]) or group["yield"] <= 0:
                 raise ValueError(f"«{group['card']}»: проверьте состав для расчёта выхода")
         result.append({k: v for k, v in {**group, "components": components}.items() if k not in {"calculatedYield", "missingPieceWeight"}})

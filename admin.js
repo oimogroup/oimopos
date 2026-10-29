@@ -4280,9 +4280,21 @@ async function readFileAsDataUrl(file) {
   });
 }
 
+function cleanImportNumber(value) {
+  if (value === null || value === undefined || value === '') return value;
+  const number = Number(value);
+  return Number.isFinite(number) ? Number(number.toPrecision(15)) : number;
+}
+function cleanImportRow(row) {
+  for (const key of ['gross','net','yield','weight','price','pieceWeightGrams','netWeightGrams','limit','averageCost']) {
+    if (key in row) row[key] = cleanImportNumber(row[key]);
+  }
+  return row;
+}
 function importCardKey(row) { return `${row.kind || "техкарта"}:${row.card.trim().toLocaleLowerCase("ru")}`; }
 function importUnitFamily(unit) { return ({"кг":"mass","г":"mass","л":"volume","мл":"volume","шт":"count"})[unit]; }
 function calculateImportYields() {
+  technicalCardsPreviewRows.forEach(cleanImportRow);
   const groups = new Map();
   for (const row of technicalCardsPreviewRows) {
     const key = importCardKey(row);
@@ -4303,7 +4315,7 @@ function calculateImportYields() {
         output += net * weight / (unit === 'legacy-count' ? 1000 : 1);
       } else output += net * (['кг', 'л'].includes(unit) ? 1000 : 1);
     }
-    rows.forEach(row => {row.yield = complete && output > 0 ? Number(output.toFixed(9)) : null;});
+    rows.forEach(row => {row.yield = complete && output > 0 ? cleanImportNumber(output) : null;});
   }
   document.querySelectorAll('#technicalCardsImportPreview [data-import-yield]').forEach(input => {
     const row = technicalCardsPreviewRows[Number(input.dataset.importYield)];
@@ -4348,6 +4360,7 @@ function renderTechnicalCardsImportPreview(rows) {
     row.pieceWeightGrams ||= item?.pieceWeightGrams || null;
     const net = Number(row.net ?? row.gross);
     row.netWeightGrams ??= row.unit === 'шт' ? row.pieceWeightGrams > 0 ? net*row.pieceWeightGrams : null : net;
+    cleanImportRow(row);
   });
   technicalCardsPreviewRows = rows;
   calculateImportYields();
@@ -4388,7 +4401,7 @@ function renderTechnicalCardsImportPreview(rows) {
       const row = rows[Number(input.dataset.importPieceWeight)];
       row.pieceWeightGrams = input.value === '' ? null : Number(input.value);
       row.netWeightGrams = row.pieceWeightGrams > 0 ? Number(row.net ?? row.gross)*row.pieceWeightGrams : null;
-      container.querySelector(`[data-import-net="${Number(input.dataset.importPieceWeight)}"]`).value = row.netWeightGrams ?? '';
+      container.querySelector(`[data-import-net="${Number(input.dataset.importPieceWeight)}"]`).value = cleanImportNumber(row.netWeightGrams) ?? '';
     } else if (input.matches('[data-import-gross],[data-import-net],[data-import-unit]')) {
       const field = input.dataset.importGross !== undefined ? 'gross' : input.dataset.importNet !== undefined ? 'net' : 'unit';
       const index = Number(input.dataset.importGross ?? input.dataset.importNet ?? input.dataset.importUnit);
@@ -4401,7 +4414,7 @@ function renderTechnicalCardsImportPreview(rows) {
         container.querySelector(`[data-import-piece-field="${index}"]`).hidden = row.unit !== 'шт';
         row.net = row.gross;
         row.netWeightGrams = row.unit === 'шт' ? row.pieceWeightGrams > 0 ? row.gross*row.pieceWeightGrams : null : row.gross;
-        container.querySelector(`[data-import-net="${index}"]`).value = row.netWeightGrams ?? '';
+        container.querySelector(`[data-import-net="${index}"]`).value = cleanImportNumber(row.netWeightGrams) ?? '';
       }
     } else if (input.matches('[data-import-station],[data-import-yield]')) {
       const index = Number(input.dataset.importStation ?? input.dataset.importYield);
@@ -4474,7 +4487,7 @@ async function importIngredientsCsv(file) {
   const number = (value, label) => {
     const result = Number(String(value || "0").replace(/\s/g, "").replace(",", "."));
     if (!Number.isFinite(result) || result < 0) throw new Error(`Некорректное число: ${label}`);
-    return result;
+    return cleanImportNumber(result);
   };
   const names = new Set();
   for (let i = 1; i < lines.length; i++) {
@@ -4510,7 +4523,7 @@ async function importIngredientsCsv(file) {
     const key = name.toLocaleLowerCase("ru");
     if (names.has(key)) throw new Error(`Повторяется ингредиент: ${name}`);
     names.add(key);
-    parsed.push(payload);
+    parsed.push(cleanImportRow(payload));
   }
   if (!parsed.length || parsed.length > 500) throw new Error("Импортируйте от 1 до 500 ингредиентов");
   if (serverMode) {

@@ -63,3 +63,20 @@ def test_csv_without_net_column_uses_gross():
     rows = preview(state, base64.b64encode(data.encode()).decode(), 'test.csv')['rows']
     assert rows[0]['net'] == .5
     assert prepare_import(state, rows)[0]['yield'] == 500
+
+
+def test_import_removes_float_noise_from_file_and_merged_values():
+    csv = 'Карта;Вид;Ингредиент;Брутто;Нетто;Ед.;Цех\nТесто;полуфабрикат;Мука;5.760000000000001;5.760000000000001;г;Кухня'
+    state = {'ingredients':[{'id':'raw','name':'Мука','unit':'кг'}]}
+    rows = preview(state, base64.b64encode(csv.encode()).decode(), 'test.csv')['rows']
+    assert rows[0]['gross'] == 5.76
+    assert rows[0]['net'] == 5.76
+    group = prepare_import(state, rows)[0]
+    assert group['yield'] == 5.76
+    assert group['components'][0]['gross'] == 5.76
+
+
+def test_import_rounding_preserves_small_precise_quantities():
+    state = {'ingredients':[{'id':'raw','unit':'кг'}]}
+    group = prepare_import(state, [row(gross=.000123456789, net=.000123456789)])[0]
+    assert group['components'][0]['gross'] == .123456789
