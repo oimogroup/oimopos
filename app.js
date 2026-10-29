@@ -310,7 +310,7 @@ function renderCart() {
 }
 
 function chooseProduct(id) {
-  const product = products.find(item => item.id === String(id));
+  const product = products.find(item => item.id === String(id)) || products.find(item => item.parentId === String(id));
   if (!product?.variantName) return addProduct(id);
   const groupId = product.parentId || product.id;
   $("#productVariantDialog > p").textContent = "Выберите модификацию";
