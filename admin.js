@@ -1,6 +1,8 @@
 const authSessionKey = "ashkana-auth-session-v1";
 const pageParams = new URLSearchParams(location.search);
 const testMode = pageParams.get("test") === "1";
+// Preserve the requested destination before startup renderers update the URL.
+const startupWorkspaceRoute = location.hash.slice(1);
 
 function loadAuthSession() {
   if (testMode && pageParams.get("role") === "branch") {
@@ -7268,8 +7270,7 @@ document.addEventListener("keydown", (event) => {
   }
 });
 
-function routeInitialWorkspace() {
-  const initialView = location.hash.slice(1);
+function routeInitialWorkspace(initialView = location.hash.slice(1)) {
   if (initialView.startsWith("settings") && canAccessView("settings")) {
     switchView("settings");
     window.CompanySettings.open(initialView.split("/")[1] || "general");
@@ -7278,10 +7279,17 @@ function routeInitialWorkspace() {
     switchStockTab("supplies");
     openSupplyForm();
   } else if (currentRole !== "owner") {
-    if (initialView.startsWith("inventory/")) routeRoleWorkspace(initialView);
-    else if (initialView === "inventory") routeRoleWorkspace("inventory/overview");
-    else if (initialView === "logistics" && currentRole === "branch") routeRoleWorkspace("logistics");
-    else routeRoleWorkspace(defaultRoleRoute());
+    const [section, tab] = initialView.split("/");
+    const view = section === "menu" ? "recipes" : section;
+    if (!document.getElementById(`view-${view}`) || !canAccessView(view)) {
+      routeRoleWorkspace(defaultRoleRoute());
+    } else if (view === "inventory") routeRoleWorkspace(`inventory/${tab || "overview"}`);
+    else {
+      switchView(view);
+      if (view === "recipes") switchMenuPage(menuPageConfig[tab] ? tab : "recipes");
+      if (view === "reports") switchAnalyticsTab(tab || "sales");
+      if (view === "finance") switchFinanceTab(tab || "pnl");
+    }
   } else if (initialView === "supply") {
     switchView("inventory");
     switchStockTab("supplies");
@@ -7312,7 +7320,7 @@ function routeInitialWorkspace() {
     openStationForm();
   } else if (initialView.startsWith("menu/")) {
     switchView("recipes");
-    switchMenuPage(initialView.split("/")[1]);
+    switchMenuPage(menuPageConfig[initialView.split("/")[1]] ? initialView.split("/")[1] : "recipes");
   } else if (initialView.startsWith("inventory/")) {
     switchView("inventory");
     switchStockTab(initialView.split("/")[1]);
@@ -7325,9 +7333,27 @@ function routeInitialWorkspace() {
   } else if (initialView.startsWith("finance")) {
     switchView("finance");
     switchFinanceTab(initialView.split("/")[1] || "pnl");
-  } else if (initialView === "branches") {
-    switchView("dashboard");
-  } else if (document.querySelector(`#view-${initialView}`)) switchView(initialView);
+  } else if (document.getElementById(`view-${initialView}`)) switchView(initialView);
+  else switchView("dashboard");
+}
+
+// Keep scroll position for this user and route across a page reload.
+const workspaceScrollKey = `oimo-workspace-scroll:${currentSession.tenantSlug || ''}:${currentSession.login || ''}:${currentRole}`;
+window.addEventListener('pagehide', () => {
+  const content = document.querySelector('.admin-content');
+  try {
+    sessionStorage.setItem(workspaceScrollKey, JSON.stringify({route:location.hash, top:content?.scrollTop || 0, page:window.scrollY}));
+  } catch {}
+});
+function restoreWorkspaceScroll() {
+  try {
+    const saved = JSON.parse(sessionStorage.getItem(workspaceScrollKey) || 'null');
+    if (!saved || saved.route !== location.hash) return;
+    requestAnimationFrame(() => {
+      document.querySelector('.admin-content')?.scrollTo(0, Number(saved.top) || 0);
+      window.scrollTo(0, Number(saved.page) || 0);
+    });
+  } catch {}
 }
 
 function renderAccountNotice() {
@@ -7411,7 +7437,8 @@ async function initializeApplication() {
   applyRoleWorkspace();
   renderAccountNotice();
   renderAll();
-  routeInitialWorkspace();
+  routeInitialWorkspace(startupWorkspaceRoute);
+  restoreWorkspaceScroll();
 }
 
 window.ProductVariants.mount();
