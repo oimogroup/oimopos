@@ -15,6 +15,29 @@ class ProviderError(Exception):
     pass
 
 
+def diagnostic(error):
+    """Bounded diagnostics: never include response bodies, URLs or exception text."""
+    reasons={
+        'Unsafe provider response':'unsafe_response',
+        'Invalid provider XML':'invalid_xml',
+        'Invalid provider signature':'invalid_signature',
+        'Unsupported KG API endpoint':'unsupported_endpoint',
+        'Unsupported API method':'unsupported_method',
+        'Provider confirmation unavailable':'transport_failure',
+    }
+    reason=reasons.get(str(error),'payment_validation_failed') if isinstance(error,ProviderError) else 'payment_validation_failed'
+    cause=error.__cause__
+    if isinstance(cause,HTTPError):
+        return f'{reason} http_status={int(cause.code)}'
+    if isinstance(cause,URLError):
+        cause=cause.reason
+    if isinstance(cause,TimeoutError):
+        return f'{reason} cause=timeout'
+    if isinstance(cause,OSError):
+        return f'{reason} cause=network_error'
+    return reason
+
+
 def sign(script, values, secret):
     def flat(value):
         if isinstance(value,dict):

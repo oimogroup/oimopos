@@ -1,7 +1,7 @@
 from datetime import datetime, timezone
 from decimal import Decimal
 from types import SimpleNamespace
-from urllib.error import URLError
+from urllib.error import HTTPError, URLError
 from urllib.parse import parse_qs
 import hashlib
 
@@ -17,6 +17,18 @@ from app.config import Settings
 def config(**changes):
     seller={field:'' for field in (*legal.FIELDS,*legal.OPTIONAL_FIELDS)}
     return Settings(database_url='',public_app_url='https://oimo.example',freedompay_merchant_id='123',freedompay_secret_key=SecretStr('test-secret'),**{**seller,**changes})
+
+
+def test_diagnostics_distinguish_failures_without_leaking_provider_data():
+    error=fp.ProviderError('Provider confirmation unavailable')
+    error.__cause__=HTTPError('https://example.com/secret',403,'private response',{},None)
+    assert fp.diagnostic(error)=='transport_failure http_status=403'
+    error.__cause__=URLError(TimeoutError('private details'))
+    assert fp.diagnostic(error)=='transport_failure cause=timeout'
+    assert fp.diagnostic(fp.ProviderError('Invalid provider signature'))=='invalid_signature'
+    assert fp.diagnostic(fp.ProviderError('Invalid provider XML'))=='invalid_xml'
+    assert fp.diagnostic(ValueError('private payment data'))=='payment_validation_failed'
+    assert fp.diagnostic(fp.ProviderError('private response'))=='payment_validation_failed'
 
 
 def test_protocol_signature_uses_sorted_values_script_and_secret():

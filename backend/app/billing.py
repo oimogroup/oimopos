@@ -1,5 +1,6 @@
 """One-off SaaS subscription payments; restaurant operational ledgers are untouched."""
 import calendar
+import logging
 from datetime import datetime, timezone
 from decimal import Decimal, InvalidOperation
 import os
@@ -15,6 +16,8 @@ from psycopg.errors import UniqueViolation
 
 from . import freedompay, legal
 from .config import get_settings
+
+logger=logging.getLogger(__name__)
 
 
 def now():
@@ -303,6 +306,7 @@ def install(app):
             saved,_=settle(connection,order_id,values,settings,source='status')
             return public_order(saved)
         except (freedompay.ProviderError,ValueError,UniqueViolation) as exc:
+            logger.warning('Subscription payment refresh failed: order=%s method=get_status3.php reason=%s',order_id,freedompay.diagnostic(exc))
             raise HTTPException(502,'Не удалось подтвердить статус оплаты. Повторно оплачивать этот заказ не нужно; попробуйте проверить статус позже или свяжитесь с поддержкой.') from exc
 
     @app.post('/api/v1/billing/orders/{order_id}/refresh',tags=['billing'])
