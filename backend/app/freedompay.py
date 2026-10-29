@@ -12,7 +12,9 @@ import xml.etree.ElementTree as ET
 
 
 class ProviderError(Exception):
-    pass
+    def __init__(self, message, *, code=None):
+        super().__init__(message)
+        self.code=code if isinstance(code,str) and re.fullmatch(r'[0-9]{1,10}',code) else None
 
 
 def diagnostic(error):
@@ -24,8 +26,11 @@ def diagnostic(error):
         'Unsupported KG API endpoint':'unsupported_endpoint',
         'Unsupported API method':'unsupported_method',
         'Provider confirmation unavailable':'transport_failure',
+        'Provider rejected request':'provider_error_response',
     }
     reason=reasons.get(str(error),'payment_validation_failed') if isinstance(error,ProviderError) else 'payment_validation_failed'
+    if isinstance(error,ProviderError) and error.code:
+        reason+=f' provider_code={error.code}'
     cause=error.__cause__
     if isinstance(cause,HTTPError):
         return f'{reason} http_status={int(cause.code)}'
@@ -145,6 +150,10 @@ def request_api(settings,path,values):
         with build_opener(NoRedirect).open(request,timeout=12) as result:
             raw=result.read(131073)
         parsed=parse_xml(raw)
+        # Error responses may be unsigned. Use their numeric code only for
+        # diagnostics; never return them as verified payment data.
+        if parsed.get('pg_status')=='error':
+            raise ProviderError('Provider rejected request',code=parsed.get('pg_error_code'))
         if not verify(path.rsplit('/',1)[-1],parsed,secret):
             raise ProviderError('Invalid provider signature')
         return parsed

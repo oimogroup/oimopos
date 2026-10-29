@@ -300,7 +300,8 @@ def install(app):
             if not claimed: raise HTTPException(429,'Статус уже проверяется. Подождите 10 секунд.')
         connection.commit()
         try:
-            values=freedompay.request_api(settings,'/get_status3.php',{'pg_order_id':order_id,**({'pg_payment_id':order['provider_payment_id']} if order['provider_payment_id'] else {})})
+            lookup={'pg_payment_id':order['provider_payment_id']} if order['provider_payment_id'] else {'pg_order_id':order_id}
+            values=freedompay.request_api(settings,'/get_status3.php',lookup)
             if values.get('pg_status')!='ok' or values.get('pg_payment_id')=='0':
                 return public_order(order)
             saved,_=settle(connection,order_id,values,settings,source='status')

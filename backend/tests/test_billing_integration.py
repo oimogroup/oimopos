@@ -47,7 +47,11 @@ def system(monkeypatch):
             path=request.full_url.rsplit('/',1)[-1]
             values={key:entries[0] for key,entries in parse_qs(request.data.decode()).items()}
             assert fp.verify(path,values,'test-secret');calls.append((path,values))
-            identifier=values['pg_order_id']
+            identifier=values.get('pg_order_id')
+            if path=='get_status3.php':
+                assert ('pg_order_id' in values) != ('pg_payment_id' in values)
+                if identifier is None:
+                    identifier=next(key for key,row in provider_state.items() if isinstance(row,dict) and row.get('pg_payment_id')==values['pg_payment_id'])
             if path in ('init_payment','init_payment.php'):
                 if provider_state.get('timeout'): raise TimeoutError('mock uncertain response')
                 payment=str(uuid4().int % 10**25 + 1)
@@ -210,6 +214,8 @@ def test_test_mode_never_grants_live_service_and_status_can_reconcile_bound_paym
     state=system.state[live['id']];state.update(pg_payment_status='success',pg_captured='1');del state['pg_testing_mode']
     verified=system.client.post('/api/v1/billing/orders/'+live['id']+'/refresh',json={})
     assert verified.status_code==200,verified.text
+    assert system.calls[-1][1]['pg_payment_id']==state['pg_payment_id']
+    assert 'pg_order_id' not in system.calls[-1][1]
     assert verified.json()['status']=='paid' and subscription(system)['status']=='active'
 
 
