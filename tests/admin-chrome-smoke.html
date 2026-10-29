@@ -1,0 +1,39 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Save bars, checks and motion</title><pre id="results">RUNNING</pre>
+<iframe id="app" src="/admin?test=1#settings/general" style="width:1440px;height:900px;border:0"></iframe>
+<script>
+const f=document.querySelector('#app'),params=new URLSearchParams(location.search);
+if(params.has('preview'))f.style.cssText=`position:fixed;inset:0;width:${params.get('width') || '1440'}px;height:100%;border:0`;
+f.onload=async()=>{
+ const w=f.contentWindow,d=w.document,q=s=>d.querySelector(s),checks=[];
+ const check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');};
+ const pause=()=>new Promise(r=>setTimeout(r,220));
+ try{
+  check('test-mode',w.eval('testMode && !serverMode'));
+  for(const width of params.has('preview') ? [Number(params.get('width') || 1440)] : [1440,1024,700,390,320]){
+   f.style.width=width+'px';w.switchView('settings');w.CompanySettings.open('general');await pause();
+   const fields=q('#settingsFields'),bar=q('.settings-savebar'),content=q('.admin-content');
+   check('settings-scrolls-in-fields-'+width,w.getComputedStyle(fields).overflowY==='auto'&&fields.scrollHeight>fields.clientHeight);
+   for(const scroll of [0,fields.scrollHeight/2,fields.scrollHeight]){
+    fields.scrollTop=scroll;await pause();
+    const r=bar.getBoundingClientRect();check('savebar-no-bottom-gap-'+width+'-'+Math.round(scroll),Math.abs(r.bottom-content.getBoundingClientRect().bottom)<=1);
+    check('fields-end-at-savebar-'+width+'-'+Math.round(scroll),fields.getBoundingClientRect().bottom<=r.top+1);
+   }
+   q('#settingsSaveStatus').textContent='Сохранено. Обновите кассу, чтобы применить настройки.';await pause();
+   check('status-stays-in-footer-'+width,bar.scrollWidth<=bar.clientWidth+1);
+   w.openEmployeeForm();await pause();
+   const input=q('[data-employee-permission]');
+   check('permission-native-checkbox-'+width,w.getComputedStyle(input).appearance==='auto'&&['none','normal'].includes(w.getComputedStyle(input,'::after').content));
+   const original=input.checked;input.click();check('permission-click-toggles-'+width,input.checked!==original);input.click();
+   input.focus();check('permission-focus-visible-'+width,d.activeElement===input&&input.getBoundingClientRect().width<=24&&parseFloat(w.getComputedStyle(input).outlineWidth)>0);
+   const footer=q('#employeeModal .modal-actions');check('employee-footer-attached-'+width,Math.abs(footer.getBoundingClientRect().bottom-w.innerHeight)<=1);
+   if(params.get('preview')==='employee'){q('.mobile-access-editor-body')?.scrollTo(0,10000);q('#employeeModal > .admin-modal').scrollTop=10000;return;}
+   q('#employeeModal').classList.add('hidden');
+   const reduce=w.matchMedia('(prefers-reduced-motion: reduce)').matches;
+   check('button-feedback-motion-'+width,reduce ? w.getComputedStyle(q('#saveCompanySettings')).transitionDuration==='0s' : w.getComputedStyle(q('#saveCompanySettings')).transitionDuration.split(',').some(v=>parseFloat(v)>0));
+   check('motion-preference-'+width,reduce ? w.getComputedStyle(fields).animationName==='none' : w.getComputedStyle(fields).animationName==='oimo-content-enter');
+  }
+  if(params.get('preview')==='settings'){q('#settingsFields').scrollTop=350;return;}
+ }catch(e){check('runtime:'+e.stack,false);}
+ document.body.dataset.done='true';
+};
+</script></html>

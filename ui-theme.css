@@ -262,3 +262,12 @@
   .hero-description {font-size:16px;}
  }
 }
+
+@media screen and (prefers-reduced-motion:no-preference) {
+ @keyframes oimo-content-enter { from {opacity:0;} to {opacity:1;} }
+ body[data-ui=admin] :is(.admin-view,.menu-pane,.finance-pane,.analytics-pane,.stock-pane).active,
+ body[data-ui=admin] #settingsFields { animation:oimo-content-enter 160ms ease-out; }
+ body[data-ui=admin] .modal-backdrop:not(.hidden) > .admin-modal,
+ body[data-ui=admin] .side-drawer-backdrop:not(.hidden) > .detail-drawer { animation:oimo-content-enter 180ms ease-out; }
+ body[data-ui=admin] :is(button,a,input,select,textarea,summary):not(:disabled) { transition:background-color 150ms ease,border-color 150ms ease,color 150ms ease,box-shadow 150ms ease; }
+}
