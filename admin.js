@@ -4989,6 +4989,11 @@ async function saveIngredientForm() {
 function productById(id) { return products.find((product) => String(product.id) === String(id)); }
 
 let productPhotoDraft = "";
+let productPhotoToken = 0, productPhotoBusy = false;
+function setProductPhotoLoading(busy) {
+  productPhotoBusy = busy;
+  CatalogCover.loading($('#productCoverPreview'),$('#productPhotoStatus'),busy);
+}
 
 function openProductForm(productId = null) {
   const product = productById(productId);
@@ -5007,6 +5012,7 @@ function openProductForm(productId = null) {
   $("#productCategoryHint").textContent = "";
   $("#productBarcodeInput").value = product?.barcode || "";
   $("#productUnitInput").value = product?.unit || "шт";
+  productPhotoToken++; setProductPhotoLoading(false);
   productPhotoDraft = product?.image || "";
   $("#productPhotoInput").value = "";
   $("#productColorInput").value = product?.color || "#5b8fbd";
@@ -5070,6 +5076,7 @@ async function ensureProductCategory() {
 }
 
 async function saveProductForm(createAnother = false) {
+  if (productPhotoBusy) { showToast("Дождитесь загрузки фото"); return; }
   if (await window.ProductVariants.save(createAnother)) return;
   const name = $("#productNameInput").value.trim();
   const price = Math.max(0, Number($("#productPriceInput").value || 0));
@@ -7028,20 +7035,21 @@ function renderProductCover() {
 }
 $("#productColorInput").addEventListener("input", renderProductCover);
 $("#productNameInput").addEventListener("input", renderProductCover);
-$("#removeProductPhoto").addEventListener("click", () => { productPhotoDraft = ""; $("#productPhotoInput").value = ""; renderProductCover(); });
+$("#removeProductPhoto").addEventListener("click", () => { productPhotoToken++; setProductPhotoLoading(false); productPhotoDraft = ""; $("#productPhotoInput").value = ""; renderProductCover(); });
 $("#productPhotoInput").addEventListener("change", async event => {
   const file = event.target.files[0]; if (!file) return;
   if (!["image/jpeg", "image/png", "image/webp"].includes(file.type) || file.size > 2 * 1024 * 1024) { showToast("Выберите JPG, PNG или WebP размером до 2 МБ"); event.target.value = ""; return; }
-  const formId = editingProductId;
+  const token = ++productPhotoToken;
+  setProductPhotoLoading(true);
   try {
-    const data = await new Promise((resolve, reject) => { const reader = new FileReader(); reader.onload = () => resolve(reader.result); reader.onerror = reject; reader.readAsDataURL(file); });
-    const img = new Image(); img.src = data; await img.decode();
-    const canvas = document.createElement("canvas"), scale = Math.min(1, 640 / Math.max(img.width, img.height));
-    canvas.width = Math.max(1, Math.round(img.width * scale)); canvas.height = Math.max(1, Math.round(img.height * scale));
-    canvas.getContext("2d").drawImage(img, 0, 0, canvas.width, canvas.height);
-    if (editingProductId !== formId || event.target.files[0] !== file) return;
-    productPhotoDraft = canvas.toDataURL("image/png"); renderProductCover();
-  } catch { showToast("Не удалось открыть изображение"); }
+    const image = await CatalogCover.load(file);
+    if (token !== productPhotoToken) return;
+    productPhotoDraft = image; renderProductCover();
+  } catch (error) {
+    if (token === productPhotoToken) showToast(error.message || "Не удалось открыть изображение");
+  } finally {
+    if (token === productPhotoToken) { setProductPhotoLoading(false); event.target.value = ""; }
+  }
 });
 $("#productMarkupInput").addEventListener("input", () => {
   const cost = Number($("#productCostInput").value || 0), markup = Number($("#productMarkupInput").value);

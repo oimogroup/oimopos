@@ -4,13 +4,13 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=savebar-checks-12" />
+    <link rel="stylesheet" href="admin.css?v=photo-loading-1" />
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=catalog-actions-2" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=motion-9" />
   <link rel="stylesheet" href="/brand.css?v=1">
-<link rel="icon" href="/favicon.svg?v=2">
+<link rel="icon" href="/favicon.svg?v=3">
 </head>
   <body data-ui="admin">
     <svg class="ui-icon-sprite" aria-hidden="true">
@@ -49,7 +49,7 @@
     <div class="admin-shell">
       <aside class="sidebar" id="appSidebar">
         <div class="admin-brand">
-          <img class="admin-brand-mark oimo-symbol" src="/oimo-mark.svg" alt="Oimo" width="40" height="40">
+          <img class="admin-brand-mark oimo-symbol" src="/oimo-mark.svg?v=2" alt="Oimo" width="40" height="40">
           <div><b>Oimo</b><small id="workspaceLabel">Управление системой</small></div>
         </div>
 
@@ -513,7 +513,7 @@
     </div>
 
     <div class="modal-backdrop supply-page-backdrop hidden" id="supplyModal">
-      <div class="supply-sidebar-brand" aria-hidden="true"><img class="oimo-symbol oimo-symbol" src="/oimo-mark.svg" alt="Oimo" width="40" height="40"><strong>Oimo</strong></div>
+      <div class="supply-sidebar-brand" aria-hidden="true"><img class="oimo-symbol oimo-symbol" src="/oimo-mark.svg?v=2" alt="Oimo" width="40" height="40"><strong>Oimo</strong></div>
       <section class="admin-modal supply-document-modal">
         <header class="supply-page-header">
           <div class="supply-page-heading">
@@ -936,7 +936,7 @@
               <label><span>Штрихкод</span><input id="productBarcodeInput" type="text" inputmode="numeric" placeholder="Сканируйте или введите" /></label>
               <label><span>Единица измерения</span><select id="productUnitInput"><option value="шт">шт</option><option value="кг">кг</option><option value="л">л</option></select></label>
             </div>
-            <div class="product-cover-controls"><span class="product-row-label">Обложка</span><div class="product-cover-content"><div id="productCoverPreview" aria-label="Обложка товара"></div><div class="product-cover-actions"><label class="product-upload-button" for="productPhotoInput">Загрузить фото</label><input id="productPhotoInput" class="product-file-input" type="file" accept="image/jpeg,image/png,image/webp" /><small>JPG, PNG, WebP · до 2 МБ</small><button class="poster-action danger-button" id="removeProductPhoto" type="button">Удалить фото</button></div><label class="product-color-control"><input id="productColorInput" type="color" value="#5b8fbd" aria-label="Цвет обложки" /><span>Цвет</span></label></div></div>
+            <div class="product-cover-controls"><span class="product-row-label">Обложка</span><div class="product-cover-content"><div id="productCoverPreview" aria-label="Обложка товара"></div><div class="product-cover-actions"><label class="product-upload-button" for="productPhotoInput">Загрузить фото</label><input id="productPhotoInput" class="product-file-input" type="file" accept="image/jpeg,image/png,image/webp" /><small>JPG, PNG, WebP · до 2 МБ</small><small id="productPhotoStatus" role="status" aria-live="polite"></small><button class="poster-action danger-button" id="removeProductPhoto" type="button">Удалить фото</button></div><label class="product-color-control"><input id="productColorInput" type="color" value="#5b8fbd" aria-label="Цвет обложки" /><span>Цвет</span></label></div></div>
             <div class="product-options catalog-checks"><label><input id="productWeightedInput" type="checkbox" /><span><strong>Весовой товар</strong></span></label><label><input id="productNoDiscountInput" type="checkbox" /><span><strong>Не применять скидки</strong></span></label></div>
           </section>
 
@@ -1133,14 +1133,14 @@
     <script src="numeric-inputs.js?v=1"></script>
     <script src="api-client.js?v=technical-cards-url-2"></script>
     <script src="company-settings.js?v=actions-15"></script>
-    <script src="catalog-cover.js?v=catalog-poster-7"></script>
+    <script src="catalog-cover.js?v=photo-loading-1"></script>
     <script src="catalog-units.js?v=1"></script>
     <script src="ingredients-list.js?v=prices-per-kg-9"></script>
     <script src="ingredient-picker.js?v=1"></script>
     <script src="product-variants.js?v=aligned-fields-18"></script>
     <script src="recipe-variants.js?v=volumes-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=shared-cover-12"></script>
+    <script src="admin.js?v=photo-loading-1"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

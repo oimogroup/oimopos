@@ -1692,3 +1692,11 @@ body[data-ui=admin] .recipe-variant-toolbar :is(button,select) { min-height:40px
  body[data-ui=admin] #settingsSaveStatus { flex:1 1 240px; min-width:0; overflow-wrap:anywhere; }
  body[data-ui=admin] .modal-backdrop:not(.catalog-delete-backdrop) > .admin-modal > .modal-actions { background:#fff; box-shadow:none; margin-bottom:0; }
 }
+
+/* Photo processing feedback shared by catalogue editors. */
+.catalog-photo-loading{position:relative;isolation:isolate;min-width:48px;min-height:48px}
+.catalog-photo-loading::before{content:"";position:absolute;inset:0;background:rgba(255,255,255,.75);border-radius:inherit;z-index:1}
+.catalog-photo-loading::after{content:"";position:absolute;left:50%;top:50%;width:24px;height:24px;margin:-12px 0 0 -12px;box-sizing:border-box;border:3px solid #ddd;border-top-color:#633d60;border-radius:50%;animation:catalog-photo-spin .8s linear infinite;z-index:2}
+.catalog-photo-status{display:block;color:#633d60;font-size:13px;font-weight:500}
+@keyframes catalog-photo-spin{to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.catalog-photo-loading::after{animation:none}}
