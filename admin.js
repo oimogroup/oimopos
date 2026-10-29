@@ -2909,14 +2909,15 @@ function renderRecipes() {
   const query = $("#recipeSearch").value.trim().toLowerCase();
   const category = $("#recipeCategory").value;
   const station = $("#recipeStationFilter").value;
-  const visible = recipes.filter((recipe) => (!query || recipe.name.toLowerCase().includes(query)) && (category === "Все категории" || recipe.category === category) && (station === "Все цеха" || recipeStation(recipe) === station));
+  const visible = recipes.filter((recipe) => !recipe.parentId && (!query || [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].some(item=>item.name.toLowerCase().includes(query))) && (category === "Все категории" || recipe.category === category) && (station === "Все цеха" || recipeStation(recipe) === station));
   visible.sort((a,b)=>(catalogSortDescending.recipes ? -1 : 1)*a.name.localeCompare(b.name,'ru',{numeric:true}));
   syncCatalogSortHeading('recipes');
-  $("#recipeCount").textContent = recipes.length;
+  $("#recipeCount").textContent = recipes.filter(recipe=>!recipe.parentId).length;
   $("#ingredientCount").textContent = ingredients.length;
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
-    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.name)}</strong></div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${decimal(recipe.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(cost)}</strong></td><td class="catalog-number"><strong>${money(recipe.price)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-recipe-compose="${recipe.id}" type="button">Состав</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button></div></td></tr>`;
+    const variants=recipe.variantName ? [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))] : [];
+    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.groupName || recipe.name)}</strong>${variants.length ? `<small>${variants.length} модификаций · ${variants.map(item=>escapeHtml(item.variantName)).join(', ')}</small>` : ''}</div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${variants.length ? 'По модификациям' : `${decimal(recipe.yield,3)} <span class="catalog-unit">г</span>`}</td><td class="catalog-number"><strong>${variants.length ? 'По модификациям' : money(cost)}</strong></td><td class="catalog-number"><strong>${variants.length ? `от ${money(Math.min(...variants.map(item=>item.price)))}` : money(recipe.price)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" ${variants.length ? 'data-recipe-edit' : 'data-recipe-compose'}="${recipe.id}" type="button">${variants.length ? 'Составы' : 'Состав'}</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button></div></td></tr>`;
   }).join("") || '<tr class="table-empty"><td colspan="6">Техкарты не найдены. Измените поиск или категорию.</td></tr>';
 }
 
@@ -4662,7 +4663,8 @@ function updateRecipeLiveCalculation(event) {
 }
 
 function openRecipeForm(recipeId = null) {
-  const recipe = recipes.find((entry) => entry.id === recipeId);
+  let recipe = recipes.find((entry) => entry.id === recipeId);
+  if (recipe?.parentId) recipe = recipes.find(entry => String(entry.id) === String(recipe.parentId)) || recipe;
   editingRecipeId = recipe?.id || null;
   renderRecipeImportNotes("#recipeImportNotes", recipe);
   menuCategories = normalizeMenuCategories(menuCategories);
@@ -4682,12 +4684,14 @@ function openRecipeForm(recipeId = null) {
   recipeDraftComponents = recipe ? structuredClone(recipe.components) : [{ ingredientId: ingredients[0]?.id, gross: 100, net: 100 }];
   $("#deleteRecipeButton").classList.toggle("hidden", !recipe);
   renderRecipeComponentsEditor();
+  window.RecipeVariants.open(recipe);
   $("#recipeDrawer").classList.add("hidden");
   $("#recipeModal").classList.remove("hidden");
 }
 
 async function saveRecipeForm() {
   if (!CatalogCover.ready("recipe")) return;
+  if (await window.RecipeVariants.save()) return;
   syncRecipeDraftFromEditor();
   const name = $("#recipeNameInput").value.trim();
   const price = Math.max(0, Number($("#recipePriceInput").value || 0));
@@ -5148,9 +5152,10 @@ function logisticsUsesCatalogItem(itemId) {
 
 function catalogDeleteConstraint(kind, id) {
   const key = String(id);
-  if (kind === "product") {
-    for (const child of products.filter(item => item.parentId === key)) {
-      const reason = catalogDeleteConstraint("product", child.id);
+  if (kind === "product" || kind === "recipe") {
+    const collection = kind === "product" ? products : recipes;
+    for (const child of collection.filter(item => String(item.parentId) === key)) {
+      const reason = catalogDeleteConstraint(kind, child.id);
       if (reason) return `${child.name}: ${reason}`;
     }
   }
@@ -5225,7 +5230,7 @@ function deleteCatalogLocally({ kind, id }) {
     const index = collection.findIndex((entry) => String(entry.id) === String(id));
     if (index >= 0) collection.splice(index, 1);
   };
-  if (kind === "recipe") { removeById(recipes); saveRecipes(); }
+  if (kind === "recipe") { recipes.filter(item => String(item.parentId) === String(id)).forEach(item => deleteCatalogLocally({kind:"recipe", id:item.id})); removeById(recipes); saveRecipes(); }
   else if (kind === "preparation") { removeById(preparations); savePreparations(); }
   else if (kind === "ingredient") {
     [...recipes, ...preparations].forEach(item => { item.components = (item.components || []).filter(component => String(component.ingredientId) !== String(id)); });
@@ -7401,6 +7406,7 @@ async function initializeApplication() {
 }
 
 window.ProductVariants.mount();
+window.RecipeVariants.mount();
 window.IngredientsList.mount();
 window.CompanySettings.mount({
   session: currentSession,

@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=catalog-ledger-8" />
+    <link rel="stylesheet" href="admin.css?v=variant-volumes-9" />
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=catalog-actions-2" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
@@ -801,6 +801,14 @@
             <div class="recipe-form-grid catalog-form-grid"><label class="catalog-field-wide"><span>Название блюда</span><input id="recipeNameInput" type="text" placeholder="Например, Плов" /></label><label><span>Категория</span><select id="recipeCategoryInput"><option>Горячее</option><option>Первые</option><option>Салаты</option><option>Выпечка</option><option>Напитки</option></select></label><label><span>Цех приготовления</span><select id="recipeStationInput"></select></label><label><span>Цена продажи</span><div class="unit-input"><input id="recipePriceInput" type="number" min="0" value="0" /><b>сом</b></div></label></div>
           </section>
           <section class="catalog-form-section">
+            <label class="product-variant-mode"><input id="recipeVariantsEnabled" type="checkbox"> С модификациями <small>Разные объёмы или виды со своим составом и ценой</small></label>
+            <div id="recipeVariantsSection" class="hidden">
+              <div class="recipe-variant-toolbar"><select id="recipeVariantSelect" aria-label="Редактируемая модификация"></select><button id="addRecipeVariant" type="button" class="secondary-action">+ Добавить модификацию</button><button id="removeRecipeVariant" type="button" class="danger-button">Удалить новую</button></div>
+              <div class="catalog-form-grid"><label><span>Название модификации</span><input id="recipeVariantName" maxlength="80" placeholder="Например, 250 мл"></label><label><span>Объём / вес порции</span><input id="recipeVariantSize" type="number" min="0.001" step="any" placeholder="Например, 250"></label><label><span>Единица</span><select id="recipeVariantUnit"><option>мл</option><option>г</option><option>шт</option></select></label></div>
+              <p class="product-variant-help">Цена, выход и состав относятся к выбранной модификации. Новый вариант копирует текущий состав: укажите расход ингредиентов для его порции.</p>
+            </div>
+          </section>
+          <section class="catalog-form-section">
             <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Расход продуктов на одну порцию: брутто и нетто</p></div><button class="catalog-add-row secondary-action" id="addComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
             <div class="recipe-components-editor" id="recipeComponentsEditor"></div><div class="composition-output"><label class="catalog-calculated-field"><span>Выход блюда</span><div class="unit-input"><input id="recipeYieldInput" type="number" min="0.001" step="0.001" value="0" /><b>г</b></div><button id="recipeAutoYieldButton" class="catalog-auto-link" type="button">Рассчитать по нетто</button></label></div>
           </section>
@@ -1127,9 +1135,10 @@
     <script src="catalog-units.js?v=1"></script>
     <script src="ingredients-list.js?v=prices-per-kg-9"></script>
     <script src="ingredient-picker.js?v=1"></script>
-    <script src="product-variants.js?v=actions-15"></script>
+    <script src="product-variants.js?v=volumes-16"></script>
+    <script src="recipe-variants.js?v=volumes-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=import-rounding-10"></script>
+    <script src="admin.js?v=variants-volumes-11"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

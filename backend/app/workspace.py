@@ -563,11 +563,11 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
         output["stations"] = []
         output["ingredientCategories"] = []
         output["recipes"] = [
-            {key: recipe.get(key) for key in ("id", "name", "category", "price", "yield", "color", "image", "station", "availableToOrder", "availableLots")}
+            {key: recipe.get(key) for key in ("id", "name", "category", "price", "yield", "color", "image", "station", "availableToOrder", "availableLots", "groupName", "variantName", "parentId", "portionSize", "portionUnit")}
             for recipe in output["recipes"]
         ]
         output["products"] = [
-            {key: product.get(key) for key in ("id", "name", "category", "barcode", "price", "unit", "weighted", "noDiscount", "image", "color", "station", "groupName", "variantName", "parentId")}
+            {key: product.get(key) for key in ("id", "name", "category", "barcode", "price", "unit", "weighted", "noDiscount", "image", "color", "station", "groupName", "variantName", "parentId", "portionSize", "portionUnit")}
             for product in output["products"]
         ]
         logistics.pop("custodyDocuments", None)
@@ -1101,6 +1101,40 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         })
         return "preparation", str(preparation["id"])
 
+    if action == "recipe.group.upsert":
+        _owner(user)
+        draft = deepcopy(state)
+        existing = _find(draft["recipes"], payload.get("id"))
+        _require(not existing or not existing.get("parentId"), "Редактируйте основную карточку техкарты")
+        root_id = existing["id"] if existing else max([int(item["id"]) for item in draft["recipes"]] or [100]) + 1
+        variants = payload.get("variants")
+        _require(isinstance(variants, list) and 1 <= len(variants) <= 50, "Добавьте от 1 до 50 модификаций")
+        name = str(payload.get("name", "")).strip()
+        _require(name and len(name) <= 200, "Укажите название техкарты")
+        old_ids = {str(item["id"]) for item in draft["recipes"] if str(item.get("parentId")) == str(root_id) or str(item["id"]) == str(root_id)}
+        used_ids, used_names = set(), set()
+        for index, raw in enumerate(variants):
+            _require(isinstance(raw, dict), "Проверьте модификации")
+            variant_name = str(raw.get("name", "")).strip()
+            _require(variant_name and len(variant_name) <= 80 and variant_name.casefold() not in used_names, "Укажите разные названия модификаций")
+            used_names.add(variant_name.casefold())
+            variant_id = root_id if index == 0 else raw.get("id")
+            _require(index != 0 or not raw.get("id") or str(raw["id"]) == str(root_id), "Первая модификация должна сохранять код техкарты")
+            found = _find(draft["recipes"], variant_id)
+            _require(not raw.get("id") or found is not None, "Модификация не найдена")
+            _require(not found or str(found["id"]) in old_ids, "Некорректный код модификации")
+            _require(not found or str(found["id"]) not in used_ids, "Код модификации повторяется")
+            price = raw.get("price")
+            _require(isinstance(price, (int, float)) and isfinite(price) and price >= 0, "Укажите корректную цену модификации")
+            _, entity_id = apply_action(draft, user, "recipe.upsert", {**payload, **raw, "id": found["id"] if found else None, "name": f"{name} — {variant_name}"})
+            variant = _find(draft["recipes"], entity_id)
+            used_ids.add(str(variant["id"]))
+            variant.update({"groupName": name, "variantName": variant_name, "parentId": None if index == 0 else root_id})
+        _require(old_ids <= used_ids, "Сохранённые модификации нельзя исключать: сохраните историю производства и продаж", 409)
+        state.clear()
+        state.update(draft)
+        return "recipe", str(root_id)
+
     if action == "product.group.upsert":
         _owner(user)
         draft = deepcopy(state)
@@ -1134,6 +1168,10 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
 
     if action in {"ingredient.upsert", "product.upsert", "recipe.upsert"}:
         _owner(user)
+        if action != "ingredient.upsert" and "portionSize" in payload:
+            size = payload["portionSize"]
+            _require(size is None or (isinstance(size, (int, float)) and not isinstance(size, bool) and isfinite(size) and size > 0), "Укажите положительный объём или вес модификации")
+            _require(size is None or payload.get("portionUnit") in {"мл", "г", "шт"}, "Выберите мл, г или шт")
         collection_name = {"ingredient.upsert": "ingredients", "product.upsert": "products", "recipe.upsert": "recipes"}[action]
         collection = state[collection_name]
         entry = _find(collection, payload.get("id"))
@@ -1194,6 +1232,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             station = str(payload.get("station", "")).strip()
             _require(station, "Укажите цех приготовления")
             entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "station": station, "price": _number(payload.get("price")), "yield": output_yield, "color": str(payload.get("color", entry.get("color", "#6549d5"))), "components": components})
+        if collection_name != "ingredients" and "portionSize" in payload:
+            entry.update({"portionSize": payload["portionSize"], "portionUnit": payload.get("portionUnit") if payload["portionSize"] is not None else None})
         entry.update(_appearance(payload, entry))
         return collection_name[:-1], str(entry["id"])
 
@@ -1203,16 +1243,17 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         entry_id = str(payload.get("id", "")).strip()
         allowed = {"recipe", "preparation", "ingredient", "product", "menu-category", "ingredient-category", "station"}
         _require(kind in allowed and entry_id, "Неизвестная позиция справочника")
-        if kind == "product":
-            children = [row for row in state["products"] if row.get("parentId") == entry_id]
+        if kind in {"product", "recipe"}:
+            collection_name = "products" if kind == "product" else "recipes"
+            children = [row for row in state[collection_name] if str(row.get("parentId")) == entry_id]
             if children:
                 draft = deepcopy(state)
                 for row in children:
-                    apply_action(draft, user, "catalog.delete", {"kind": "product", "id": row["id"]})
-                apply_action(draft, user, "catalog.delete", {"kind": "product", "id": entry_id})
+                    apply_action(draft, user, "catalog.delete", {"kind": kind, "id": row["id"]})
+                apply_action(draft, user, "catalog.delete", {"kind": kind, "id": entry_id})
                 state.clear()
                 state.update(draft)
-                return "catalog-delete", f"product:{entry_id}"
+                return "catalog-delete", f"{kind}:{entry_id}"
         logistics = state["logisticsState"]
 
         def document_uses_item(item_id: str) -> bool:

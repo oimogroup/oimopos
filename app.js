@@ -78,6 +78,8 @@ function hydrateWorkspace(response) {
     unit: "порция",
     available: availableRecipePortions(recipe, branchId),
     availableLots: recipe.availableLots,
+    groupName: recipe.groupName || "", parentId: recipe.parentId == null ? "" : String(recipe.parentId), variantName: recipe.variantName || "",
+    portionSize: recipe.portionSize, portionUnit: recipe.portionUnit,
     kind: "recipe"
   }));
   const readyProducts = (workspaceState.products || []).map((product) => ({

@@ -210,7 +210,7 @@ def _authorize_staff_action(user: dict, action: str) -> None:
         required = "settings"
     elif action.startswith("finance."):
         required = "finance"
-    elif action in {"category.upsert", "station.upsert", "preparation.upsert", "ingredient.upsert", "ingredient.import", "product.upsert", "product.group.upsert", "recipe.upsert", "catalog.delete"}:
+    elif action in {"category.upsert", "station.upsert", "preparation.upsert", "ingredient.upsert", "ingredient.import", "product.upsert", "product.group.upsert", "recipe.upsert", "recipe.group.upsert", "catalog.delete"}:
         required = "menu"
     elif action in {"supplier.upsert", "supply.create", "order.create", "order.approve", "order.send", "order.receive", "transfer.create", "transfer.approve", "transfer.dispatch", "transfer.receive", "inventory.start", "inventory.save", "inventory.submit", "inventory.cancel", "inventory.return", "inventory.post"}:
         required = "inventory"

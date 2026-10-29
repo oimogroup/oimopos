@@ -1621,3 +1621,9 @@ body[data-ui=admin] #view-recipes td[data-ingredient-column=stock] strong {displ
 @media(max-width:700px) {
  body[data-ui=admin] #ingredientRegistry td {height:auto!important;min-height:0!important;}
 }
+
+/* Volume and portion variants share the catalog editor controls. */
+.variant-portion-fields { display: grid; grid-template-columns: minmax(0, 1fr) 76px; gap: 8px; margin-top: 8px; }
+.recipe-variant-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 16px 0; }
+.recipe-variant-toolbar select { flex: 1 1 200px; min-width: 0; }
+.recipe-variant-toolbar button { white-space: nowrap; }

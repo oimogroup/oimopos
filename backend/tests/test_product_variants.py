@@ -52,3 +52,17 @@ def test_delete_unused_group_and_station_protection():
     with pytest.raises(WorkspaceError): apply_action(state, OWNER, 'catalog.delete', {'kind':'station','id':payload['station']})
     apply_action(state, OWNER, 'catalog.delete', {'kind':'product','id':'juice'})
     assert not any(p.get('groupName')=='Сок' for p in state['products'])
+
+
+def test_product_variant_volumes_survive_edit_and_cashier_projection():
+    state = default_state()
+    payload, variants = create(state)
+    payload['variants'] = [{**row, 'id': item['id'], 'portionSize': size, 'portionUnit': 'мл'} for row, item, size in zip(payload['variants'], variants, [250, 500])]
+    apply_action(state, OWNER, 'product.group.upsert', payload)
+    exposed = visible_state(state, CASHIER)['products']
+    assert next(p for p in exposed if p['id'] == variants[1]['id'])['portionSize'] == 500
+    before = deepcopy(state)
+    payload['variants'][1]['portionSize'] = 0
+    with pytest.raises(WorkspaceError):
+        apply_action(state, OWNER, 'product.group.upsert', payload)
+    assert state == before
