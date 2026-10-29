@@ -1,0 +1,45 @@
+<!doctype html><html lang="ru"><meta charset="utf-8"><title>Catalog layout checks</title>
+<pre id="results">RUNNING</pre><iframe id="app" src="/admin?test=1#menu/products" style="width:1440px;height:1000px;border:0"></iframe>
+<script>
+const params=new URLSearchParams(location.search),only=params.get('screen');
+const frame=document.querySelector('#app');
+if(only)frame.style.cssText=`position:fixed;inset:0;width:${params.get('width') ? Number(params.get('width'))+'px' : '100%'};height:100%;border:0`;
+frame.onload=async()=>{
+ const w=frame.contentWindow,d=w.document,q=s=>d.querySelector(s),checks=[];
+ const check=(name,ok)=>{checks.push(`${ok?'PASS':'FAIL'}:${name}`);document.querySelector('#results').textContent=checks.join('|');};
+ const pause=()=>new Promise(r=>setTimeout(r,50));
+ const visible=e=>e.getBoundingClientRect().width>0 && e.getBoundingClientRect().height>0 && w.getComputedStyle(e).visibility!=='hidden';
+ function close(){d.querySelectorAll('.modal-backdrop').forEach(e=>e.classList.add('hidden'));}
+ function fit(id,name){
+  const modal=q('#'+id),r=modal.getBoundingClientRect();
+  check(name+'-dialog-fits',r.left>=-1&&r.right<=w.innerWidth+1);
+  check(name+'-controls-fit',[...modal.querySelectorAll('input:not([type=file]):not([type=hidden]),select,textarea')].filter(visible).every(el=>{const x=el.getBoundingClientRect();return x.left>=r.left-1&&x.right<=r.right+1;}));
+  check(name+'-checkboxes-compact',[...modal.querySelectorAll('input[type=checkbox],input[type=radio]')].filter(visible).every(e=>{const r=e.getBoundingClientRect();return r.width<=24&&r.height<=24;}));
+  const buttons=[...modal.querySelectorAll('.modal-actions button')].filter(visible);
+  check(name+'-footer-not-overlapping',buttons.every((a,i)=>buttons.slice(i+1).every(b=>{const x=a.getBoundingClientRect(),y=b.getBoundingClientRect();return x.right<=y.left+1||y.right<=x.left+1||x.bottom<=y.top+1||y.bottom<=x.top+1;})));
+ }
+ function product(){
+  w.openProductForm();q('#productNameInput').value='Ава';q('#productVariantsEnabled').checked=true;q('#productVariantsEnabled').dispatchEvent(new w.Event('change'));
+  q('[data-variant-name]').value='500 мл';q('[data-variant-size]').value='500';q('[data-variant-price]').value='85';q('#addProductVariant').click();
+  const row=q('#productVariantRows').children[1];row.querySelector('[data-variant-name]').value='1000 мл';row.querySelector('[data-variant-size]').value='1000';row.querySelector('[data-variant-price]').value='120';
+ }
+ const forms=[['products','productModal',product],['recipes','recipeModal',()=>w.openRecipeForm(201)],['recipe-variants','recipeModal',()=>{w.openRecipeForm(201);q('#recipeVariantsEnabled').checked=true;q('#recipeVariantsEnabled').dispatchEvent(new w.Event('change'));q('#recipeVariantName').value='300 г';q('#recipeVariantSize').value='300';q('#recipeVariantUnit').value='г';q('#addRecipeVariant').click();q('#recipeVariantName').value='500 г';q('#recipeVariantSize').value='500';}],['preparations','preparationModal',()=>w.openPreparationForm()],['ingredients','ingredientModal',()=>w.openIngredientForm('rice')],['categories','categoryModal',()=>w.openCategoryForm('menu',0)],['stations','stationModal',()=>w.openStationForm()],['suppliers','supplierModal',()=>w.openSupplierForm()],['finance','financeTransactionModal',()=>w.openFinanceTransactionForm()],['branches','branchModal',()=>w.openBranchForm()],['registers','registerModal',()=>w.openRegisterForm()]];
+ try{
+  check('loaded-real-admin',w.eval('testMode && !serverMode'));
+  if(only){const f=forms.find(f=>f[0]===only);close();f[2]();await pause();fit(f[1],only);if(params.has('metrics'))document.querySelector('#results').textContent=JSON.stringify([...q('.product-variant-row').querySelectorAll('label, input, select')].map(e=>({class:e.className,kind:e.tagName,attr:e.outerHTML.slice(0,70),top:e.getBoundingClientRect().top,height:e.getBoundingClientRect().height})));return;}
+  for(const width of [1440,1024,700,390,320]){
+   frame.style.width=width+'px';await pause();
+   for(const [name,id,open] of forms){close();open();await pause();fit(id,name+'-'+width);
+    if(name==='products'){
+     const row=q('.product-variant-row'),a=row.querySelector('[data-variant-size]').getBoundingClientRect(),b=row.querySelector('[data-variant-unit]').getBoundingClientRect();
+     check('volume-unit-one-line-'+width,Math.abs(a.top-b.top)<1&&Math.abs(a.height-b.height)<1&&a.right<=b.left+1);
+     if(row.getBoundingClientRect().width>680){const rects=[...row.querySelectorAll(':scope > label > input')].map(e=>e.getBoundingClientRect());check('variant-fields-aligned-'+width,rects.every(r=>Math.abs(r.top-a.top)<1));}
+     check('photo-overrides-start-collapsed-'+width,[...q('#productVariantRows').querySelectorAll('details')].every(e=>!e.open));
+    }
+   }
+  }
+  close();
+ }catch(e){check('runtime:'+e.stack,false);}
+ document.body.dataset.done='true';
+};
+</script></html>

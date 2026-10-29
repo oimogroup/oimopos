@@ -1636,3 +1636,49 @@ body[data-ui=admin] #productModal .variant-artwork-controls .variant-upload { di
 body[data-ui=admin] #productModal .variant-artwork-controls .variant-color-label { display:flex; flex:0 0 auto; align-items:center; gap:8px; width:auto; }
 body[data-ui=admin] #productModal .variant-artwork-controls input[type=color] { flex:0 0 42px; width:42px; min-width:42px; height:36px; padding:3px; }
 body[data-ui=admin] #productModal .variant-artwork-controls .variant-reset { width:auto; height:auto; min-height:40px; padding:8px 12px; white-space:nowrap; }
+
+/* Keep labels and controls in predictable columns, including composite measurements. */
+body[data-ui=admin] #productVariantRows { container-type:inline-size; }
+body[data-ui=admin] #productModal .product-variant-row { grid-template-columns:minmax(130px,1.2fr) minmax(145px,1fr) minmax(105px,1fr) minmax(78px,.6fr) minmax(85px,.7fr) 36px; align-items:start; gap:12px; padding:20px 0; margin:0; border-bottom:1px solid var(--line); }
+body[data-ui=admin] #productModal .product-variant-row > label { min-width:0; margin:0; display:grid; gap:8px; }
+body[data-ui=admin] #productModal .product-variant-row > label > span { margin:0; font-size:12px; line-height:18px; font-weight:400; }
+body[data-ui=admin] #productModal .variant-portion-fields { display:grid; grid-template-columns:minmax(0,1fr) 62px; gap:0; margin:0; min-width:0; }
+body[data-ui=admin] #productModal .variant-portion-fields > :is(input,select) { box-sizing:border-box; height:40px; min-width:0; width:100%; margin:0; }
+body[data-ui=admin] #productModal .variant-portion-fields > input { border-top-right-radius:0; border-bottom-right-radius:0; }
+body[data-ui=admin] #productModal .variant-portion-fields > select { border-left:0; border-top-left-radius:0; border-bottom-left-radius:0; padding-left:8px; padding-right:16px; }
+body[data-ui=admin] #productModal .product-variant-row > label > input { box-sizing:border-box; height:40px; margin:0; }
+body[data-ui=admin] #productModal .variant-remove { align-self:start; margin-top:26px; width:36px; }
+body[data-ui=admin] #productModal .variant-remove:disabled { visibility:hidden; }
+body[data-ui=admin] #productModal #addProductVariant { margin-top:18px; white-space:nowrap; }
+@container (max-width:680px) {
+ body[data-ui=admin] #productModal .product-variant-row { grid-template-columns:repeat(3,minmax(0,1fr)); }
+ body[data-ui=admin] #productModal .variant-field-name { grid-column:1; grid-row:1; }
+ body[data-ui=admin] #productModal .variant-field-size { grid-column:2; grid-row:1; }
+ body[data-ui=admin] #productModal .variant-field-price { grid-column:3; grid-row:1; }
+ body[data-ui=admin] #productModal .variant-field-barcode { grid-column:1; grid-row:2; }
+ body[data-ui=admin] #productModal .variant-field-markup { grid-column:2; grid-row:2; }
+ body[data-ui=admin] #productModal .variant-remove { grid-column:3; grid-row:2; justify-self:end; }
+}
+@container (max-width:480px) {
+ body[data-ui=admin] #productModal .product-variant-row { grid-template-columns:repeat(2,minmax(0,1fr)); }
+ body[data-ui=admin] #productModal .variant-field-name { grid-column:1/-1; grid-row:1; }
+ body[data-ui=admin] #productModal .variant-field-size { grid-column:1; grid-row:2; }
+ body[data-ui=admin] #productModal .variant-field-price { grid-column:2; grid-row:2; }
+ body[data-ui=admin] #productModal .variant-field-barcode { grid-column:1; grid-row:3; }
+ body[data-ui=admin] #productModal .variant-field-markup { grid-column:2; grid-row:3; }
+ body[data-ui=admin] #productModal .variant-remove { grid-column:2; grid-row:4; margin-top:0; }
+ body[data-ui=admin] #productModal .variant-remove:disabled { display:none; }
+}
+
+/* Checkboxes must not inherit the dimensions of text fields. */
+body[data-ui=admin] .admin-modal :is(input[type=checkbox],input[type=radio]) { width:16px; min-width:16px; max-width:16px; height:16px; min-height:16px; max-height:16px; padding:0; margin:0; flex:0 0 16px; align-self:center; }
+body[data-ui=admin] .admin-modal .product-variant-mode { display:flex; align-items:center; flex-wrap:wrap; gap:8px; margin:0; padding:0; line-height:1.5; }
+body[data-ui=admin] .admin-modal .product-variant-mode small { color:var(--muted); font-size:12px; min-width:0; overflow-wrap:break-word; }
+body[data-ui=admin] #recipeVariantsSection { padding-top:16px; }
+body[data-ui=admin] .recipe-variant-toolbar :is(button,select) { min-height:40px; }
+@media(max-width:700px) {
+ body[data-ui=admin] .admin-modal .product-variant-mode small { flex-basis:100%; margin-left:24px; }
+ body[data-ui=admin] .recipe-variant-toolbar { align-items:stretch; }
+ body[data-ui=admin] .recipe-variant-toolbar select { flex-basis:100%; }
+ body[data-ui=admin] .recipe-variant-toolbar button { flex:1 1 auto; }
+}

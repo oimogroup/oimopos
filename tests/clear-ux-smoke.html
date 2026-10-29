@@ -13,10 +13,11 @@ document.querySelector('#app').addEventListener('load', () => {
     const q=s=>d.querySelector(s),visible=e=>e.getClientRects().length>0;
     check('test-mode',w.eval('testMode && !serverMode'));
     const tools=q('.ux-tools'),filters=q('.ux-advanced-filters');
-    check('tools-start-collapsed',!tools.open && !visible(q('#exportIngredientsButton')));
+    check('columns-start-collapsed',!tools.open && !visible(q('#ingredientColumnOptions')));
+    check('import-export-always-available',visible(q('#exportIngredientsButton')) && visible(q('#importIngredientsButton')));
     check('extra-filters-start-collapsed',!filters.open && !visible(q('#ingredientStockFilter')));
     tools.querySelector('summary').click();
-    check('tools-available',tools.open && visible(q('#exportIngredientsButton')) && visible(q('#importIngredientsButton')));
+    check('columns-available',tools.open && visible(q('#ingredientColumnOptions')));
     q('#ingredientSearch').click();
     check('outside-click-closes-tools',!tools.open);
     filters.querySelector('summary').click();
