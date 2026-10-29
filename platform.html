@@ -9,7 +9,9 @@
       <link rel="stylesheet" href="oimo.css?v=actions-15" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=8" />
-  </head>
+  <link rel="stylesheet" href="/brand.css?v=1">
+<link rel="icon" href="/favicon.svg?v=2">
+</head>
   <body data-ui="platform">
     <svg class="icon-sprite" aria-hidden="true">
       <symbol id="icon-organizations" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 10h2m2 0h2m-6 4h2m2 0h2m-5 7v-3h4v3"/></symbol>
@@ -29,7 +31,7 @@
     </svg>
     <div class="platform-shell">
       <aside class="platform-sidebar">
-        <div class="platform-brand"><span>o</span><div><b>Oimo</b><small>Управление платформой</small></div></div>
+        <div class="platform-brand"><img class="oimo-symbol oimo-symbol" src="/oimo-mark.svg" alt="Oimo" width="40" height="40"><div><b>Oimo</b><small>Управление платформой</small></div></div>
         <nav aria-label="Навигация платформы"><p>Рабочее пространство</p><button class="active" type="button"><svg class="icon"><use href="#icon-organizations"/></svg><span>Клиенты</span></button><button id="openEventsButton" type="button"><svg class="icon"><use href="#icon-history"/></svg><span>Журнал действий</span></button></nav>
         <div class="platform-account"><span id="sessionInitials">ВП</span><div><b id="sessionName">Владелец платформы</b><small>Системный администратор</small></div><button class="icon-button" id="signOutButton" type="button" title="Выйти" aria-label="Выйти"><svg class="icon"><use href="#icon-logout"/></svg></button></div>
       </aside>

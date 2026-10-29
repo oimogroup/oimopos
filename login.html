@@ -10,7 +10,9 @@
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=8" />
     <script defer src="/password-visibility.js?v=1"></script>
-  </head>
+  <link rel="stylesheet" href="/brand.css?v=1">
+<link rel="icon" href="/favicon.svg?v=2">
+</head>
   <body data-ui="auth">
     <svg class="icon-sprite" aria-hidden="true">
       <symbol id="icon-platform" viewBox="0 0 24 24"><path d="M3 21h18M5 21V7l7-4 7 4v14M9 10h2m2 0h2m-6 4h2m2 0h2m-5 7v-3h4v3"/></symbol>
@@ -21,7 +23,7 @@
     </svg>
     <main class="auth-shell">
       <section class="auth-intro">
-        <a class="auth-brand" href="/" style="color:inherit;text-decoration:none" aria-label="Oimo — на главную"><span>o</span><div><b>Oimo</b><small>Для столовых и ресторанов</small></div></a>
+        <a class="auth-brand" href="/" style="color:inherit;text-decoration:none" aria-label="Oimo — на главную"><img class="oimo-wordmark" src="/oimo-logo.png" alt="Oimo" width="180" height="60"><small>Для столовых и ресторанов</small></a>
         <div class="auth-copy">
           <p id="authEyebrow">Единая система управления</p>
           <h1 id="authHeroTitle">Рабочее пространство для каждой организации</h1>
@@ -37,7 +39,7 @@
 
       <section class="auth-panel">
         <form class="login-card" id="loginForm">
-          <div class="mobile-brand"><span>o</span><b>Oimo</b></div>
+          <div class="mobile-brand"><img class="oimo-wordmark" src="/oimo-logo.png" alt="Oimo" width="180" height="60"></div>
           <header><p id="loginEyebrow">Вход в систему</p><h2 id="loginTitle">Вход в Oimo</h2><small id="loginDescription">Email владельца или логин сотрудника.</small></header>
           <p class="login-notice hidden" id="loginNotice">Администратор обновил доступ точки. Войдите с новым логином и паролем.</p>
           <label><span>Email / логин</span><input id="loginInput" name="login" type="text" autocomplete="username" required autofocus /></label>

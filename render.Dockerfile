@@ -17,7 +17,7 @@ COPY offline-review.js ./public/
 COPY pnl.js ./public/
 COPY receipt-printing.js ./public/
 COPY vendor ./public/vendor/
-COPY landing.html landing.css landing.js favicon.svg ./public/
+COPY landing.html landing.css landing.js favicon.svg oimo-logo.png oimo-mark.svg brand.css ./public/
 COPY billing.html billing.css billing.js platform-billing.js pos-supply-photo.js ./public/
 COPY account.html account.css account.js ./public/
 USER app
