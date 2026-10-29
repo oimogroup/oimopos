@@ -7021,6 +7021,7 @@ function renderProductCover() {
   const preview = $("#productCoverPreview");
   preview.style.backgroundColor = $("#productColorInput").value;
   $("#removeProductPhoto").classList.toggle("hidden", !productPhotoDraft);
+  window.ProductVariants?.refresh();
   preview.replaceChildren();
   if (productPhotoDraft) { const img = document.createElement("img"); img.src = productPhotoDraft; img.alt = "Фото товара"; preview.append(img); }
   else preview.textContent = $("#productNameInput").value.trim().slice(0, 1) || "А";

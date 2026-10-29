@@ -1627,3 +1627,12 @@ body[data-ui=admin] #view-recipes td[data-ingredient-column=stock] strong {displ
 .recipe-variant-toolbar { display: flex; flex-wrap: wrap; align-items: center; gap: 10px; margin: 16px 0; }
 .recipe-variant-toolbar select { flex: 1 1 200px; min-width: 0; }
 .recipe-variant-toolbar button { white-space: nowrap; }
+
+body[data-ui=admin] #productModal .product-variant-row > .variant-artwork { display:block; grid-column:1/-1; padding:0; margin:0; min-width:0; }
+body[data-ui=admin] #productModal .variant-artwork > summary { width:fit-content; cursor:pointer; color:#607180; font-size:12px; padding:6px 0; }
+body[data-ui=admin] #productModal .variant-artwork-controls { display:flex; flex-wrap:wrap; align-items:center; gap:12px; padding:12px 0; }
+body[data-ui=admin] #productModal .variant-artwork-controls .catalog-thumb { flex:0 0 48px; width:48px; height:48px; }
+body[data-ui=admin] #productModal .variant-artwork-controls .variant-upload { display:inline-flex; flex:0 0 auto; align-items:center; width:auto; min-height:40px; padding:8px 12px; white-space:nowrap; }
+body[data-ui=admin] #productModal .variant-artwork-controls .variant-color-label { display:flex; flex:0 0 auto; align-items:center; gap:8px; width:auto; }
+body[data-ui=admin] #productModal .variant-artwork-controls input[type=color] { flex:0 0 42px; width:42px; min-width:42px; height:36px; padding:3px; }
+body[data-ui=admin] #productModal .variant-artwork-controls .variant-reset { width:auto; height:auto; min-height:40px; padding:8px 12px; white-space:nowrap; }

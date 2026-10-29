@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=variant-volumes-9" />
+    <link rel="stylesheet" href="admin.css?v=variant-cover-10" />
     <link rel="stylesheet" href="minimal.css?v=actions-15" />
       <link rel="stylesheet" href="oimo.css?v=catalog-actions-2" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
@@ -939,7 +939,7 @@
           </section>
 
           <label class="product-variant-mode"><input id="productVariantsEnabled" type="checkbox"> С модификациями <small>Несколько видов товара со своими ценами и остатками</small></label>
-          <section class="catalog-form-section hidden" id="productVariantsSection"><div id="productVariantRows"></div><button class="poster-action secondary-action" id="addProductVariant" type="button">+ Добавить модификацию</button><p class="product-variant-help">Остаток и себестоимость учитываются отдельно для каждого вида. Наценка пересчитывает цену после появления себестоимости.</p></section>
+          <section class="catalog-form-section hidden" id="productVariantsSection"><div id="productVariantRows"></div><button class="poster-action secondary-action" id="addProductVariant" type="button">+ Добавить модификацию</button><p class="product-variant-help">Обложка выше общая для всех модификаций. Отдельное фото можно настроить в строке нужного варианта. Остатки и себестоимость учитываются отдельно.</p></section>
           <section class="catalog-form-section" id="productSinglePriceSection">
             <div class="catalog-section-heading"><div><h3>Цена и наценка</h3></div></div>
             <div class="product-price-grid"><label><span>Закупочная цена</span><div class="unit-input"><input id="productCostInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Цена продажи</span><div class="unit-input"><input id="productPriceInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Наценка</span><div class="unit-input"><input id="productMarkupInput" type="number" min="-100" step="0.01" value="0" /><b>%</b></div></label></div><small id="productMarkupValue"></small>
@@ -1135,10 +1135,10 @@
     <script src="catalog-units.js?v=1"></script>
     <script src="ingredients-list.js?v=prices-per-kg-9"></script>
     <script src="ingredient-picker.js?v=1"></script>
-    <script src="product-variants.js?v=volumes-16"></script>
+    <script src="product-variants.js?v=shared-cover-17"></script>
     <script src="recipe-variants.js?v=volumes-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=variants-volumes-11"></script>
+    <script src="admin.js?v=shared-cover-12"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>
