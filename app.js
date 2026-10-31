@@ -66,6 +66,7 @@ function hydrateWorkspace(response) {
   if (title) title.textContent = restaurant ? "Новый заказ" : "Что на подносе?";
   document.querySelector(".brand span").textContent = restaurant ? "Касса ресторана" : "Касса столовой";
   const branchId = currentSession.branchId;
+  window.OimoPwa?.configure(currentSession, (workspaceState.branches || []).find(row => String(row.id) === String(branchId)));
   const branchStock = workspaceState.logisticsState?.branchStocks?.[branchId] || {};
   const recipes = (workspaceState.recipes || []).map((recipe) => ({
     id: String(recipe.id),

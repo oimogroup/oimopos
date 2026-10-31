@@ -565,6 +565,19 @@ def login(payload: LoginInput, response: Response, request: Request, connection:
     return {"session": session}
 
 
+@app.get("/api/v1/pos/manifest.webmanifest", include_in_schema=False)
+def pos_manifest(user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    from .pos_manifest import build_manifest
+    if user.get("role") != "branch" or not user.get("branch_id"):
+        raise HTTPException(status_code=403, detail="Войдите в кассу точки")
+    state = _workspace_row(connection, user["tenant_id"])["payload"]
+    branch = next((row for row in state.get("branches", []) if str(row.get("id")) == str(user["branch_id"])), None)
+    if not branch:
+        raise HTTPException(status_code=404, detail="Точка не найдена")
+    return JSONResponse(build_manifest(branch), media_type="application/manifest+json",
+                        headers={"Cache-Control": "private, no-store", "Vary": "Cookie"})
+
+
 @app.get("/api/v1/auth/me", tags=["auth"])
 def me(user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
     state = None if user["role"] == "platform_owner" else _workspace_row(connection, user["tenant_id"])["payload"]

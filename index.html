@@ -11,8 +11,22 @@
     <link rel="stylesheet" href="/ui-theme.css?v=8" />
   <link rel="stylesheet" href="/brand.css?v=1">
 <link rel="icon" href="/favicon.svg?v=4">
+<link id="posManifest" rel="manifest" crossorigin="use-credentials">
+<meta name="theme-color" content="#202123">
+<meta name="apple-mobile-web-app-capable" content="yes">
+<meta name="apple-mobile-web-app-title" content="Oimo POS">
+<link rel="apple-touch-icon" href="/vendor/pwa/pos-180.png">
+<script defer src="/pos-pwa.js?v=location-1"></script>
 </head>
   <body data-ui="pos">
+    <dialog id="installPosDialog" aria-labelledby="installPosTitle" style="max-width:440px;width:calc(100% - 32px);padding:24px;border:1px solid #ddd;border-radius:12px">
+      <h2 id="installPosTitle">Установить кассу</h2>
+      <p id="installPosLocation"></p>
+      <p>В Chrome или Edge откройте меню браузера и выберите установку страницы как приложения.</p>
+      <p>На iPhone или iPad откройте кассу в Safari: «Поделиться» → «На экран Домой». На Mac в Safari: «Файл» → «Добавить в Dock».</p>
+      <p>После установки открывайте Oimo POS через значок приложения.</p>
+      <button type="button" id="closeInstallPos" class="secondary-button">Понятно</button>
+    </dialog>
     <svg class="ui-icon-sprite" aria-hidden="true">
       <symbol id="pos-receipt" viewBox="0 0 24 24"><path d="M6 3h12v18l-3-2-3 2-3-2-3 2V3Zm3 5h6m-6 4h6m-6 4h4"/></symbol>
       <symbol id="pos-settings" viewBox="0 0 24 24"><circle cx="12" cy="12" r="3"/><path d="M19.4 15a1.7 1.7 0 0 0 .3 1.9l.1.1-2.8 2.8-.1-.1a1.7 1.7 0 0 0-1.9-.3 1.7 1.7 0 0 0-1 1.6v.2h-4V21a1.7 1.7 0 0 0-1-1.6 1.7 1.7 0 0 0-1.9.3l-.1.1L4.2 17l.1-.1a1.7 1.7 0 0 0 .3-1.9A1.7 1.7 0 0 0 3 14H2.8v-4H3a1.7 1.7 0 0 0 1.6-1 1.7 1.7 0 0 0-.3-1.9L4.2 7 7 4.2l.1.1a1.7 1.7 0 0 0 1.9.3A1.7 1.7 0 0 0 10 3V2.8h4V3a1.7 1.7 0 0 0 1 1.6 1.7 1.7 0 0 0 1.9-.3l.1-.1L19.8 7l-.1.1a1.7 1.7 0 0 0-.3 1.9 1.7 1.7 0 0 0 1.6 1h.2v4H21a1.7 1.7 0 0 0-1.6 1Z"/></symbol>
@@ -95,7 +109,7 @@
         <button class="topbar-action hidden" id="closeProductionTerminal" type="button" aria-label="Закрыть терминал" title="Закрыть терминал — перейти к ПИН-коду"><svg class="ui-icon" aria-hidden="true"><use href="#pos-close"/></svg></button>
       </header>
 
-      <div class="offline-strip"><button type="button" id="offlineStatusButton" aria-controls="offlineDetails">Проверяем автономную кассу…</button></div>
+      <div class="offline-strip"><button type="button" id="offlineStatusButton" aria-controls="offlineDetails">Проверяем автономную кассу…</button><button type="button" id="installPosButton" hidden>Установить кассу</button></div>
 
       <section id="productionHome" class="production-home hidden">
         <h1>Производство и раздача</h1>
@@ -529,7 +543,7 @@
     <dialog id="offlineDetails" class="offline-dialog"><header><h2>Связь и сохранённые чеки</h2><button type="button" id="offlineDetailsClose" aria-label="Закрыть">×</button></header><p id="offlineMessage" role="status"></p><div id="offlineQueue"></div><footer><button type="button" id="offlineExportButton">Скачать копию очереди</button><button type="button" id="offlineSyncButton">Проверить связь и отправить</button></footer><small>Не очищайте данные браузера и не удаляйте приложение, пока есть неотправленные чеки. Удаление данных устройства удаляет его локальную очередь.</small></dialog>
     <script src="offline-pos-core.js?v=1"></script>
     <script src="offline-pos.js?v=1"></script>
-    <script src="app.js?v=recipe-variants-2"></script>
+    <script src="app.js?v=pwa-location-1"></script>
     <script src="pos-supply-photo.js?v=1"></script>
     <script src="work-time.js?v=1"></script>
   </body>

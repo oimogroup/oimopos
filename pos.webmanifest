@@ -1,0 +1,25 @@
+{
+  "id": "/pos",
+  "name": "Oimo — касса",
+  "short_name": "Oimo POS",
+  "lang": "ru",
+  "start_url": "/pos",
+  "scope": "/pos",
+  "display": "standalone",
+  "background_color": "#ffffff",
+  "theme_color": "#202123",
+  "icons": [
+    {
+      "src": "/vendor/pwa/pos-192.png",
+      "sizes": "192x192",
+      "type": "image/png",
+      "purpose": "any maskable"
+    },
+    {
+      "src": "/vendor/pwa/pos-512.png",
+      "sizes": "512x512",
+      "type": "image/png",
+      "purpose": "any maskable"
+    }
+  ]
+}
