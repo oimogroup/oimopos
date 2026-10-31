@@ -2,3 +2,12 @@
 :root .period-label{display:block;font-size:13px;color:var(--muted);margin-bottom:7px}#billingPeriod{display:block;width:100%;max-width:280px;border:1px solid var(--line);border-radius:9px;background:#fff;color:var(--ink);font:inherit;padding:10px 12px;margin-bottom:20px}#billingPeriod:focus-visible{outline:3px solid #ae88b2;outline-offset:4px}
 
 .brand{display:inline-flex;align-items:center;gap:12px;flex-shrink:0;line-height:1.2}.brand .brand-logo{display:block;width:180px;height:60px;object-fit:contain}.brand .brand-caption{font-size:14px;font-weight:400;border-left:1px solid var(--line);padding-left:15px;margin-left:0}@media(max-width:640px){.brand .brand-logo{width:126px;height:42px}.brand .brand-caption{display:none}}
+
+/* Give subscription controls breathing room inside the tinted payment panel. */
+.plan-card > div{min-width:0}
+.plan-card .payment{padding:24px;border:1px solid var(--line);border-radius:12px}
+.payment #billingPeriod{max-width:none;margin-bottom:22px}
+.payment #periodDescription{margin:12px 0 20px}
+.payment #availability{margin:18px 0;overflow-wrap:anywhere}
+.payment > small{margin-top:16px;line-height:1.6}
+@media(max-width:640px){.plan-card .payment{padding:20px}.plan-card{gap:24px}}
