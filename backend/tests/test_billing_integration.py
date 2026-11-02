@@ -222,8 +222,13 @@ def test_test_mode_never_grants_live_service_and_status_can_reconcile_bound_paym
 def test_expired_owner_can_pay_and_tenant_isolation_refunds_require_provider_proof(system):
     with system.connect() as connection:
         connection.execute("UPDATE tenant_subscriptions SET trial_ends_at=now()-interval '1 day' WHERE tenant_id=%s",(system.tenant,))
-    assert system.client.get('/api/v1/workspace').status_code==403
-    assert system.client.get('/api/v1/auth/me').json()['session']['route']=='/billing'
+    for path in ('/workspace', '/employees', '/pos/registers', '/pos/shifts'):
+        assert system.client.get('/api/v1'+path).status_code==200
+    session=system.client.get('/api/v1/auth/me').json()['session']
+    assert session['route']=='/admin#dashboard'
+    assert session['billingRequired'] is True
+    assert system.client.post('/api/v1/workspace/actions',json={}).status_code==403
+    assert system.client.get('/api/v1/workspace',headers={'x-ashkana-client':'pos'}).status_code==401
     order=checkout(system).json();assert callback(system,order).status_code==200
     assert system.client.get('/api/v1/workspace').status_code==200
     assert system.client.post('/api/v1/billing/orders/'+order['id']+'/refund-request',json={'reason':'Unused period refund'}).status_code==200

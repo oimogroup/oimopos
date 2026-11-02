@@ -252,7 +252,7 @@ def _user_session(user: dict, state: dict | None = None) -> dict:
         return {
             "login": user["login"], "role": "owner", "name": user["display_name"],
             "roleLabel": "Администратор компании", "scope": user.get("tenant_name") or "Аккаунт", "initials": "АК",
-            "accountVersion": user["account_version"], "route": "/billing" if tenant["billingRequired"] else "/admin#dashboard", **tenant,
+            "accountVersion": user["account_version"], "route": "/admin#dashboard", **tenant,
         }
     branch = next((entry for entry in state["branches"] if entry["id"] == user["branch_id"]), None)
     if not branch or branch.get("status") != "active":
@@ -348,7 +348,17 @@ def current_user(
             raise HTTPException(403, 'В браузере активирована другая касса. Вернитесь к исходной кассе для отправки её чеков.')
     if row.get("staff_role") == "production" and request.headers.get("x-ashkana-client", "").lower() != "pos" and request.url.path not in {"/api/v1/auth/me", "/api/v1/auth/logout"}:
         raise HTTPException(status_code=403, detail="Сотруднику производства доступен только терминал")
-    _validate_tenant_access(row, allow_billing=request.url.path in {"/api/v1/auth/me", "/api/v1/auth/logout", "/api/v1/auth/email", "/api/v1/auth/email/send"} or request.url.path.startswith("/api/v1/billing"))
+    # Owners can inspect their dashboard after expiry; operational writes and POS
+    # access still require an active subscription.
+    dashboard_read = (
+        request.method == "GET"
+        and request.headers.get("x-ashkana-client", "").lower() != "pos"
+        and request.url.path in {
+            "/api/v1/workspace", "/api/v1/employees",
+            "/api/v1/pos/registers", "/api/v1/pos/shifts",
+        }
+    )
+    _validate_tenant_access(row, allow_billing=dashboard_read or request.url.path in {"/api/v1/auth/me", "/api/v1/auth/logout", "/api/v1/auth/email", "/api/v1/auth/email/send"} or request.url.path.startswith("/api/v1/billing"))
     if row["role"] == "branch":
         state = _workspace_row(connection, row["tenant_id"])["payload"]
         branch = next((entry for entry in state["branches"] if entry.get("id") == row["branch_id"]), None)

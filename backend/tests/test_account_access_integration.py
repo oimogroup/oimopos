@@ -231,7 +231,9 @@ def test_expired_owner_can_confirm_email_without_extending_trial(system):
     with system.connect() as connection:
         connection.execute("UPDATE tenant_subscriptions SET trial_ends_at=now()-interval '1 day' WHERE tenant_id=%s",(system.tenant,))
         before=connection.execute('SELECT trial_ends_at FROM tenant_subscriptions WHERE tenant_id=%s',(system.tenant,)).fetchone()
-    assert system.client.get('/api/v1/workspace').status_code==403
+    assert system.client.get('/api/v1/workspace').status_code==200
+    assert system.client.get('/api/v1/auth/me').json()['session']['billingRequired'] is True
+    assert system.client.post('/api/v1/workspace/actions',json={}).status_code==403
     assert system.client.post('/api/v1/auth/email/send',json={}).status_code==200
     assert system.client.post('/api/v1/auth/email/verify',json={'token':queued_token(system,'verify')}).status_code==200
     with system.connect() as connection:

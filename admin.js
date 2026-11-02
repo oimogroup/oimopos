@@ -7393,6 +7393,13 @@ function renderAccountNotice() {
       trialNotice.append(link);
     }
   }
+  if (trialNotice && currentRole === 'owner' && currentSession.billingRequired) {
+    trialNotice.hidden = false;
+    trialNotice.textContent = 'Подписка завершена. Данные доступны для просмотра. Для продолжения работы продлите подписку. ';
+    const link = document.createElement('a');
+    link.href = '/billing'; link.textContent = 'Подписка и оплата';
+    trialNotice.append(link);
+  }
   if (trialNotice && currentRole === 'owner' && currentSession.emailVerified === false) {
     trialNotice.hidden=false;
     const link=document.createElement('a');link.href='/account?verify=1';link.textContent='Подтвердить email аккаунта';
@@ -7437,10 +7444,6 @@ async function initializeApplication() {
   if (!testMode) {
     try {
       const authResponse = await window.AshkanaApi.me();
-      if (authResponse.session.billingRequired && authResponse.session.role === 'owner') {
-        location.replace('/billing');
-        return;
-      }
       if (authResponse.session.role !== currentRole) {
         sessionStorage.setItem(authSessionKey, JSON.stringify(authResponse.session));
         location.replace(authResponse.session.route);
