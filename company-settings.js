@@ -16,7 +16,7 @@
     const en = r.language === "en";
     const money = value => currency(value, sale.currency || g.currency);
     const name = r.nameSource === "branch" ? branch.name || sale.branch : g.companyName || branch.name || sale.branch;
-    const logo = /^data:image\/(png|jpeg|gif);base64,[A-Za-z0-9+/=]+$/.test(g.logo) ? `<img class="receipt-logo" src="${escape(g.logo)}" alt="" />` : "";
+    const logo = /^data:image\/(png|jpeg|webp|gif);base64,[A-Za-z0-9+/=]+$/.test(g.logo) ? `<img class="receipt-logo" src="${escape(g.logo)}" alt="" />` : "";
     return `${logo}<h1>${escape(name || "Oimo")}</h1>${r.showAddress ? `<p>${escape([r.city, r.address, r.phone].filter(Boolean).join(" · "))}</p>` : ""}${r.showNumber ? `<p>${en ? "Receipt" : "Чек"} №${escape(sale.number)}</p>` : ""}${sale.offlineNumber && sale.offlineNumber !== String(sale.number) ? `<small>${en ? "Offline reference" : "Автономный код"}: ${escape(sale.offlineNumber)}</small>` : ""}<p>${new Date(sale.createdAt).toLocaleString(en ? "en-GB" : "ru-RU", { timeZone: g.timezone })}</p>${r.showCashier ? `<p>${en ? "Cashier" : "Кассир"}<b>${escape(sale.cashier || "—")}</b></p>` : ""}<hr>${(sale.items || []).map(item => `<p><span>${escape(item.name)} × ${item.quantity}</span><b>${money(item.price * item.quantity)}</b></p>`).join("")}${sale.discountAmount ? `<p>${en ? "Discount" : "Скидка"}<b>−${money(sale.discountAmount)}</b></p>` : ""}${sale.serviceAmount ? `<p>${en ? "Service" : "Обслуживание"}<b>${money(sale.serviceAmount)}</b></p>` : ""}${sale.deliveryAmount ? `<p>${en ? "Delivery" : "Доставка"}<b>${money(sale.deliveryAmount)}</b></p>` : ""}${sale.rounding ? `<p>${en ? "Rounding" : "Округление"}<b>−${money(sale.rounding)}</b></p>` : ""}<hr><p><strong>${en ? "Total" : "Итого"}</strong><b>${money(sale.total)}</b></p>${(Array.isArray(sale.payments) ? sale.payments : [{method:sale.paymentMethod,amount:sale.total}]).map(part=>`<p>${escape((en ? {cash:"Cash",card:"Card",qr:"QR"} : {cash:"Наличные",card:"Карта",qr:"QR"})[part.method] || part.method)}<b>${money(part.amount)}</b></p>`).join("")}${sale.change ? `<p>${en ? "Change" : "Сдача"}<b>${money(sale.change)}</b></p>` : ""}${r.showCustomer && sale.customerName ? `<p>${escape(sale.customerName)}</p>` : ""}${sale.orderType === "delivery" ? `<p>${escape(sale.deliveryAddress)}<br>${escape(sale.deliveryPhone)}</p>` : ""}${r.showComment && sale.comment ? `<p>${escape(sale.comment)}</p>` : ""}${r.showWifi ? `<p>Wi-Fi: ${escape(r.wifiName)}<br>${en ? "Password" : "Пароль"}: ${escape(r.wifiPassword)}</p>` : ""}<small>${escape(r.footer).replace(/\n/g, "<br>")}</small>`;
   }
   let data = normalize(), draft = normalize(), session = {}, active = "general", dirty = false, options, mounted = false;
@@ -44,7 +44,7 @@
     const tz = ["Asia/Almaty", "Asia/Bishkek", "Asia/Tashkent", "Europe/Moscow", "Europe/Kyiv", "Europe/Berlin", "UTC"];
     if (!tz.includes(draft.general.timezone)) tz.push(draft.general.timezone);
     const address = session.role === "owner" ? `<div class="settings-row workspace-address-row"><label for="workspaceSubdomain">Адрес рабочего пространства</label><div><div class="workspace-address-input"><input id="workspaceSubdomain" value="${escape(session.workspaceSubdomain || "")}" maxlength="48" autocomplete="off" autocapitalize="none" spellcheck="false" aria-describedby="workspaceAddressHelp"><span>.${escape(new URL(workspaceUrl("oimo")).hostname.split(".").slice(1).join("."))}</span></div><small id="workspaceAddressHelp">По этому адресу вы и команда будете открывать кабинет компании.</small><a class="workspace-address-link" id="workspaceAddressLink" href="${escape(workspaceUrl(session.workspaceSubdomain || "oimo") + "/login")}" target="_blank" rel="noopener">${escape(workspaceUrl(session.workspaceSubdomain || "oimo"))}/login</a><div class="workspace-address-actions"><button class="secondary-action" type="button" data-save-workspace-address ${options?.saveWorkspaceAddress ? "" : "disabled"}>Сохранить адрес</button><span id="workspaceAddressStatus" role="status"></span></div></div></div>` : "";
-    return group("Настройки компании", field("companyName", "Название компании", "text", "Будет печататься на чеке. Для разных названий точек выберите название заведения в настройках чека.", null, 'maxlength="120" required') + address + `<div class="settings-row"><label for="settingsLogo">Логотип</label><div><label class="settings-upload" for="settingsLogo">Загрузить…</label><input id="settingsLogo" type="file" accept="image/png,image/jpeg,image/gif" class="settings-file"><small>Будет печататься в шапке чека. JPEG, PNG или GIF, до 5 МБ.</small><div id="settingsLogoPreview">${draft.general.logo ? `<img src="${escape(draft.general.logo)}" alt="Логотип компании"><button class="danger-button" type="button" data-remove-logo>Удалить</button>` : ""}</div></div></div>`) +
+    return group("Настройки компании", field("companyName", "Название компании", "text", "Будет печататься на чеке. Для разных названий точек выберите название заведения в настройках чека.", null, 'maxlength="120" required') + address + `<div class="settings-row"><label for="settingsLogo">Логотип</label><div><label class="settings-upload" for="settingsLogo">Загрузить…</label><input id="settingsLogo" type="file" accept="image/png,image/jpeg,image/webp,image/gif" class="settings-file"><small>Будет печататься в шапке чека. JPEG, PNG, WebP или GIF, до 5 МБ.</small><div id="settingsLogoPreview">${draft.general.logo ? `<img src="${escape(draft.general.logo)}" alt="Логотип компании"><button class="danger-button" type="button" data-remove-logo>Удалить</button>` : ""}</div><small id="settingsLogoStatus" class="catalog-photo-status" role="status" aria-live="polite"></small></div></div>`) +
       group("Общие настройки", field("timezone", "Часовой пояс", "select", "Используется при печати чеков и выборе периода в статистике.", tz.map(z => [z, z])) + field("shiftEnd", "Время окончания смены", "time", "Начало отчётного дня. Например, при 05:00 продажи после полуночи до 05:00 относятся к предыдущему дню. Смена автоматически не закрывается.") + field("currency", "Денежная единица", "select", "Меняется обозначение валюты. Суммы не конвертируются.", [["KGS", "Кыргызский сом, сом"], ["KZT", "Казахстанский тенге, ₸"], ["RUB", "Российский рубль, ₽"], ["USD", "Доллар США, $"], ["EUR", "Евро, €"]]) + field("language", "Язык", "select", "Язык интерфейса аккаунта.", [["ru", "русский"]])) +
       group("Настройки кассы", field("floorPlan", "Показывать карту зала", "checkbox", "На кассе можно выбрать стол. Список столов настраивается в разделе «Заказы».") + unavailable("Использовать быструю смену официантов на кассе", "Смена сотрудника выполняется по личному PIN.") + field("fractional", "Разрешить заказывать часть порции", "checkbox", "Количество блюда можно изменить, например, на 0,5 или 1,5. Цена и списание пересчитываются пропорционально.") + field("roundTotal", "Округлять сумму заказа", "checkbox", "Сумма заказа округляется до целого числа в меньшую сторону (например, 10,60 → 10).") + field("servicePercent", "Процент за обслуживание", "select", "", [[0, "Не использовать"], ...[5, 7, 10, 12, 15, 20, 25, 30].map(n => [n, `${n}%`])]) + field("serviceDefault", "Добавлять обслуживание по умолчанию", "checkbox", "На кассе обслуживание можно включить или выключить для отдельного заказа.")) +
       group("Настройки администрирования", unavailable("Использовать производство тех. карт и полуфабрикатов", "Производство включено: продажи блюд учитывают готовые партии на раздаче.", true) + unavailable("Использовать кассовые смены", "Смены включены для учёта продаж и наличных на кассе.", true) + unavailable("Учитывать налоги", "Расчёт налогов ещё не подключён.") + unavailable("Использовать фискализацию", "Требуется подключение фискального регистратора. Сейчас печатается обычный чек.") + unavailable("Учитывать рабочее время сотрудников", "Табель рабочего времени ещё не подключён."));
@@ -100,6 +100,10 @@
     const form = event.currentTarget;
     const button = form.querySelector("#saveCompanySettings");
     const status = form.querySelector("#settingsSaveStatus");
+    if (form.querySelector("#settingsLogo")?.disabled) {
+      if (status) status.textContent = "Дождитесь обработки логотипа";
+      return;
+    }
     if (button) button.disabled = true;
     const section = active;
     const values = structuredClone(draft[section]);
@@ -131,12 +135,26 @@
     root().addEventListener("change", async event => {
       if (event.target.id !== "settingsLogo") return;
       const file = event.target.files[0];
+      const status = document.querySelector("#settingsLogoStatus");
+      const preview = document.querySelector("#settingsLogoPreview");
       if (!file) return;
-      if (!["image/png", "image/jpeg", "image/gif"].includes(file.type) || file.size > 5 * 1024 * 1024) { options.notify("Выберите JPEG, PNG или GIF размером до 5 МБ"); return; }
-      const reader = new FileReader();
-      reader.onload = () => { draft.general.logo = reader.result; render(); markDirty("Логотип выбран. Нажмите «Сохранить», чтобы применить его."); };
-      reader.onerror = () => options.notify("Не удалось прочитать логотип");
-      reader.readAsDataURL(file);
+      if (!["image/png", "image/jpeg", "image/webp", "image/gif"].includes(file.type) || file.size > 5 * 1024 * 1024) { options.notify("Выберите JPEG, PNG, WebP или GIF размером до 5 МБ"); event.target.value = ""; return; }
+      if (!window.CatalogCover) { options.notify("Не удалось подготовить изображение"); event.target.value = ""; return; }
+      event.target.disabled = true;
+      window.CatalogCover.loading(preview, status, true, "Сжимаем фото…");
+      try {
+        const processed = await window.CatalogCover.load(file, {maxDimension:1200,maxBytes:180*1024,maxInputBytes:5*1024*1024});
+        draft.general.logo = processed;
+        window.CatalogCover.loading(preview, status, false);
+        render();
+        markDirty("Логотип выбран. Нажмите «Сохранить», чтобы применить его.");
+      } catch (error) {
+        options.notify(error.message || "Не удалось прочитать логотип");
+      } finally {
+        window.CatalogCover.loading(preview, status, false);
+        event.target.disabled = false;
+        event.target.value = "";
+      }
     });
     root().addEventListener("click", event => {
       const saveAddress = event.target.closest("[data-save-workspace-address]");

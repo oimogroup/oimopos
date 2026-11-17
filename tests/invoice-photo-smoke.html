@@ -29,7 +29,8 @@
         const preview = params.has('preview');
         const width = Math.min(1920, Math.max(320, Number(params.get('width')) || 1280));
         const height = Math.min(1200, Math.max(320, Number(params.get('height')) || 900));
-        const source = await fetch('../pos').then(response => {
+        const sourceResponse = await fetch('../pos');
+        const source = await (sourceResponse.ok ? sourceResponse : fetch('../index.html')).then(response => {
           if (!response.ok) throw new Error(`POS shell: ${response.status}`);
           return response.text();
         });
@@ -105,7 +106,7 @@
                 lockPos: async () => ({}), logout: async () => ({})
               };
             <\/script>
-            <script src="/company-settings.js"><\/script><script src="/custody.js"><\/script><script src="/app.js"><\/script><script src="/pos-supply-photo.js"><\/script></body>`);
+            <script src="/catalog-cover.js"><\/script><script src="/company-settings.js"><\/script><script src="/custody.js"><\/script><script src="/app.js"><\/script><script src="/pos-supply-photo.js"><\/script></body>`);
         await new Promise(resolve => {frame.addEventListener('load', resolve, {once: true}); frame.srcdoc = shell;});
         const win = frame.contentWindow, doc = frame.contentDocument;
         const q = selector => doc.querySelector(selector);
@@ -134,18 +135,22 @@
         await until(() => q('#operatorLock').classList.contains('hidden') && !q('#supplyButton').classList.contains('hidden'), 'production operator ready');
         await win.openPosSupply();
         const photoId = 'photo-00000000-0000-4000-8000-000000000001';
-        const photoFile = new win.File(['mock-photo'], 'накладная.jpg', {type:'image/jpeg'});
+        const photoCanvas=doc.createElement('canvas');photoCanvas.width=64;photoCanvas.height=64;photoCanvas.getContext('2d').fillRect(0,0,64,64);
+        const photoData=photoCanvas.toDataURL('image/jpeg'),photoBytes=Uint8Array.from(win.atob(photoData.split(',')[1]),char=>char.charCodeAt(0));
+        const photoFile = new win.File([photoBytes], 'накладная.jpg', {type:'image/jpeg'});
         const cleanLines = () => {q('#posSupplyLines').innerHTML = ''; win.addPosSupplyLine();};
         const photo = () => win.SupplyPhotos.snapshot();
         const edit = (selector, value) => {const input = q(selector); input.value = value; input.dispatchEvent(new win.Event('input', {bubbles:true}));};
         const fakeDocument = (number, itemId, quantity, price, total) => ({supplierName:'Фрунзе Маркет',supplierId:'supplier-1',invoiceNumber:number,date:'2026-10-08',total,warnings:[],rows:[{name:items.find(item=>item.id===itemId).name,itemId,unit:items.find(item=>item.id===itemId).unit,quantity,price,total,warnings:[]}]});
         let uploads = 0, reads = 0;
-        win.AshkanaApi.uploadSupplyPhoto = async () => { uploads++; return {id:photoId,fileName:'накладная.jpg',usedDocumentIndexes:[]}; };
+        let uploadedPayload;
+        win.AshkanaApi.uploadSupplyPhoto = async payload => { uploadedPayload=payload;uploads++; return {id:photoId,fileName:payload.fileName,usedDocumentIndexes:[]}; };
         win.AshkanaApi.recognizeSupplyPhoto = async () => { reads++; return {documents:[fakeDocument('НК-1','rice',2,100,200),fakeDocument('НК-2','milk',3,80,240)]}; };
         check('production-has-visible-photo-button',visible(q('#posSupplyPhotoButton')) && q('#posSupplyPhotoButton').textContent.includes('Фото накладной'));
         check('image-picker-supports-phone-formats',q('#posSupplyPhotoFile').accept.includes('image/jpeg') && q('#posSupplyPhotoFile').accept.includes('image/png'));
         await win.SupplyPhotos.upload(photoFile);
-        check('upload-attaches-original-without-stock-write',uploads===1 && photo().id===photoId && win.__mock.writes.length===0);
+        check('upload-attaches-photo-without-stock-write',uploads===1 && photo().id===photoId && win.__mock.writes.length===0);
+        check('supply-photo-upload-is-compressed',uploadedPayload.file.length>0&&uploadedPayload.fileName.endsWith('.jpg'));
         check('unconfigured-ai-is-explained',q('#posSupplyPhotoRecognize').disabled && q('#posSupplyPhotoSetup').textContent.includes('не подключено'));
         check('original-can-be-opened-and-downloaded',q('#posSupplyPhotoOpen').href.includes('client=pos') && q('#posSupplyPhotoDownload').href.includes('download=true'));
         check('manual-supply-allowed-with-original',!win.SupplyPhotos.blocksSave() && !q('#savePosSupplyButton').disabled);

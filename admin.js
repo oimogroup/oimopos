@@ -5034,7 +5034,7 @@ let productPhotoDraft = "";
 let productPhotoToken = 0, productPhotoBusy = false;
 function setProductPhotoLoading(busy) {
   productPhotoBusy = busy;
-  CatalogCover.loading($('#productCoverPreview'),$('#productPhotoStatus'),busy);
+  CatalogCover.loading($('#productCoverPreview'),$('#productPhotoStatus'),busy,'Сжимаем фото…');
 }
 
 function openProductForm(productId = null) {

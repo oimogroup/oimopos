@@ -1,3 +1,4 @@
+import base64
 from custody_helpers import accepted_transfer
 from copy import deepcopy
 
@@ -47,6 +48,12 @@ def test_cashier_cannot_change_company_settings():
 def test_invalid_settings_rejected(section, values):
     with pytest.raises(ValueError):
         validate_settings_section(section, values)
+
+
+def test_webp_company_logo_is_accepted():
+    webp = base64.b64encode(b"RIFF\x00\x00\x00\x00WEBP").decode("ascii")
+    settings = validate_settings_section("general", {"logo": f"data:image/webp;base64,{webp}"})
+    assert settings["logo"].startswith("data:image/webp;base64,")
 
 
 def test_rounding_service_delivery_are_calculated_by_server():

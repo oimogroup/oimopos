@@ -7,8 +7,11 @@
   const amount = value => value === '' || value == null ? null : Number(value);
   const normal = value => String(value || '').trim().toLocaleLowerCase('ru-RU').replace(/ё/g, 'е').replace(/\s+/g, ' ');
   function message(text, error = false) {
-    q('posSupplyPhotoMessage').textContent = text;
-    q('posSupplyPhotoMessage').classList.toggle('pos-supply-import-error', error);
+    const status=q('posSupplyPhotoMessage');
+    status.textContent = text;
+    status.classList.toggle('pos-supply-import-error', error);
+    status.classList.toggle('catalog-photo-status', busy && !error);
+    status.setAttribute('aria-busy',String(busy && !error));
   }
   function links(photo) {
     if (!validId(photo?.id)) return '';
@@ -109,19 +112,21 @@
     if (!/\.(jpe?g|png|webp)$/i.test(file.name) || !file.size || file.size > 6000000) { message('Выберите фото JPG, PNG или WebP до 6 МБ.', true); return; }
     const token = ++generation, actor = activeOperator?.id, scope = supplyDraftKey();
     const current = () => generation === token && actor === activeOperator?.id && scope === supplyDraftKey() && !q('supplyDrawer').classList.contains('hidden');
-    busy = true; message('Загружаем фото…'); updatePosSupplyImportControls();
+    busy = true; message('Сжимаем фото…'); updatePosSupplyImportControls();
     try {
-      const bytes = new Uint8Array(await file.arrayBuffer());
-      let binary = '';
-      for (let i = 0; i < bytes.length; i += 8192) binary += String.fromCharCode(...bytes.subarray(i, i + 8192));
+      const image = await window.CatalogCover.load(file,{maxDimension:1800,maxBytes:1200*1024,maxInputBytes:6*1024*1024});
+      const mime = image.slice(5,image.indexOf(';'));
+      const extension = mime === 'image/png' ? '.png' : mime === 'image/webp' ? '.webp' : '.jpg';
+      const fileName = file.name.replace(/\.[^.]+$/,'') + extension;
       if (!current()) return;
-      const result = await window.AshkanaApi.uploadSupplyPhoto({file: btoa(binary), fileName: file.name});
+      message('Загружаем сжатое фото…');
+      const result = await window.AshkanaApi.uploadSupplyPhoto({file: image.slice(image.indexOf(',')+1), fileName});
       if (!current()) return;
       if (!validId(result.id)) throw new Error('Сервер не подтвердил сохранение фото');
-      state = {id: result.id, fileName: result.fileName || file.name, documents: [], index: 0, used: result.usedDocumentIndexes || [], appliedIndex: null};
+      state = {id: result.id, fileName: result.fileName || fileName, documents: [], index: 0, used: result.usedDocumentIndexes || [], appliedIndex: null};
       render(); persistSupplyDraft(); message('Фото прикреплено.');
     } catch (error) { if (current()) message(error.message || 'Не удалось загрузить фото', true); }
-    finally { if (generation === token) { busy = false; updatePosSupplyImportControls(); } }
+    finally { if (generation === token) { busy = false; message(q('posSupplyPhotoMessage').textContent,q('posSupplyPhotoMessage').classList.contains('pos-supply-import-error')); updatePosSupplyImportControls(); } }
   }
   async function recognize() {
     if (!state || busy || posSupplySaving || !operatorCan('posSupply') || !posSupplyContext.photoImport?.enabled) return;

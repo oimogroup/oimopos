@@ -72,7 +72,7 @@
       if(['SCRIPT','STYLE','IFRAME','OBJECT'].includes(tag))return;
       if(tag==='IMG') {
         const src=node.getAttribute('src')||'';
-        if(!/^data:image\/(png|jpeg|gif);base64,/i.test(src))return;
+        if(!/^data:image\/(png|jpeg|webp|gif);base64,/i.test(src))return;
         const img=new Image();img.src=src;
         try{await img.decode();}catch(_){throw new Error('Не удалось подготовить логотип чека. Проверьте изображение в настройках компании.');}
         const ratio=Math.min(available/img.width,120*scale/img.height,1);

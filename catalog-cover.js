@@ -7,20 +7,66 @@ window.CatalogCover = (() => {
   function thumb(item, name=item?.name || '') {
     return `<span class="catalog-thumb" style="background:${safeColor(item?.color)};color:${parseInt(safeColor(item?.color).slice(1,3),16)*0.299+parseInt(safeColor(item?.color).slice(3,5),16)*0.587+parseInt(safeColor(item?.color).slice(5,7),16)*0.114>150?'#302b32':'#ffffff'}">${safeImage(item?.image) ? `<img src="${esc(item.image)}" alt="">` : `<span>${esc(name.slice(0,1))}</span>`}</span>`;
   }
-  function loading(preview, status, busy) {
-    preview.classList.toggle('catalog-photo-loading',busy);
-    preview.setAttribute('aria-busy',String(busy));
-    status.textContent=busy?'Загрузка фото…':'';
-    status.classList.toggle('catalog-photo-status',busy);
+  function loading(preview, status, busy, message='Сжимаем фото…') {
+    preview?.classList.toggle('catalog-photo-loading',busy);
+    preview?.setAttribute('aria-busy',String(busy));
+    if(status){
+      status.textContent=busy?message:'';
+      status.classList.toggle('catalog-photo-status',busy);
+      status.setAttribute('aria-busy',String(busy));
+    }
   }
-  async function load(file) {
-    if (!file || !['image/png','image/jpeg','image/webp'].includes(file.type) || file.size>2*1024*1024) throw new Error('Выберите JPG, PNG или WebP размером до 2 МБ');
+  const dataUrlBytes = value => Math.ceil((value.length - value.indexOf(',') - 1) * 3 / 4);
+  async function load(file, {maxDimension=640,maxBytes=220*1024,maxInputBytes=2*1024*1024}={}) {
+    if (!file || !['image/png','image/jpeg','image/webp','image/gif'].includes(file.type) || file.size>maxInputBytes) throw new Error(`Выберите JPG, PNG, WebP или GIF размером до ${Math.round(maxInputBytes/1024/1024)} МБ`);
     const data=await new Promise((resolve,reject)=>{const reader=new FileReader();reader.onload=()=>resolve(reader.result);reader.onerror=reject;reader.readAsDataURL(file);});
-    const img=new Image();img.src=data;await img.decode();
-    const canvas=document.createElement('canvas'),scale=Math.min(1,640/Math.max(img.width,img.height));
-    canvas.width=Math.max(1,Math.round(img.width*scale));canvas.height=Math.max(1,Math.round(img.height*scale));
-    canvas.getContext('2d').drawImage(img,0,0,canvas.width,canvas.height);
-    return canvas.toDataURL('image/png');
+    const img=await new Promise((resolve,reject)=>{
+      const image=new Image();
+      image.onload=()=>resolve(image);
+      image.onerror=()=>reject(new Error('Не удалось открыть изображение'));
+      image.src=data;
+      if(image.complete){if(image.naturalWidth)resolve(image);else reject(new Error('Не удалось открыть изображение'));}
+    });
+    if (!img.naturalWidth || !img.naturalHeight || img.naturalWidth*img.naturalHeight>40000000) throw new Error('Слишком большое разрешение изображения');
+    const canvas=document.createElement('canvas');
+    const scale=Math.min(1, maxDimension/Math.max(img.width,img.height));
+    canvas.width=Math.max(1,Math.round(img.width*scale));
+    canvas.height=Math.max(1,Math.round(img.height*scale));
+    const ctx=canvas.getContext('2d');
+    const draw = (whiteBackground=false) => {
+      ctx.clearRect(0,0,canvas.width,canvas.height);
+      if(whiteBackground){ctx.fillStyle='#fff';ctx.fillRect(0,0,canvas.width,canvas.height);}
+      ctx.drawImage(img,0,0,canvas.width,canvas.height);
+    };
+    const encode = (mime,quality) => {
+      const value=canvas.toDataURL(mime,quality);
+      return {value,mime:value.slice(5,value.indexOf(';'))};
+    };
+    const photo = file.type !== 'image/png';
+    draw(photo);
+    let output, mime, quality=0.76;
+    if(!photo){
+      ({value:output,mime}=encode('image/png'));
+      if(dataUrlBytes(output)>maxBytes){quality=0.82;({value:output,mime}=encode('image/webp',quality));}
+    }else{
+      ({value:output,mime}=encode('image/jpeg',quality));
+    }
+    if(mime==='image/png' && dataUrlBytes(output)>maxBytes){
+      quality=0.76;draw(true);({value:output,mime}=encode('image/jpeg',quality));
+    }
+    for(let i=0;i<6 && dataUrlBytes(output)>maxBytes;i++){
+      quality=Math.max(0.35,quality-0.1);
+      ({value:output,mime}=encode(mime==='image/webp'?'image/webp':'image/jpeg',quality));
+      if(mime==='image/png'){draw(true);({value:output,mime}=encode('image/jpeg',quality));}
+    }
+    for(let i=0;i<5 && dataUrlBytes(output)>maxBytes && Math.max(canvas.width,canvas.height)>320;i++){
+      canvas.width=Math.max(1,Math.round(canvas.width*0.8));
+      canvas.height=Math.max(1,Math.round(canvas.height*0.8));
+      draw(mime!=='image/webp');
+      ({value:output,mime}=encode(mime==='image/webp'?'image/webp':'image/jpeg',quality));
+      if(mime==='image/png'){draw(true);({value:output,mime}=encode('image/jpeg',quality));}
+    }
+    return output;
   }
   function open(prefix, item={}, externalColorId='') {
     const modal=document.getElementById(prefix+'Modal');

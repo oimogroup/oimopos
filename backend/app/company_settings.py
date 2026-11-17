@@ -45,15 +45,18 @@ class GeneralSettings(SettingsModel):
     def valid_logo(cls, value):
         if not value:
             return value
-        match = re.fullmatch(r"data:image/(png|jpeg|gif);base64,([A-Za-z0-9+/=]+)", value)
+        match = re.fullmatch(r"data:image/(png|jpeg|webp|gif);base64,([A-Za-z0-9+/=]+)", value)
         if not match:
-            raise ValueError("Логотип должен быть JPEG, PNG или GIF")
+            raise ValueError("Логотип должен быть JPEG, PNG, WebP или GIF")
         try:
             data = base64.b64decode(match[2], validate=True)
         except ValueError:
             raise ValueError("Повреждённый файл логотипа")
-        signatures = {"png": b"\x89PNG\r\n\x1a\n", "jpeg": b"\xff\xd8\xff", "gif": b"GIF8"}
-        if len(data) > 5 * 1024 * 1024 or not data.startswith(signatures[match[1]]):
+        signatures = {"png": b"\x89PNG\r\n\x1a\n", "jpeg": b"\xff\xd8\xff", "gif": b"GIF8", "webp": b"RIFF"}
+        valid_signature = data.startswith(signatures[match[1]])
+        if match[1] == "webp":
+            valid_signature = valid_signature and len(data) >= 12 and data[8:12] == b"WEBP"
+        if len(data) > 5 * 1024 * 1024 or not valid_signature:
             raise ValueError("Проверьте формат и размер логотипа (до 5 МБ)")
         return value
 
