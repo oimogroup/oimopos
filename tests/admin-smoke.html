@@ -99,11 +99,10 @@
           doc.querySelector("#ingredientModal").classList.add("hidden");
           win.openRecipeForm(201);
           check("ingredient-in-recipes", [...doc.querySelectorAll("#recipeComponentsEditor option")].some((option) => option.textContent === "Тестовый ингредиент"));
-          const originalYield = Number(doc.querySelector("#recipeYieldInput").value);
           const firstRecipeNet = doc.querySelector("#recipeComponentsEditor .component-net");
           firstRecipeNet.value = "160";
           firstRecipeNet.dispatchEvent(new Event("input", { bubbles: true }));
-          check("recipe-yield-explicit", Number(doc.querySelector("#recipeYieldInput").value) === originalYield && !doc.querySelector("#recipeYieldInput").readOnly);
+          check("recipe-yield-calculated-readonly", Number(doc.querySelector("#recipeYieldInput").value) === win.calculateRecipeYield() && doc.querySelector("#recipeYieldInput").readOnly);
           doc.querySelector("#recipeModal").classList.add("hidden");
 
           win.switchMenuPage("preparations");
@@ -366,7 +365,7 @@
           doc.querySelector("#recipeNameInput").value = "Тестовое блюдо";
           doc.querySelector("#recipePriceInput").value = "150";
           doc.querySelector("#recipeYieldInput").value = "100";
-          win.saveRecipeForm();
+          await win.saveRecipeForm();
           check("recipe-create", JSON.parse(win.localStorage.getItem("ashkana-admin-recipes-v1") || "[]").length === recipesBefore + 1);
           const testRecipe = JSON.parse(win.localStorage.getItem("ashkana-admin-recipes-v1") || "[]").find((recipe) => recipe.name === "Тестовое блюдо");
           win.openRecipeForm(testRecipe.id);

@@ -4695,7 +4695,7 @@ function updateRecipeLiveCalculation(event) {
   if (event?.target) updateCompositionInput(event);
   if (document.querySelector('#recipeComponentsEditor .component-editor-row')) syncRecipeDraftFromEditor();
   const output = calculateRecipeYield();
-  if ($('#recipeYieldInput').dataset.auto !== 'false') $('#recipeYieldInput').value = output ?? '';
+  $('#recipeYieldInput').value = output ?? '';
   const price = Number($('#recipePriceInput').value || 0);
   const cost = recipeCost({components:recipeDraftComponents});
   $('#recipeLiveCost').textContent = money(cost);
@@ -4721,8 +4721,7 @@ function openRecipeForm(recipeId = null) {
   $("#recipeCategoryInput").value = recipe?.category || (menuCategories.some((category) => category.name === "Горячее") ? "Горячее" : menuCategories[0]?.name || "Без категории");
   $("#recipeStationInput").value = recipe ? recipeStation(recipe) : stationNames[0] || "";
   $("#recipePriceInput").value = recipe?.price || 0;
-  $("#recipeYieldInput").value = recipe?.yield || 0;
-  $("#recipeYieldInput").dataset.auto = recipe?.yield ? "false" : "true";
+  $("#recipeYieldInput").value = "";
   recipeDraftComponents = recipe ? structuredClone(recipe.components) : [{ ingredientId: ingredients[0]?.id, gross: 100, net: 100 }];
   $("#deleteRecipeButton").classList.toggle("hidden", !recipe);
   renderRecipeComponentsEditor();
@@ -4737,10 +4736,10 @@ async function saveRecipeForm() {
   syncRecipeDraftFromEditor();
   const name = $("#recipeNameInput").value.trim();
   const price = Math.max(0, Number($("#recipePriceInput").value || 0));
-  const recipeYield = Math.max(0, Number($("#recipeYieldInput").value || 0));
+  const recipeYield = calculateRecipeYield();
   const station = $("#recipeStationInput").value;
-  if (!name || !station || !price || !recipeDraftComponents.length || recipeYield <= 0) {
-    showToast("Заполните название, цех, цену и состав блюда с ненулевым нетто");
+  if (!name || !station || !price || !recipeDraftComponents.length || recipeYield == null || recipeYield <= 0) {
+    showToast("Заполните название, цех и цену; проверьте нетто и массу ингредиентов в штуках");
     return;
   }
   const existing = recipes.find((entry) => entry.id === editingRecipeId);
@@ -4817,7 +4816,7 @@ function updatePreparationCalculation(event) {
   if (event?.target) updateCompositionInput(event,true);
   if (document.querySelector('.preparation-component-row')) syncPreparationDraftFromEditor();
   const output = CatalogUnits.output(preparationDraftComponents,ingredientById);
-  if ($('#preparationYieldInput').dataset.auto !== 'false') $('#preparationYieldInput').value=output ?? '';
+  $('#preparationYieldInput').value=output ?? '';
   const outputWeight = Number($('#preparationYieldInput').value || 0);
   const cost=preparationDraftComponents.reduce((sum,c)=>sum+preparationIngredientCost(c),0);
   $('#preparationNetWeight').textContent=output == null ? 'Укажите массу штуки в ингредиенте' : `${decimal(output,3)} г`;
@@ -4843,8 +4842,7 @@ function openPreparationForm(preparationId = null) {
   CatalogCover.open("preparation", preparation);
   $("#preparationCategoryInput").value = preparation?.category || "Заготовки кухни";
   $("#preparationStationInput").value = preparation?.station || stationNames[0] || "";
-  $("#preparationYieldInput").value = preparation?.yield || "";
-  $("#preparationYieldInput").dataset.auto = preparation?.yield ? "false" : "true";
+  $("#preparationYieldInput").value = "";
   $("#preparationProcessInput").value = preparation?.process || "";
   $("#preparationUsedInInput").value = preparation?.usedIn || "";
   preparationDraftComponents = preparation?.components?.length
@@ -4862,9 +4860,9 @@ async function savePreparationForm() {
   syncPreparationDraftFromEditor();
   const name = $("#preparationNameInput").value.trim();
   const station = $("#preparationStationInput").value;
-  const outputYield = Math.max(0, Number($("#preparationYieldInput").value || 0));
-  if (!name || !station || outputYield <= 0 || !preparationDraftComponents.length) {
-    showToast("Заполните название, цех, выход партии и состав");
+  const outputYield = CatalogUnits.output(preparationDraftComponents,ingredientById);
+  if (!name || !station || outputYield == null || outputYield <= 0 || !preparationDraftComponents.length) {
+    showToast("Заполните название и цех; проверьте нетто и массу ингредиентов в штуках");
     return;
   }
   if (preparationDraftComponents.some((component) => component.net <= 0 || component.gross <= 0 || component.net > component.gross)) {
@@ -7009,8 +7007,6 @@ $("#recipeComponentsEditor").addEventListener("click", (event) => {
   recipeDraftComponents.splice(Number(row.dataset.componentIndex), 1);
   renderRecipeComponentsEditor();
 });
-$('#recipeAutoYieldButton').addEventListener('click',()=>{$('#recipeYieldInput').dataset.auto='true';updateRecipeLiveCalculation();});
-$('#preparationAutoYieldButton').addEventListener('click',()=>{$('#preparationYieldInput').dataset.auto='true';updatePreparationCalculation();});
 $("#recipePriceInput").addEventListener("input", updateRecipeLiveCalculation);
 $("#saveRecipeButton").addEventListener("click", saveRecipeForm);
 $("#deleteRecipeButton").addEventListener("click", () => {
@@ -7042,8 +7038,6 @@ $("#preparationComponentsEditor").addEventListener("click", (event) => {
   preparationDraftComponents.splice(Number(button.dataset.removePreparationComponent), 1);
   renderPreparationComponentsEditor();
 });
-$('#preparationYieldInput').addEventListener('input',event=>{event.target.dataset.auto=event.target.value === '' ? 'true' : 'false';updatePreparationCalculation();});
-$('#recipeYieldInput').addEventListener('input',event=>{event.target.dataset.auto=event.target.value === '' ? 'true' : 'false';updateRecipeLiveCalculation();});
 $("#savePreparationButton").addEventListener("click", savePreparationForm);
 $("#deletePreparationButton").addEventListener("click", () => {
   const preparation = preparationById(editingPreparationId);
