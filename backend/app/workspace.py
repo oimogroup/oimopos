@@ -565,10 +565,16 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
         output["recipes"] = [
             {key: recipe.get(key) for key in ("id", "name", "category", "price", "yield", "color", "image", "station", "availableToOrder", "availableLots", "groupName", "variantName", "parentId", "portionSize", "portionUnit")}
             for recipe in output["recipes"]
+            if recipe.get("is_active", True)
         ]
         output["products"] = [
             {key: product.get(key) for key in ("id", "name", "category", "barcode", "price", "unit", "weighted", "noDiscount", "image", "color", "station", "groupName", "variantName", "parentId", "portionSize", "portionUnit")}
             for product in output["products"]
+            if product.get("is_active", True)
+        ]
+        output["preparations"] = [
+            preparation for preparation in output.get("preparations", [])
+            if preparation.get("is_active", True)
         ]
         logistics.pop("custodyDocuments", None)
         logistics["branchCosts"] = {branch_id: {}}
@@ -957,10 +963,10 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             if not (len(color) == 7 and color.startswith("#") and all(character in "0123456789abcdef" for character in color[1:])):
                 color = entry["color"] if entry else palette[len(normalized_registry) % len(palette)]
             if entry is None:
-                normalized_registry.append({"name": name, **_appearance({**payload, "color": color})})
+                normalized_registry.append({"name": name, "is_active": bool(payload.get("is_active", True)), **_appearance({**payload, "color": color})})
             else:
                 previous_name = entry["name"]
-                entry.update({"name": name, **_appearance({**payload, "color": color}, entry)})
+                entry.update({"name": name, "is_active": bool(payload.get("is_active", entry.get("is_active", True))), **_appearance({**payload, "color": color}, entry)})
                 for recipe in state["recipes"]:
                     if recipe.get("category") == previous_name:
                         recipe.update({"category": name})
@@ -1096,6 +1102,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             "usedIn": str(payload.get("usedIn", "")).strip(),
             "components": components,
             "cost": calculated_cost,
+            "is_active": bool(payload.get("is_active", True)),
             "updatedAt": _now(),
             "updatedBy": actor,
         })
@@ -1213,7 +1220,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             markup = payload.get("markup", entry.get("markup", 0))
             _require(isinstance(markup, (int, float)) and isfinite(markup) and markup >= -100, "Некорректная наценка")
             entry.update({"image": image, "color": color, "markup": markup})
-            entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "unit": str(payload.get("unit", "шт")), "barcode": str(payload.get("barcode", "")), "limit": _number(payload.get("limit")), "price": _number(payload.get("price")), "averageCost": _number(payload.get("averageCost")), "weighted": bool(payload.get("weighted")), "noDiscount": bool(payload.get("noDiscount")), "stock": 0})
+            entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "unit": str(payload.get("unit", "шт")), "barcode": str(payload.get("barcode", "")), "limit": _number(payload.get("limit")), "price": _number(payload.get("price")), "averageCost": _number(payload.get("averageCost")), "weighted": bool(payload.get("weighted")), "noDiscount": bool(payload.get("noDiscount")), "stock": 0, "is_active": bool(payload.get("is_active", True))})
         else:
             raw_components = payload.get("components", [])
             components: list[dict[str, Any]] = []
@@ -1231,7 +1238,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _require(output_yield > 0, "Укажите выход готового блюда")
             station = str(payload.get("station", "")).strip()
             _require(station, "Укажите цех приготовления")
-            entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "station": station, "price": _number(payload.get("price")), "yield": output_yield, "color": str(payload.get("color", entry.get("color", "#6549d5"))), "components": components})
+            entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "station": station, "price": _number(payload.get("price")), "yield": output_yield, "color": str(payload.get("color", entry.get("color", "#6549d5"))), "components": components, "is_active": bool(payload.get("is_active", True))})
         if collection_name != "ingredients" and "portionSize" in payload:
             entry.update({"portionSize": payload["portionSize"], "portionUnit": payload.get("portionUnit") if payload["portionSize"] is not None else None})
         entry.update(_appearance(payload, entry))
@@ -1323,6 +1330,34 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _require(not linked_recipes and not linked_preparations, f"Сначала назначьте другой цех: {linked_recipes} техкарт, {linked_preparations} полуфабрикатов", 409)
             stations.remove(station)
         return "catalog-delete", f"{kind}:{entry_id}"
+
+    if action == "catalog.stop":
+        _owner(user)
+        kind = str(payload.get("kind", "")).strip()
+        entry_id = str(payload.get("id", "")).strip()
+        is_active = bool(payload.get("is_active", False))
+        allowed = {"recipe", "preparation", "product", "menu-category"}
+        _require(kind in allowed and entry_id, "Неизвестная позиция справочника")
+        if kind == "recipe":
+            entry = _find(state["recipes"], entry_id)
+            _require(entry is not None, "Техкарта не найдена", 404)
+            entry["is_active"] = is_active
+        elif kind == "preparation":
+            entry = _find(state.setdefault("preparations", []), entry_id)
+            _require(entry is not None, "Полуфабрикат не найден", 404)
+            entry["is_active"] = is_active
+        elif kind == "product":
+            entry = _find(state["products"], entry_id)
+            _require(entry is not None, "Товар не найден", 404)
+            entry["is_active"] = is_active
+        else:
+            registry = state.get("menuCategories")
+            if not isinstance(registry, list):
+                registry = []
+            entry = next((category for category in registry if str(category.get("name", "")).lower() == entry_id.lower()), None)
+            _require(entry is not None, "Категория не найдена", 404)
+            entry["is_active"] = is_active
+        return "catalog-stop", f"{kind}:{entry_id}"
 
     if action == "supply.create":
         if user["role"] == "owner":

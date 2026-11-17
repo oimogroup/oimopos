@@ -2912,6 +2912,11 @@ function catalogRowDeleteMenu(kind, id, name, label) {
   return `<button class="catalog-more" data-catalog-more popovertarget="${escapeHtml(menuId)}" type="button" aria-label="Другие действия: ${escapeHtml(name)}">•••</button><div class="catalog-row-menu" id="${escapeHtml(menuId)}" popover><button type="button" class="catalog-delete-link" data-catalog-delete-kind="${kind}" data-catalog-delete-id="${escapeHtml(String(id))}" data-catalog-delete-name="${escapeHtml(name)}">${uiIcon('trash')}${label}</button></div>`;
 }
 
+function catalogStopToggle(kind, id, name, isActive) {
+  const stopped = isActive === false;
+  return `<button type="button" class="catalog-stop-link${stopped ? ' catalog-stop-active' : ''}" data-catalog-stop-kind="${kind}" data-catalog-stop-id="${escapeHtml(String(id))}" data-catalog-stop-name="${escapeHtml(name)}" data-catalog-stop-active="${stopped ? '0' : '1'}">${uiIcon(stopped ? 'play' : 'stop')}${stopped ? 'Вернуть в продажу' : 'Стоп'}</button>`;
+}
+
 // Capture menu commands before row handlers open the composition editor.
 document.addEventListener('click', event => {
   const more = event.target.closest('[data-catalog-more]');
@@ -2928,6 +2933,12 @@ document.addEventListener('click', event => {
   event.stopPropagation();
   remove.closest('[popover]')?.hidePopover();
   requestCatalogDelete(remove.dataset.catalogDeleteKind, remove.dataset.catalogDeleteId, remove.dataset.catalogDeleteName);
+  const stop = event.target.closest('[data-catalog-stop-kind]');
+  if (stop) {
+    event.stopPropagation();
+    stop.closest('[popover]')?.hidePopover();
+    requestCatalogStop(stop.dataset.catalogStopKind, stop.dataset.catalogStopId, stop.dataset.catalogStopName, stop.dataset.catalogStopActive === '1');
+  }
 }, true);
 
 function renderRecipes() {
@@ -2942,7 +2953,7 @@ function renderRecipes() {
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
     const variants=recipe.variantName ? [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))] : [];
-    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.groupName || recipe.name)}</strong>${variants.length ? `<small>${variants.length} модификаций · ${variants.map(item=>escapeHtml(item.variantName)).join(', ')}</small>` : ''}</div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${variants.length ? 'По модификациям' : `${decimal(recipe.yield,3)} <span class="catalog-unit">г</span>`}</td><td class="catalog-number"><strong>${variants.length ? 'По модификациям' : money(cost)}</strong></td><td class="catalog-number"><strong>${variants.length ? `от ${money(Math.min(...variants.map(item=>item.price)))}` : money(recipe.price)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" ${variants.length ? 'data-recipe-edit' : 'data-recipe-compose'}="${recipe.id}" type="button">${variants.length ? 'Составы' : 'Состав'}</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button>${catalogRowDeleteMenu('recipe', recipe.id, recipe.groupName || recipe.name, 'Удалить техкарту')}</div></td></tr>`;
+    return `<tr data-recipe-id="${recipe.id}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.groupName || recipe.name)}</strong>${variants.length ? `<small>${variants.length} модификаций · ${variants.map(item=>escapeHtml(item.variantName)).join(', ')}</small>` : ''}</div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${variants.length ? 'По модификациям' : `${decimal(recipe.yield,3)} <span class="catalog-unit">г</span>`}</td><td class="catalog-number"><strong>${variants.length ? 'По модификациям' : money(cost)}</strong></td><td class="catalog-number"><strong>${variants.length ? `от ${money(Math.min(...variants.map(item=>item.price)))}` : money(recipe.price)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" ${variants.length ? 'data-recipe-edit' : 'data-recipe-compose'}="${recipe.id}" type="button">${variants.length ? 'Составы' : 'Состав'}</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button>${catalogStopToggle('recipe', recipe.id, recipe.groupName || recipe.name, recipe.is_active)}${catalogRowDeleteMenu('recipe', recipe.id, recipe.groupName || recipe.name, 'Удалить техкарту')}</div></td></tr>`;
   }).join("") || '<tr class="table-empty"><td colspan="6">Техкарты не найдены. Измените поиск или категорию.</td></tr>';
 }
 
@@ -2957,7 +2968,7 @@ function renderProducts() {
     const variants = product.variantName ? [product, ...products.filter(item => item.parentId === product.id)] : [];
     const priceLabel = variants.length ? `от ${money(Math.min(...variants.map(item => item.price)))}` : money(product.price);
     const stockTotal = variants.length ? variants.reduce((sum,item) => sum + branchStock(branchId, item.id), 0) : branchStock(branchId, product.id);
-    return `<tr><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong><small>${product.variantName ? `${1 + products.filter(row => row.parentId === product.id).length} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogRowDeleteMenu('product', product.id, product.groupName || product.name, 'Удалить товар')}</div></td></tr>`;
+    return `<tr><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong><small>${product.variantName ? `${1 + products.filter(row => row.parentId === product.id).length} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogStopToggle('product', product.id, product.groupName || product.name, product.is_active)}${catalogRowDeleteMenu('product', product.id, product.groupName || product.name, 'Удалить товар')}</div></td></tr>`;
   }).join("");
 }
 
@@ -2986,7 +2997,7 @@ function renderPreparations() {
     const batchCost = preparationCost(preparation);
     const unitCost = Number(preparation.yield) > 0 ? batchCost / (Number(preparation.yield) / 1000) : 0;
     const id = escapeHtml(String(preparation.id));
-    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button>${catalogRowDeleteMenu('preparation', preparation.id, preparation.name, 'Удалить полуфабрикат')}</div></td></tr>`;
+    return `<tr data-preparation-id="${id}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong></span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button>${catalogStopToggle('preparation', preparation.id, preparation.name, preparation.is_active)}${catalogRowDeleteMenu('preparation', preparation.id, preparation.name, 'Удалить полуфабрикат')}</div></td></tr>`;
   }).join("") : `<tr class="table-empty"><td colspan="5">${preparations.length ? "По заданным условиям полуфабрикаты не найдены" : "Полуфабрикаты ещё не настроены"}</td></tr>`;
 }
 
@@ -3000,7 +3011,7 @@ function renderMenuCategories() {
     const productCount = products.filter((product) => product.category === category.name).length;
     const type = recipeCount && productCount ? "Товары и тех. карты" : recipeCount ? "Тех. карты" : "Товары";
     const resolvedType = recipeCount + productCount ? type : "Без позиций";
-    return `<tr><td><div class="menu-category-cell">${CatalogCover.thumb(category)}<strong>${escapeHtml(category.name)}</strong></div></td><td>${resolvedType}</td><td>${recipeCount + productCount}</td><td><span class="visibility-badge">Все точки</span></td><td>${category.color.toUpperCase()}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-menu-category-edit="${index}" type="button">Изменить</button>${catalogRowDeleteMenu('menu-category', category.name, category.name, 'Удалить категорию')}</div></td></tr>`;
+    return `<tr><td><div class="menu-category-cell">${CatalogCover.thumb(category)}<strong>${escapeHtml(category.name)}</strong></div></td><td>${resolvedType}</td><td>${recipeCount + productCount}</td><td><span class="visibility-badge">Все точки</span></td><td>${category.color.toUpperCase()}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-menu-category-edit="${index}" type="button">Изменить</button>${catalogStopToggle('menu-category', category.name, category.name, category.is_active)}${catalogRowDeleteMenu('menu-category', category.name, category.name, 'Удалить категорию')}</div></td></tr>`;
   }).join("");
 
   $("#ingredientCategoriesTable").innerHTML = ingredientCategories.map((category, index) => {
@@ -5255,6 +5266,12 @@ function requestCatalogDelete(kind, id, name) {
     $("#catalogDeleteStatus p").textContent = reason || "Уверены, что хотите удалить этот ингредиент?";
   }
   $("#catalogDeleteModal").classList.remove("hidden");
+}
+
+async function requestCatalogStop(kind, id, name, isActive) {
+  const targetActive = !isActive;
+  const response = await runServerAction("catalog.stop", { kind, id, is_active: targetActive });
+  if (response) showToast(targetActive ? `«${name}» снова в продаже` : `«${name}» остановлен`);
 }
 
 function deleteCatalogLocally({ kind, id }) {
