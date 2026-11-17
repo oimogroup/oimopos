@@ -2246,7 +2246,8 @@ def update_tenant(
             SELECT tenant.name, tenant.status, tenant.contact_email, tenant.phone,
                    tenant.business_status, tenant.business_type, tenant.service_modes, tenant.employee_range,
                    subscription.plan_code,
-                   subscription.status AS subscription_status, subscription.max_branches
+                   subscription.status AS subscription_status, subscription.max_branches,
+                   subscription.trial_ends_at, subscription.current_period_ends_at
             FROM tenants tenant
             JOIN tenant_subscriptions subscription ON subscription.tenant_id = tenant.id
             WHERE tenant.id = %s
@@ -2281,6 +2282,15 @@ def update_tenant(
             "subscription_status": payload.subscription_status or existing["subscription_status"],
             "max_branches": payload.max_branches or existing["max_branches"],
         }
+        for field in ("trial_ends_at", "current_period_ends_at"):
+            if field in payload.model_fields_set:
+                value = getattr(payload, field)
+                if value is None:
+                    raise HTTPException(status_code=422, detail="Укажите дату окончания доступа")
+                values[field] = value.isoformat()
+        # Lock the subscription as well as the tenant to serialize manual changes
+        # with payment settlement.
+        connection.execute("SELECT tenant_id FROM tenant_subscriptions WHERE tenant_id=%s FOR UPDATE", (tenant_id,))
         connection.execute(
             """
             UPDATE tenants
@@ -2296,10 +2306,13 @@ def update_tenant(
         connection.execute(
             """
             UPDATE tenant_subscriptions
-            SET plan_code = %s, status = %s, max_branches = %s, updated_at = CURRENT_TIMESTAMP
+            SET plan_code = %s, status = %s, max_branches = %s,
+                trial_ends_at = COALESCE(%s, trial_ends_at),
+                current_period_ends_at = COALESCE(%s, current_period_ends_at), updated_at = CURRENT_TIMESTAMP
             WHERE tenant_id = %s
             """,
-            (values["plan_code"], values["subscription_status"], values["max_branches"], tenant_id),
+            (values["plan_code"], values["subscription_status"], values["max_branches"],
+             values.get("trial_ends_at"), values.get("current_period_ends_at"), tenant_id),
         )
         if values["status"] != "active" or values["subscription_status"] == "canceled":
             connection.execute(

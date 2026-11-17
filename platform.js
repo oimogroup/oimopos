@@ -1,3 +1,9 @@
+function subscriptionLocalDate(value) {
+  if (!value) return '';
+  const date = new Date(value);
+  return new Date(date.getTime() - date.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
+}
+
 const sessionKey = "ashkana-auth-session-v1";
 const $ = (selector) => document.querySelector(selector);
 let tenants = [];
@@ -88,7 +94,7 @@ function renderTenants() {
         <td><span class="plan-badge">${escapeHtml(planLabel(tenant.plan_code))}</span></td>
         <td><div class="usage-cell"><div class="usage-label"><span>${branchCount} из ${branchLimit} заведений</span><small>${usage}%</small></div><div class="usage-track"><i class="${usage >= 80 ? "near-limit" : ""}" style="width:${usage}%"></i></div></div></td>
         <td><div class="owner-cell"><span class="owner-avatar">${escapeHtml(initials(owner))}</span><div class="company-cell"><b>${escapeHtml(owner)}</b><small>${escapeHtml(tenant.owner_email || tenant.owner_login || "Email не назначен")}</small></div></div></td>
-        <td><span class="status-badge ${escapeHtml(tenant.subscription_status)}">${escapeHtml(statusLabel(tenant.subscription_status))}</span>${tenant.trial_ends_at ? `<span class="subscription-date">до ${formatDate(tenant.trial_ends_at)}</span>` : ""}</td>
+        <td><button class="secondary-button" data-renew-tenant="${escapeHtml(tenant.id)}" type="button">Продлить</button><span class="status-badge ${escapeHtml(tenant.subscription_status)}">${escapeHtml(statusLabel(tenant.subscription_status))}</span>${(tenant.subscription_status === "trialing" ? tenant.trial_ends_at : tenant.current_period_ends_at) ? `<span class="subscription-date">до ${formatDate(tenant.subscription_status === "trialing" ? tenant.trial_ends_at : tenant.current_period_ends_at)}</span>` : ""}</td>
         <td><span class="status-badge ${escapeHtml(tenant.status)}">${escapeHtml(statusLabel(tenant.status))}</span></td>
         <td><div class="row-actions"><a class="row-action icon-button" href="${escapeHtml(tenantLoginUrl(tenant))}" target="_blank" rel="noopener noreferrer" title="Открыть вход в админку" aria-label="Открыть вход в админку">${icon("logout")}</a><button class="row-action icon-button" data-copy-login="${escapeHtml(tenant.id)}" type="button" title="Скопировать ссылку на вход" aria-label="Скопировать ссылку на вход">${icon("copy")}</button><button class="row-action icon-button" data-edit-tenant="${escapeHtml(tenant.id)}" type="button" title="Настроить клиента" aria-label="Настроить клиента">${icon("settings")}</button><button class="row-action icon-button${tenant.status === "active" ? " danger-button" : ""}" data-toggle-tenant="${escapeHtml(tenant.id)}" data-next-status="${nextStatus}" type="button" title="${toggleLabel}" aria-label="${toggleLabel}">${icon(tenant.status === "active" ? "pause" : "play")}</button><button class="row-action icon-button danger-button" data-delete-tenant="${escapeHtml(tenant.id)}" type="button" aria-label="Удалить аккаунт" title="Удалить аккаунт"><svg class="icon" viewBox="0 0 24 24" fill="none" stroke="currentColor" stroke-width="1.7" aria-hidden="true"><path d="M3 6h18M9 6V3h6v3M5 6l1 15h12l1-15M10 10v7m4-7v7"/></svg></button></div></td>
       </tr>`;
@@ -248,6 +254,8 @@ function openTenantSettings(tenantId) {
   $("#settingsTenantMaxBranches").value = tenant.max_branches;
   $("#settingsSubscriptionStatus").value = tenant.subscription_status;
   $("#settingsTenantStatus").value = tenant.status;
+  $("#settingsTrialEndsAt").value = subscriptionLocalDate(tenant.trial_ends_at);
+  $("#settingsPeriodEndsAt").value = subscriptionLocalDate(tenant.current_period_ends_at);
   $("#settingsOwnerName").value = tenant.owner_name || "Администратор компании";
   $("#settingsOwnerLogin").value = tenant.owner_login || "";
   $("#settingsOwnerEmail").value = tenant.owner_email || "";
@@ -271,6 +279,14 @@ async function saveTenantSettings(event) {
     const ownerEmail = $("#settingsOwnerEmail").value.trim().toLowerCase();
     const ownerPassword = $("#settingsOwnerPassword").value;
     const ownerChanged = ownerName !== tenant?.owner_name || ownerLogin !== tenant?.owner_login || ownerEmail !== tenant?.owner_email || Boolean(ownerPassword);
+    const subscriptionDates = {};
+    for (const [field, selector] of [['trial_ends_at', '#settingsTrialEndsAt'], ['current_period_ends_at', '#settingsPeriodEndsAt']]) {
+      const value = $(selector).value;
+      if (value !== subscriptionLocalDate(tenant[field])) {
+        if (!value) throw new Error('Укажите дату окончания доступа.');
+        subscriptionDates[field] = new Date(value).toISOString();
+      }
+    }
     const requests = [window.AshkanaApi.updateTenant(editingTenantId, {
         name: $("#settingsTenantName").value.trim(),
         email: $("#settingsTenantEmail").value.trim().toLowerCase(),
@@ -279,6 +295,7 @@ async function saveTenantSettings(event) {
         plan_code: $("#settingsTenantPlan").value,
         max_branches: Number($("#settingsTenantMaxBranches").value),
         subscription_status: $("#settingsSubscriptionStatus").value,
+        ...subscriptionDates,
         status: $("#settingsTenantStatus").value,
       })];
     if (ownerChanged) requests.push(window.AshkanaApi.updateTenantOwner(editingTenantId, {
@@ -376,6 +393,8 @@ $("#tenantTable").addEventListener("click", (event) => {
   }
   const deleteButton = event.target.closest("[data-delete-tenant]");
   if (deleteButton) { openDeleteTenant(deleteButton.dataset.deleteTenant); return; }
+  const renewButton = event.target.closest("[data-renew-tenant]");
+  if (renewButton) openSubscriptionRenewal(renewButton.dataset.renewTenant);
   const editButton = event.target.closest("[data-edit-tenant]");
   if (editButton) { openTenantSettings(editButton.dataset.editTenant); return; }
   const toggleButton = event.target.closest("[data-toggle-tenant]");
@@ -546,3 +565,53 @@ for (const [selector, method, message] of [
     finally {await loadMailStatus();}
   });
 }
+
+
+let renewingTenantId = null;
+let renewalBusy = false;
+function openSubscriptionRenewal(id) {
+  const tenant = tenants.find(entry => entry.id === id);
+  if (!tenant || renewalBusy) return;
+  renewingTenantId = id;
+  $('#renewSubscriptionTitle').textContent = `Продлить подписку: ${tenant.name}`;
+  const currentEnd = tenant.subscription_status === 'trialing' ? tenant.trial_ends_at : tenant.current_period_ends_at;
+  $('#renewSubscriptionCurrent').textContent = `Текущий срок: ${formatDate(currentEnd)}. Статус: ${statusLabel(tenant.subscription_status)}.`;
+  const base = Math.max(Date.now(), ...[tenant.trial_ends_at, tenant.current_period_ends_at].filter(Boolean).map(value => new Date(value).getTime()));
+  $('#renewSubscriptionUntil').value = subscriptionLocalDate(base + 30 * 86400000);
+  $('#renewSubscriptionError').textContent = '';
+  $('#renewSubscriptionDialog').showModal();
+  $('#renewSubscriptionUntil').focus();
+}
+$('#cancelSubscriptionRenewal').addEventListener('click', () => $('#renewSubscriptionDialog').close());
+$('#renewSubscriptionDialog').addEventListener('cancel', event => { if (renewalBusy) event.preventDefault(); });
+$('#renewSubscriptionForm').addEventListener('submit', async event => {
+  event.preventDefault();
+  if (renewalBusy || !renewingTenantId) return;
+  const tenant = tenants.find(entry => entry.id === renewingTenantId);
+  const end = new Date($('#renewSubscriptionUntil').value);
+  const previousEnd = Math.max(Date.now(), ...[tenant.trial_ends_at, tenant.current_period_ends_at].filter(Boolean).map(value => new Date(value).getTime()));
+  const errorBox = $('#renewSubscriptionError');
+  if (!Number.isFinite(end.getTime()) || end.getTime() <= previousEnd) {
+    errorBox.textContent = 'Укажите дату позже текущего срока подписки и текущего времени.';
+    return;
+  }
+  renewalBusy = true;
+  $('#confirmSubscriptionRenewal').disabled = true;
+  $('#cancelSubscriptionRenewal').disabled = true;
+  errorBox.textContent = '';
+  try {
+    const updated = await window.AshkanaApi.updateTenant(renewingTenantId, {
+      subscription_status: 'active', current_period_ends_at: end.toISOString(),
+    });
+    tenants = tenants.map(entry => entry.id === updated.id ? updated : entry);
+    renderTenants();
+    $('#renewSubscriptionDialog').close();
+    showToast(`Подписка продлена до ${formatDate(updated.current_period_ends_at)}`);
+  } catch (error) {
+    errorBox.textContent = error.message || 'Не удалось продлить подписку';
+  } finally {
+    renewalBusy = false;
+    $('#confirmSubscriptionRenewal').disabled = false;
+    $('#cancelSubscriptionRenewal').disabled = false;
+  }
+});

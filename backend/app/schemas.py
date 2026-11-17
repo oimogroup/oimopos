@@ -2,7 +2,7 @@ from decimal import Decimal
 from enum import Enum
 from typing import Annotated, Any
 
-from pydantic import BaseModel, Field, StringConstraints, TypeAdapter, model_validator
+from pydantic import AwareDatetime, BaseModel, Field, StringConstraints, TypeAdapter, model_validator
 
 from .security import MIN_PASSWORD_LENGTH
 
@@ -229,6 +229,9 @@ class TenantUpdate(BaseModel):
     plan_code: Annotated[str, StringConstraints(strip_whitespace=True, min_length=2, max_length=32)] | None = None
     subscription_status: Annotated[str, StringConstraints(pattern=r"^(trialing|active|past_due|canceled)$")] | None = None
     max_branches: Annotated[int, Field(ge=1, le=1000)] | None = None
+    trial_ends_at: AwareDatetime | None = None
+    current_period_ends_at: AwareDatetime | None = None
+
 
 
 class TenantOwnerAccessUpdate(BaseModel):
