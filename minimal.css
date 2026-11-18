@@ -221,6 +221,26 @@ th { text-transform: none !important; letter-spacing: 0 !important; font-size: 1
 #variantDialogOptions button { display:flex; align-items:center; justify-content:space-between; gap:20px; width:100%; padding:16px 12px; margin:6px 0; border:0; border-radius:5px; background:#f5f7f8; text-align:left; }
 #variantDialogOptions small { display:block; color:var(--muted); font-size:11px; margin-top:5px; }
 #variantDialogOptions button:disabled { opacity:.45; }
+.modifier-dialog { width:min(600px,calc(100vw - 32px)); max-height:85vh; overflow-y:auto; }
+#modifierDialogDescription { margin:8px 0 16px; }
+#modifierDialogGroups { display:grid; gap:14px; }
+.pos-modifier-group { margin:0; padding:12px; border:1px solid #e4e9e6; border-radius:9px; }
+.pos-modifier-group legend { padding:0 6px; font-size:14px; font-weight:600; }
+.pos-modifier-group legend small { margin-left:6px; color:var(--muted); font-size:11px; font-weight:400; }
+.pos-modifier-choice { display:flex; align-items:center; gap:10px; padding:11px 8px; border-radius:7px; cursor:pointer; }
+.pos-modifier-choice + .pos-modifier-choice { border-top:1px solid #edf0ee; }
+.pos-modifier-choice:has(input:checked) { background:#edf6f1; }
+.pos-modifier-choice input { width:18px; height:18px; flex:none; accent-color:var(--green); }
+.pos-modifier-choice > span { min-width:0; flex:1; }
+.pos-modifier-choice strong, .pos-modifier-choice small { display:block; }
+.pos-modifier-choice small { margin-top:4px; color:var(--muted); font-size:11px; line-height:1.4; }
+.pos-modifier-choice > b { white-space:nowrap; font-size:13px; }
+.pos-modifier-choice:has(input:disabled) { opacity:.45; cursor:not-allowed; }
+.modifier-dialog > #modifierDialogError { min-height:20px; margin:8px 0 0; color:var(--red); font-size:12px; }
+.modifier-dialog > footer { display:flex; justify-content:flex-end; gap:8px; margin-top:12px; }
+.modifier-dialog > footer :is(.secondary-button,.confirm-payment) { width:auto; min-width:130px; min-height:44px; margin:0; }
+.order-modifier-label { display:block; margin-top:4px; color:var(--muted); font-size:11px; line-height:1.4; }
+.receipt-modifiers { display:block; margin:-2px 0 4px; color:#65716c; font-size:10px; line-height:1.35; }
 .kitchen-order-action { border:0; background:transparent; color:var(--green); font-size:12px; padding:10px; cursor:pointer; }
 @media print { .kitchen-print-ticket { break-after:page; } .kitchen-print-ticket:last-child { break-after:auto; } }
 

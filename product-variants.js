@@ -38,20 +38,24 @@
     if (!el('productVariantsEnabled').checked) return false;
     if(uploads){showToast('Дождитесь загрузки фото модификации');return true;}
     rows = read();
+    const modifierData = window.CatalogModifiers.read();
+    if (!modifierData) return true;
+    const hasPaidModifier = modifierData.modifierSets.some(group=>group.options.some(option=>option.price>0));
     const name = el('productNameInput').value.trim();
-    if (!name || !rows.length || rows.some(r => !r.name || !Number.isFinite(r.price) || r.price <= 0 || !Number.isFinite(r.markup) || r.markup < -100 || (r.portionSize !== null && (!Number.isFinite(r.portionSize) || r.portionSize <= 0))) || new Set(rows.map(r=>r.name.toLocaleLowerCase('ru'))).size !== rows.length) { showToast('Укажите название товара, разные названия модификаций и их цены'); return true; }
+    if (!name || !rows.length || rows.some(r => !r.name || !Number.isFinite(r.price) || r.price < 0 || !Number.isFinite(r.markup) || r.markup < -100 || (r.portionSize !== null && (!Number.isFinite(r.portionSize) || r.portionSize <= 0))) || (!rows.some(r=>r.price>0) && !hasPaidModifier) || new Set(rows.map(r=>r.name.toLocaleLowerCase('ru'))).size !== rows.length) { showToast('Укажите название товара, разные названия модификаций и цену товара или платного варианта'); return true; }
     if (!await ensureProductCategory()) return true;
     const rootId = editingProductId || productIdFromName(name);
-    const payload = {id: rootId, name, category: el('productCategoryInput').value, station: el('productStationInput').value, unit: el('productUnitInput').value, image: productPhotoDraft, color: el('productColorInput').value, weighted: el('productWeightedInput').checked, noDiscount: el('productNoDiscountInput').checked, limit: Number(el('productLimitInput').value || 0), variants: rows.map(row=>({...row,image:row.image ?? productPhotoDraft,color:row.color || el('productColorInput').value}))};
+    const payload = {...modifierData, id: rootId, name, category: el('productCategoryInput').value, station: el('productStationInput').value, unit: el('productUnitInput').value, image: productPhotoDraft, color: el('productColorInput').value, weighted: el('productWeightedInput').checked, noDiscount: el('productNoDiscountInput').checked, limit: Number(el('productLimitInput').value || 0), variants: rows.map(row=>({...row,image:row.image ?? productPhotoDraft,color:row.color || el('productColorInput').value}))};
     if (serverMode) { if (!await runServerAction('product.group.upsert', payload)) return true; }
     else {
       rows.forEach((row,i) => {
         const id = i === 0 ? rootId : row.id || productIdFromName(`${name}-${row.name}`);
         let item = productById(id);
         if (!item) { item = {id, stock:0, averageCost:0}; products.push(item); }
-        const {variants, ...common} = payload;
-        Object.assign(item, common, payload.variants[i], {id, name:`${name} — ${row.name}`, groupName:name, variantName:row.name, parentId:i===0 ? null : rootId});
+        const {variants, modifierSets, modifierSetIds, ...common} = payload;
+        Object.assign(item, common, payload.variants[i], {id, name:`${name} — ${row.name}`, groupName:name, variantName:row.name, parentId:i===0 ? null : rootId, modifierSetIds});
       });
+      window.CatalogModifiers.saveLocal(modifierData);
       saveProducts(); renderAll();
     }
     el('productModal').classList.add('hidden'); switchMenuPage('products'); showToast('Товар с модификациями сохранён');

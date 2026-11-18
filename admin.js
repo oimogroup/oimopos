@@ -162,6 +162,7 @@ let ingredients = loadIngredients();
 let recipes = loadRecipes();
 let preparations = loadPreparations();
 let products = loadProducts();
+let modifierSets = [];
 let menuCategories = loadMenuCategories();
 let ingredientCategories = loadIngredientCategories();
 let ingredientCategoryCovers = (()=>{try{return JSON.parse(localStorage.getItem("oimo-ingredient-category-covers") || "{}");}catch{return {};}})();
@@ -235,6 +236,7 @@ function hydrateServerWorkspace(response) {
   ingredients = Array.isArray(state.ingredients) ? state.ingredients : [];
   recipes = Array.isArray(state.recipes) ? state.recipes : [];
   products = Array.isArray(state.products) ? state.products : [];
+  modifierSets = Array.isArray(state.modifierSets) ? state.modifierSets : [];
   preparations = Array.isArray(state.preparations) ? state.preparations : [];
   menuCategories = normalizeMenuCategories(state.menuCategories);
   ingredientCategories = normalizeIngredientCategories(state.ingredientCategories);
@@ -4824,6 +4826,7 @@ function openRecipeForm(recipeId = null) {
   $("#deleteRecipeButton").classList.toggle("hidden", !recipe);
   renderRecipeComponentsEditor();
   window.RecipeVariants.open(recipe);
+  window.CatalogModifiers.open(recipe, { kind: "recipe", serverMode, modifierSets, ingredients, products });
   $("#recipeDrawer").classList.add("hidden");
   $("#recipeModal").classList.remove("hidden");
 }
@@ -4831,13 +4834,16 @@ function openRecipeForm(recipeId = null) {
 async function saveRecipeForm() {
   if (!CatalogCover.ready("recipe")) return;
   if (await window.RecipeVariants.save()) return;
+  const modifierData = window.CatalogModifiers.read();
+  if (!modifierData) return;
   syncRecipeDraftFromEditor();
   const name = $("#recipeNameInput").value.trim();
   const price = Math.max(0, Number($("#recipePriceInput").value || 0));
   const recipeYield = calculateRecipeYield();
   const station = $("#recipeStationInput").value;
-  if (!name || !station || !price || !recipeDraftComponents.length || recipeYield == null || recipeYield <= 0) {
-    showToast("Заполните название, цех и цену; проверьте нетто и массу ингредиентов в штуках");
+  const hasPaidModifier = modifierData.modifierSets.some(group => group.options.some(option => option.price > 0));
+  if (!name || !station || (!price && !hasPaidModifier) || !recipeDraftComponents.length || recipeYield == null || recipeYield <= 0) {
+    showToast("Заполните название, цех и цену или добавьте платный модификатор; проверьте состав и выход");
     return;
   }
   const existing = recipes.find((entry) => entry.id === editingRecipeId);
@@ -4849,7 +4855,8 @@ async function saveRecipeForm() {
     price,
     yield: recipeYield,
     ...CatalogCover.read("recipe"),
-    components: recipeDraftComponents
+    components: recipeDraftComponents,
+    ...modifierData
   };
   if (serverMode) {
     const response = await runServerAction("recipe.upsert", updated);
@@ -4859,8 +4866,10 @@ async function saveRecipeForm() {
     showToast(existing ? "Техкарта обновлена, себестоимость пересчитана" : "Новая техкарта создана");
     return;
   }
-  if (existing) Object.assign(existing, updated);
-  else recipes.push(updated);
+  const { modifierSets: ignoredModifierSets, ...localUpdated } = updated;
+  if (existing) Object.assign(existing, localUpdated);
+  else recipes.push(localUpdated);
+  window.CatalogModifiers.saveLocal(modifierData);
   saveRecipes();
   $("#recipeModal").classList.add("hidden");
   renderAll();
@@ -5171,6 +5180,7 @@ function openProductForm(productId = null) {
   $("#deleteProductButton").classList.toggle("hidden", !product);
   $("#saveProductButton").textContent = "Сохранить";
   window.ProductVariants.open(product);
+  window.CatalogModifiers.open(product, { kind: "product", serverMode, modifierSets, ingredients, products });
   updateProductCalculation();
   $("#productModal").classList.remove("hidden");
   setTimeout(() => $("#productNameInput").focus(), 20);
@@ -5216,10 +5226,13 @@ async function ensureProductCategory() {
 async function saveProductForm(createAnother = false) {
   if (productPhotoBusy) { showToast("Дождитесь загрузки фото"); return; }
   if (await window.ProductVariants.save(createAnother)) return;
+  const modifierData = window.CatalogModifiers.read();
+  if (!modifierData) return;
   const name = $("#productNameInput").value.trim();
   const price = Math.max(0, Number($("#productPriceInput").value || 0));
-  if (!name || !price) {
-    showToast("Введите название и цену продажи товара");
+  const hasPaidModifier = modifierData.modifierSets.some(group => group.options.some(option => option.price > 0));
+  if (!name || (!price && !hasPaidModifier)) {
+    showToast("Введите название и цену товара или добавьте платный модификатор");
     return;
   }
   if (!await ensureProductCategory()) return;
@@ -5236,7 +5249,8 @@ async function saveProductForm(createAnother = false) {
     image: productPhotoDraft,
     color: $("#productColorInput").value,
     markup: Number($("#productMarkupInput").value || 0),
-    noDiscount: $("#productNoDiscountInput").checked
+    noDiscount: $("#productNoDiscountInput").checked,
+    ...modifierData
   };
   if (serverMode) {
     const averageCost = Number(existing?.averageCost || 0);
@@ -5252,14 +5266,15 @@ async function saveProductForm(createAnother = false) {
     if (createAnother === true) openProductForm();
     return;
   }
+  const { modifierSets: ignoredModifierSets, ...localDetails } = details;
   if (existing) {
-    Object.assign(existing, details);
+    Object.assign(existing, localDetails);
   } else {
     const stock = Math.max(0, Number($("#productStockInput").value || 0));
     const averageCost = Math.max(0, Number($("#productCostInput").value || 0));
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
     if (stock > 0 && !ensureBranchStockUnlocked(branchId)) return;
-    const product = { id: productIdFromName(name), ...details, stock: 0, averageCost };
+    const product = { id: productIdFromName(name), ...localDetails, stock: 0, averageCost };
     products.push(product);
     if (stock > 0) {
       logisticsState.branchStocks[branchId] ||= {};
@@ -5269,6 +5284,7 @@ async function saveProductForm(createAnother = false) {
       saveLogisticsState();
     }
   }
+  window.CatalogModifiers.saveLocal(modifierData);
   saveProducts();
   $("#productModal").classList.add("hidden");
   renderAll();
@@ -5310,6 +5326,7 @@ function catalogDeleteConstraint(kind, id) {
     if (getSales().some((sale) => (sale.items || []).some((item) => String(item.id) === key))) return "По этой техкарте уже есть продажи. История чеков должна сохраниться.";
   }
   if (["ingredient", "product"].includes(kind)) {
+    if (!serverMode && window.CatalogModifiers?.usesSource(kind, id)) return "Позицию нельзя удалить: она используется как источник списания в модификаторе.";
     const stockBranches = branches.filter((branch) => branchStock(branch.id, id) > .000001);
     if (stockBranches.length) return `Сначала обнулите остаток: ${stockBranches.slice(0, 3).map((branch) => branch.name).join(", ")}.`;
     if (logisticsUsesCatalogItem(id)) return "Позиция есть в складских документах. Удаление нарушит историю движения.";
@@ -7619,6 +7636,7 @@ async function initializeApplication() {
   restoreWorkspaceScroll();
 }
 
+window.CatalogModifiers.mount();
 window.ProductVariants.mount();
 window.RecipeVariants.mount();
 window.IngredientsList.mount();

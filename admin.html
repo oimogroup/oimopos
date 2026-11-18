@@ -4,8 +4,8 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=photo-loading-2" />
-    <link rel="stylesheet" href="minimal.css?v=actions-15" />
+    <link rel="stylesheet" href="admin.css?v=modifiers-1" />
+    <link rel="stylesheet" href="minimal.css?v=modifiers-1" />
       <link rel="stylesheet" href="oimo.css?v=photo-upload-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=motion-9" />
@@ -816,6 +816,7 @@
             <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Расход продуктов на одну порцию: брутто и нетто</p></div><button class="catalog-add-row secondary-action" id="addComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
             <div class="recipe-components-editor" id="recipeComponentsEditor"></div><div class="composition-output"><label class="catalog-calculated-field"><span>Выход по нетто ингредиентов</span><div class="unit-input"><input id="recipeYieldInput" type="number" min="0.001" step="0.001" value="0" readonly aria-readonly="true" /><b>г</b></div><small>Сумма нетто компонентов. Для ингредиентов в штуках укажите массу одной штуки.</small></label></div>
           </section>
+          <section class="catalog-form-section modifier-form-section"><div class="catalog-section-heading"><span>3</span><div><h3>Модификаторы для кассы</h3><p>Варианты выбора, доплата и списание ингредиентов или товаров</p></div></div><div id="recipeModifierEditor"></div></section>
           <div class="recipe-live-calculation catalog-calculation"><div><span>Себестоимость</span><strong id="recipeLiveCost">0 сом</strong></div><div><span>Фудкост</span><strong id="recipeLiveFoodCost">0%</strong></div><div><span>Наценка</span><strong id="recipeLiveMarkup">0%</strong></div></div>
         </div>
         <div class="modal-actions catalog-editor-footer"><button class="danger-button modal-delete-action hidden" id="deleteRecipeButton" type="button"><svg class="ui-icon"><use href="#ui-trash"/></svg>Удалить</button><span></span><button class="secondary-action" data-close="recipeModal" type="button">Отмена</button><button class="primary-button" id="saveRecipeButton" type="button">Сохранить</button></div>
@@ -948,6 +949,7 @@
             <div class="catalog-section-heading"><div><h3>Цена и наценка</h3></div></div>
             <div class="product-price-grid"><label><span>Закупочная цена</span><div class="unit-input"><input id="productCostInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Цена продажи</span><div class="unit-input"><input id="productPriceInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Наценка</span><div class="unit-input"><input id="productMarkupInput" type="number" min="-100" step="0.01" value="0" /><b>%</b></div></label></div><small id="productMarkupValue"></small>
           </section>
+          <section class="catalog-form-section modifier-form-section"><div class="catalog-section-heading"><div><h3>Модификаторы для кассы</h3><p>Добавки и варианты товара с доплатой и списанием</p></div></div><div id="productModifierEditor"></div></section>
 
           <section class="catalog-form-section catalog-stock-section" id="productOpeningBlock">
             <div class="catalog-section-heading"><span>3</span><div><h3>Складской учёт</h3><p>Начальный остаток товара на складе точки</p></div></div>
@@ -1135,14 +1137,15 @@
     <script src="numeric-inputs.js?v=1"></script>
     <script src="api-client.js?v=technical-cards-url-2"></script>
     <script src="catalog-cover.js?v=photo-upload-2"></script>
-    <script src="company-settings.js?v=photo-upload-2"></script>
+    <script src="company-settings.js?v=modifiers-1"></script>
     <script src="catalog-units.js?v=1"></script>
+    <script src="catalog-modifiers.js?v=modifiers-1"></script>
     <script src="ingredients-list.js?v=prices-per-kg-9"></script>
     <script src="ingredient-picker.js?v=1"></script>
-    <script src="product-variants.js?v=aligned-fields-18"></script>
-    <script src="recipe-variants.js?v=volumes-1"></script>
+    <script src="product-variants.js?v=modifiers-1"></script>
+    <script src="recipe-variants.js?v=modifiers-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=dashboard-subscription-1"></script>
+    <script src="admin.js?v=modifiers-1"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

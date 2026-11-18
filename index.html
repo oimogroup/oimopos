@@ -5,7 +5,7 @@
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo POS — касса заведения</title>
     <link rel="stylesheet" href="styles.css?v=offline-1" />
-    <link rel="stylesheet" href="minimal.css?v=actions-15" />
+    <link rel="stylesheet" href="minimal.css?v=modifiers-1" />
       <link rel="stylesheet" href="oimo.css?v=photo-upload-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=8" />
@@ -536,15 +536,16 @@
     <div id="printErrorNotice" class="print-error-notice hidden" role="status"><span id="printErrorText"></span><button id="printErrorHistory" type="button">Открыть чеки</button><button id="dismissPrintError" type="button" aria-label="Скрыть сообщение">×</button></div>
     <div class="toast hidden" id="toast"></div>
     <dialog id="productVariantDialog" class="variant-dialog"><header><h2 id="variantDialogTitle"></h2><button id="closeVariantDialog" type="button" aria-label="Закрыть">×</button></header><p>Выберите модификацию</p><div id="variantDialogOptions"></div></dialog>
+    <dialog id="modifierDialog" class="variant-dialog modifier-dialog"><header><h2 id="modifierDialogTitle"></h2><button id="closeModifierDialog" type="button" aria-label="Закрыть">×</button></header><p id="modifierDialogDescription">Выберите варианты для блюда</p><div id="modifierDialogGroups"></div><p id="modifierDialogError" role="alert"></p><footer><button id="cancelModifierSelection" class="secondary-button" type="button">Отмена</button><button id="confirmModifierSelection" class="confirm-payment" type="button">Добавить в заказ</button></footer></dialog>
     <script src="numeric-inputs.js?v=1"></script>
     <script src="api-client.js?v=offline-1"></script>
     <script src="catalog-cover.js?v=photo-upload-2"></script>
-    <script src="company-settings.js?v=photo-upload-2"></script>
+    <script src="company-settings.js?v=modifiers-1"></script>
     <script src="receipt-printing.js?v=photo-upload-1"></script>
     <dialog id="offlineDetails" class="offline-dialog"><header><h2>Связь и сохранённые чеки</h2><button type="button" id="offlineDetailsClose" aria-label="Закрыть">×</button></header><p id="offlineMessage" role="status"></p><div id="offlineQueue"></div><footer><button type="button" id="offlineExportButton">Скачать копию очереди</button><button type="button" id="offlineSyncButton">Проверить связь и отправить</button></footer><small>Не очищайте данные браузера и не удаляйте приложение, пока есть неотправленные чеки. Удаление данных устройства удаляет его локальную очередь.</small></dialog>
     <script src="offline-pos-core.js?v=1"></script>
     <script src="offline-pos.js?v=1"></script>
-    <script src="app.js?v=pwa-location-1"></script>
+    <script src="app.js?v=modifiers-1"></script>
     <script src="pos-supply-photo.js?v=1"></script>
     <script src="work-time.js?v=1"></script>
   </body>

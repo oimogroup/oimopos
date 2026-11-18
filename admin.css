@@ -1012,6 +1012,25 @@ td small { margin-top: 3px; color: var(--muted); font-size: 11px; }
 .catalog-section-heading h3 { font-size: 14px; font-weight: 600; line-height: 1.25; }
 .catalog-section-heading p { margin-top: 3px; color: #899399; font-size: 11px; line-height: 1.35; }
 .catalog-section-heading-action { grid-template-columns: 30px minmax(0, 1fr) auto; }
+.modifier-form-section .catalog-section-heading { grid-template-columns: minmax(0, 1fr); }
+.modifier-set-toolbar { display:flex; flex-wrap:wrap; align-items:end; gap:12px; margin-bottom:16px; }
+.modifier-set-toolbar > label { display:grid; gap:7px; min-width:min(280px,100%); margin:0; }
+.modifier-set-card { margin:14px 0; padding:16px; border:1px solid #e6e1ef; border-radius:10px; background:#fcfbfe; }
+.modifier-set-card > header { display:grid; grid-template-columns:minmax(150px,1.3fr) minmax(130px,1fr) auto auto auto; align-items:end; gap:12px; }
+.modifier-set-card > header > label { display:grid; gap:7px; margin:0; }
+.modifier-set-card > header .modifier-required { display:flex; align-items:center; gap:7px; min-height:40px; white-space:nowrap; }
+.modifier-set-card > header .modifier-required input { width:auto; }
+.modifier-set-card > header .danger-button { min-height:40px; white-space:nowrap; }
+.modifier-set-card > p { margin:12px 0 0; color:#7b7482; font-size:12px; line-height:1.5; }
+.modifier-options { margin:12px 0; border-top:1px solid #ece8f1; }
+.modifier-option-row { display:grid; grid-template-columns:minmax(140px,1.2fr) minmax(160px,1.3fr) minmax(130px,1fr) minmax(100px,.7fr) 36px; align-items:end; gap:12px; padding:12px 0; border-bottom:1px solid #ece8f1; }
+.modifier-option-row > label { display:grid; gap:7px; min-width:0; margin:0; }
+.modifier-option-row > label > div { display:flex; align-items:center; gap:7px; }
+.modifier-option-row > label > div input { min-width:0; }
+.modifier-option-row > label > div small { color:#7b858b; white-space:nowrap; }
+.modifier-option-row .danger-button { min-height:40px; padding:0 10px; }
+.modifier-empty { margin:0; color:#7b858b; font-size:13px; }
+#productModal .modifier-form-section .catalog-section-heading { grid-template-columns:minmax(0,1fr); }
 
 .catalog-add-row .ui-icon { width: 15px; height: 15px; }
 .catalog-form-grid,
@@ -1493,6 +1512,13 @@ body:has([data-role-navigation="branch"]:not(.hidden)) .settings-mobile-tabs { d
 .catalog-appearance > .catalog-cover-editor {margin:12px;}
 .catalog-disclosure-body > label {display:grid;gap:6px;margin-bottom:12px;max-width:360px;}
 @media(max-width:700px) {
+ .modifier-set-card { padding:12px; }
+ .modifier-set-card > header { grid-template-columns:1fr 1fr; }
+ .modifier-set-card > header > label:first-child { grid-column:1/-1; }
+ .modifier-set-card > header .danger-button { justify-self:start; }
+ .modifier-option-row { grid-template-columns:1fr 1fr; gap:10px; }
+ .modifier-option-row > label:first-child, .modifier-option-row > label:nth-child(2) { grid-column:1/-1; }
+ .modifier-option-row > .danger-button { justify-self:end; }
  body[data-ui=admin] #technicalCardsImportPreview .data-table {display:block;min-width:0!important;width:100%;}
  body[data-ui=admin] #technicalCardsImportPreview .data-table thead {display:none;}
  body[data-ui=admin] #technicalCardsImportPreview .data-table tbody {display:block;}

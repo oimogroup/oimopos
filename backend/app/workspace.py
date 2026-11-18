@@ -139,6 +139,107 @@ def _cost(state: dict[str, Any], branch_id: str, item_id: Any) -> float:
     return _number(state["logisticsState"]["branchCosts"].get(branch_id, {}).get(str(item_id), entity.get("averageCost", 0)))
 
 
+def _persist_modifier_sets(state: dict[str, Any], raw_sets: Any) -> None:
+    if raw_sets is None:
+        return
+    _require(isinstance(raw_sets, list) and len(raw_sets) <= 50, "Проверьте группы модификаторов")
+    saved = state.setdefault("modifierSets", [])
+    for raw in raw_sets:
+        _require(isinstance(raw, dict), "Проверьте группу модификаторов")
+        set_id = str(raw.get("id", "")).strip()
+        name = str(raw.get("name", "")).strip()
+        mode = raw.get("selectionMode")
+        required = raw.get("required")
+        max_selections = raw.get("maxSelections")
+        _require(re.fullmatch(r"[A-Za-z0-9_-]{1,80}", set_id) is not None, "Некорректный код группы модификаторов")
+        _require(name and len(name) <= 80, "Укажите название группы модификаторов")
+        _require(mode in {"single", "multiple"} and isinstance(required, bool), "Проверьте правила выбора модификаторов")
+        _require(isinstance(max_selections, int) and not isinstance(max_selections, bool) and 1 <= max_selections <= 30, "Укажите корректное максимальное количество модификаторов")
+        _require(mode != "single" or max_selections == 1, "В группе с одним выбором можно выбрать только один вариант")
+        raw_options = raw.get("options")
+        _require(isinstance(raw_options, list) and 1 <= len(raw_options) <= 50, "Добавьте от 1 до 50 вариантов модификатора")
+        options = []
+        option_ids, option_names = set(), set()
+        for option in raw_options:
+            _require(isinstance(option, dict), "Проверьте варианты модификаторов")
+            option_id = str(option.get("id", "")).strip()
+            option_name = str(option.get("name", "")).strip()
+            source_type = option.get("sourceType")
+            source_id = str(option.get("sourceId") or "").strip()
+            quantity = option.get("quantity", 0)
+            price = option.get("price", 0)
+            _require(re.fullmatch(r"[A-Za-z0-9_-]{1,80}", option_id) is not None, "Некорректный код варианта модификатора")
+            _require(option_name and len(option_name) <= 80 and option_name.casefold() not in option_names, "Укажите разные названия вариантов модификатора")
+            _require(option_id not in option_ids, "Код варианта модификатора повторяется")
+            option_ids.add(option_id)
+            option_names.add(option_name.casefold())
+            _require(isinstance(price, (int, float)) and not isinstance(price, bool) and isfinite(price) and 0 <= price <= 999999999, "Укажите корректную доплату за модификатор")
+            _require(source_type in {"none", "ingredient", "product"}, "Выберите товар или ингредиент для списания")
+            if source_type == "none":
+                _require(not source_id and isinstance(quantity, (int, float)) and not isinstance(quantity, bool) and isfinite(quantity) and quantity == 0, "Модификатор без списания не должен содержать количество")
+            else:
+                collection = state["ingredients"] if source_type == "ingredient" else state["products"]
+                source = _find(collection, source_id)
+                _require(source is not None and source.get("is_active", True), "Источник списания модификатора не найден или отключён")
+                _require(isinstance(quantity, (int, float)) and not isinstance(quantity, bool) and isfinite(quantity) and 0 < quantity <= 999999999, "Укажите положительное количество для списания")
+            options.append({
+                "id": option_id, "name": option_name, "sourceType": source_type,
+                "sourceId": source_id if source_type != "none" else "",
+                "quantity": float(quantity) if source_type != "none" else 0,
+                "price": float(price),
+            })
+        normalized = {
+            "id": set_id, "name": name, "selectionMode": mode, "required": required,
+            "maxSelections": max_selections, "options": options,
+        }
+        existing = _find(saved, set_id)
+        if existing:
+            existing.clear()
+            existing.update(normalized)
+        else:
+            saved.append(normalized)
+
+
+def _item_modifier_sets(state: dict[str, Any], item: dict[str, Any], raw_ids: Any = None) -> list[dict[str, Any]]:
+    ids = item.get("modifierSetIds", []) if raw_ids is None else raw_ids
+    _require(isinstance(ids, list) and len(ids) <= 20, "Проверьте назначенные группы модификаторов")
+    _require(all(isinstance(value, (str, int)) and not isinstance(value, bool) for value in ids), "Некорректный код группы модификаторов")
+    keys = [str(value) for value in ids]
+    _require(len(keys) == len(set(keys)), "Группа модификаторов назначена повторно")
+    sets = {str(entry.get("id")): entry for entry in state.get("modifierSets", [])}
+    _require(all(key in sets for key in keys), "Назначенная группа модификаторов не найдена")
+    return [sets[key] for key in keys]
+
+
+def _selected_modifiers(state: dict[str, Any], item: dict[str, Any], raw_selection: Any) -> tuple[list[dict[str, Any]], list[dict[str, Any]]]:
+    _require(isinstance(raw_selection, list), "Проверьте выбранные модификаторы")
+    groups = _item_modifier_sets(state, item)
+    requested = {}
+    for row in raw_selection:
+        _require(isinstance(row, dict), "Проверьте выбранные модификаторы")
+        set_id = str(row.get("setId", ""))
+        modifier_ids = row.get("modifierIds")
+        _require(set_id not in requested and isinstance(modifier_ids, list), "Проверьте выбранные модификаторы")
+        _require(all(isinstance(value, (str, int)) and not isinstance(value, bool) for value in modifier_ids), "Некорректный вариант модификатора")
+        selected_ids = [str(value) for value in modifier_ids]
+        _require(len(selected_ids) == len(set(selected_ids)), "Вариант модификатора выбран повторно")
+        requested[set_id] = selected_ids
+    group_ids = {str(group["id"]) for group in groups}
+    _require(set(requested) <= group_ids, "Выбрана группа модификаторов, не назначенная этой позиции")
+    normalized, chosen = [], []
+    for group in groups:
+        set_id = str(group["id"])
+        selected_ids = requested.get(set_id, [])
+        minimum = 1 if group["required"] else 0
+        maximum = min(group["maxSelections"], 1) if group["selectionMode"] == "single" else group["maxSelections"]
+        _require(minimum <= len(selected_ids) <= maximum, f"Выберите от {minimum} до {maximum} вариантов в группе «{group['name']}»")
+        options = {str(option["id"]): option for option in group["options"]}
+        _require(all(option_id in options for option_id in selected_ids), f"В группе «{group['name']}» выбран неизвестный вариант")
+        normalized.append({"setId": set_id, "modifierIds": selected_ids})
+        chosen.extend({"setId": set_id, "setName": group["name"], **options[option_id]} for option_id in selected_ids)
+    return normalized, chosen
+
+
 def _set_stock(state: dict[str, Any], branch_id: str, item_id: Any, quantity: float, cost: float | None = None) -> None:
     key = str(item_id)
     state["logisticsState"]["branchStocks"].setdefault(branch_id, {})[key] = max(0, quantity)
@@ -304,6 +405,7 @@ def default_state() -> dict[str, Any]:
         "ingredients": ingredients,
         "products": products,
         "recipes": recipes,
+        "modifierSets": [],
         "preparations": [],
         "menuCategories": [
             {"name": "Горячее", "color": "#e39a3d"},
@@ -340,6 +442,7 @@ def new_tenant_state() -> dict[str, Any]:
         "ingredients": [],
         "products": [],
         "recipes": [],
+        "modifierSets": [],
         "preparations": [],
         "menuCategories": [],
         "ingredientCategories": ["Крупы", "Мясо", "Овощи", "Бакалея", "Напитки"],
@@ -470,6 +573,35 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     for sale in output.get("sales", []):
         sale.pop("payrollAccruals", None)
     branch_id = str(user["branch_id"])
+    used_modifier_sets = {
+        str(set_id)
+        for item in [*output.get("recipes", []), *output.get("products", [])]
+        for set_id in item.get("modifierSetIds", [])
+    }
+    source_entries = {
+        ("ingredient", str(item["id"])): item for item in state.get("ingredients", [])
+    } | {
+        ("product", str(item["id"])): item for item in state.get("products", [])
+    }
+    branch_stocks = state.get("logisticsState", {}).get("branchStocks", {}).get(branch_id, {})
+    output["modifierSets"] = [
+        {
+            **group,
+            "options": [
+                {
+                    **option,
+                    **({"sourceName": source_entries[(option["sourceType"], str(option["sourceId"]))]["name"],
+                        "sourceUnit": source_entries[(option["sourceType"], str(option["sourceId"]))].get("unit", "шт"),
+                        "available": _number(branch_stocks.get(str(option["sourceId"])))}
+                       if option.get("sourceType") in {"ingredient", "product"}
+                       and (option.get("sourceType"), str(option.get("sourceId"))) in source_entries else {}),
+                }
+                for option in group.get("options", [])
+            ],
+        }
+        for group in state.get("modifierSets", [])
+        if str(group.get("id")) in used_modifier_sets
+    ]
     output["branches"] = [
         branch if branch.get("id") == branch_id else {key: branch.get(key) for key in ("id", "number", "short", "name", "address", "status")}
         for branch in output["branches"]
@@ -563,12 +695,12 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
         output["stations"] = []
         output["ingredientCategories"] = []
         output["recipes"] = [
-            {key: recipe.get(key) for key in ("id", "name", "category", "price", "yield", "color", "image", "station", "availableToOrder", "availableLots", "groupName", "variantName", "parentId", "portionSize", "portionUnit")}
+            {key: recipe.get(key) for key in ("id", "name", "category", "price", "yield", "color", "image", "station", "availableToOrder", "availableLots", "groupName", "variantName", "parentId", "portionSize", "portionUnit", "modifierSetIds")}
             for recipe in output["recipes"]
             if recipe.get("is_active", True)
         ]
         output["products"] = [
-            {key: product.get(key) for key in ("id", "name", "category", "barcode", "price", "unit", "weighted", "noDiscount", "image", "color", "station", "groupName", "variantName", "parentId", "portionSize", "portionUnit")}
+            {key: product.get(key) for key in ("id", "name", "category", "barcode", "price", "unit", "weighted", "noDiscount", "image", "color", "station", "groupName", "variantName", "parentId", "portionSize", "portionUnit", "modifierSetIds")}
             for product in output["products"]
             if product.get("is_active", True)
         ]
@@ -591,7 +723,13 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
             {
                     **{key: sale.get(key) for key in ("id", "number", "branchId", "branch", "cashier", "registerId", "shiftId", "createdAt", "paymentMethod", "payments", "subtotal", "discountPercent", "discountAmount", "serviceAmount", "deliveryAmount", "rounding", "currency", "orderType", "table", "deliveryAddress", "deliveryPhone", "deliveryArea", "total", "received", "change", "customerId", "customerName", "comment", "refundedAt", "refundedBy", "refundReason", "refundShiftId", "refundRegisterId")},
                 "items": [
-                    {key: item.get(key) for key in ("id", "name", "category", "unit", "price", "quantity", "station", "destination")}
+                    {
+                        **{key: item.get(key) for key in ("id", "name", "category", "unit", "price", "quantity", "station", "destination")},
+                        "modifiers": [
+                            {key: modifier.get(key) for key in ("setName", "name", "price")}
+                            for modifier in item.get("modifiers", [])
+                        ],
+                    }
                     for item in sale.get("items", [])
                 ],
             }
@@ -1111,6 +1249,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
     if action == "recipe.group.upsert":
         _owner(user)
         draft = deepcopy(state)
+        _persist_modifier_sets(draft, payload.get("modifierSets"))
         existing = _find(draft["recipes"], payload.get("id"))
         _require(not existing or not existing.get("parentId"), "Редактируйте основную карточку техкарты")
         root_id = existing["id"] if existing else max([int(item["id"]) for item in draft["recipes"]] or [100]) + 1
@@ -1145,6 +1284,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
     if action == "product.group.upsert":
         _owner(user)
         draft = deepcopy(state)
+        _persist_modifier_sets(draft, payload.get("modifierSets"))
         root_id = str(payload.get("id") or f"product-{uuid4().hex[:12]}")
         existing = _find(draft["products"], root_id)
         _require(not existing or not existing.get("parentId"), "Редактируйте основную карточку товара")
@@ -1164,7 +1304,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             found = _find(draft["products"], variant_id)
             _require(variant_id not in used_ids and (not found or variant_id in old_ids), "Некорректный код модификации")
             used_ids.add(variant_id)
-            _require(_number(raw.get("price")) > 0, "Укажите цену каждой модификации")
+            _require(_number(raw.get("price")) >= 0, "Укажите корректную цену модификации")
             apply_action(draft, user, "product.upsert", {**payload, **raw, "id": variant_id, "name": f"{name} — {variant_name}", "averageCost": found.get("averageCost", 0) if found else 0})
             variant = _find(draft["products"], variant_id)
             variant.update({"groupName": name, "variantName": variant_name, "parentId": None if index == 0 else root_id})
@@ -1175,6 +1315,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
 
     if action in {"ingredient.upsert", "product.upsert", "recipe.upsert"}:
         _owner(user)
+        _persist_modifier_sets(state, payload.get("modifierSets"))
         if action != "ingredient.upsert" and "portionSize" in payload:
             size = payload["portionSize"]
             _require(size is None or (isinstance(size, (int, float)) and not isinstance(size, bool) and isfinite(size) and size > 0), "Укажите положительный объём или вес модификации")
@@ -1241,6 +1382,10 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             entry.update({"name": name, "category": str(payload.get("category", "Без категории")), "station": station, "price": _number(payload.get("price")), "yield": output_yield, "color": str(payload.get("color", entry.get("color", "#6549d5"))), "components": components, "is_active": bool(payload.get("is_active", True))})
         if collection_name != "ingredients" and "portionSize" in payload:
             entry.update({"portionSize": payload["portionSize"], "portionUnit": payload.get("portionUnit") if payload["portionSize"] is not None else None})
+        if collection_name != "ingredients":
+            modifier_ids = payload.get("modifierSetIds", entry.get("modifierSetIds", []))
+            entry["modifierSetIds"] = [str(value) for value in modifier_ids] if isinstance(modifier_ids, list) else modifier_ids
+            _item_modifier_sets(state, entry)
         entry.update(_appearance(payload, entry))
         return collection_name[:-1], str(entry["id"])
 
@@ -1289,6 +1434,12 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             collection = state["ingredients"] if kind == "ingredient" else state["products"]
             entry = _find(collection, entry_id)
             _require(entry is not None, "Ингредиент не найден" if kind == "ingredient" else "Товар не найден", 404)
+            modifier_references = [
+                group.get("name", "модификатор")
+                for group in state.get("modifierSets", [])
+                if any(option.get("sourceType") == kind and str(option.get("sourceId")) == entry_id for option in group.get("options", []))
+            ]
+            _require(not modifier_references, "Позицию нельзя удалить: она используется в модификаторе", 409)
             branches_with_stock = [branch["name"] for branch in state["branches"] if _stock(state, str(branch["id"]), entry_id) > 0.000001]
             _require(not branches_with_stock, f"Сначала обнулите остаток: {', '.join(branches_with_stock[:3])}", 409)
             _require(not document_uses_item(entry_id), "Позицию нельзя удалить: она есть в складских документах", 409)
@@ -1382,7 +1533,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 409,
             )
         rows: list[dict[str, Any]] = []
-        seen: set[tuple[str, str]] = set()
+        seen: set[tuple[str, str, tuple]] = set()
         total = 0.0
         for raw in payload.get("items", []):
             item_id = str(raw.get("itemId", ""))
@@ -1927,10 +2078,14 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         for raw in raw_items:
             item_id = str(raw.get("id"))
             quantity = _number(raw.get("quantity"))
-            _require((_recipe(state, item_id) or _find(state["products"], item_id)) and quantity > 0 and (item_id, str(raw.get("lotId") or "")) not in seen, "Проверьте состав заказа")
-            seen.add((item_id, str(raw.get("lotId") or "")))
             item = _recipe(state, item_id) or _find(state["products"], item_id)
-            normalized_items.append({"id": item_id, "quantity": quantity, "lotId": raw.get("lotId"), "name": item["name"], **_station_route(state, item, branch_id)})
+            _require(item and quantity > 0, "Проверьте состав заказа")
+            modifier_selection, _ = _selected_modifiers(state, item, raw.get("modifiers", []))
+            signature = tuple((row["setId"], tuple(row["modifierIds"])) for row in modifier_selection)
+            key = (item_id, str(raw.get("lotId") or ""), signature)
+            _require(key not in seen, "Одинаковые позиции с одинаковыми модификаторами объедините в одну строку")
+            seen.add(key)
+            normalized_items.append({"id": item_id, "quantity": quantity, "lotId": raw.get("lotId"), "modifiers": modifier_selection, "name": item["name"], **_station_route(state, item, branch_id)})
         order = _find(pos["openOrders"], payload.get("id"))
         if order is None:
             order = {
@@ -2023,17 +2178,36 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 lot = next((row for row in batch.get("servingLots", []) if row["id"] == allocation.get("lotId")), None)
                 _require(not lot or not lot.get("handoverId"), "Завершите приёмку остатков следующей сменой перед возвратом", 409)
 
+        def return_product_stock(product_id: str, quantity: float, unit_cost: float, document: str) -> None:
+            product = _find(state["products"], product_id)
+            if not product or quantity <= 0:
+                return
+            current_quantity = _stock(state, branch_id, product_id)
+            current_cost = _cost(state, branch_id, product_id)
+            next_quantity = current_quantity + quantity
+            next_cost = (current_quantity * current_cost + quantity * unit_cost) / next_quantity if next_quantity else current_cost
+            _set_stock(state, branch_id, product_id, next_quantity, next_cost)
+            _ledger(state, branch_id=branch_id, item_id=product_id, quantity=quantity, unit_cost=unit_cost,
+                    movement_type="sale_refund", document_number=document, actor=actor)
+
         for item in sale.get("items", []):
+            for allocation in item.get("modifierAllocations", []):
+                if allocation.get("sourceType") == "product":
+                    return_product_stock(
+                        str(allocation.get("itemId", "")), _number(allocation.get("quantity")),
+                        _number(allocation.get("unitCost")), f"ВОЗВРАТ-{sale.get('number')}",
+                    )
             product = _find(state["products"], item.get("id"))
             if product:
                 quantity = _number(item.get("quantity"))
-                current_quantity = _stock(state, branch_id, product["id"])
-                current_cost = _cost(state, branch_id, product["id"])
-                returned_cost = _number(item.get("unitCost"))
-                next_quantity = current_quantity + quantity
-                next_cost = (current_quantity * current_cost + quantity * returned_cost) / next_quantity if next_quantity else current_cost
-                _set_stock(state, branch_id, product["id"], next_quantity, next_cost)
-                _ledger(state, branch_id=branch_id, item_id=product["id"], quantity=quantity, unit_cost=_number(item.get("unitCost")), movement_type="sale_refund", document_number=f"ВОЗВРАТ-{sale.get('number')}", actor=actor)
+                modifier_cost = sum(
+                    _number(allocation.get("quantity")) * _number(allocation.get("unitCost"))
+                    for allocation in item.get("modifierAllocations", [])
+                ) / max(quantity, 0.000001)
+                return_product_stock(
+                    str(product["id"]), quantity, max(0, _number(item.get("unitCost")) - modifier_cost),
+                    f"ВОЗВРАТ-{sale.get('number')}",
+                )
                 continue
             if item.get("ingredientAllocations"):
                 # Prepared food is not returned to raw stock by a payment refund.
@@ -2084,21 +2258,28 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         branch_id = _branch_user(user)
         raw_items = payload.get("items", [])
         _require(raw_items, "Чек пуст")
-        raw_ids = [(str(item.get("id")), str(item.get("lotId") or "")) for item in raw_items]
-        _require(len(raw_ids) == len(set(raw_ids)), "Одна позиция не может повторяться в чеке")
         sale_items: list[dict[str, Any]] = []
         allocations: list[tuple[dict[str, Any], int]] = []
-        ready_deductions: list[tuple[dict[str, Any], float]] = []
+        product_deductions: dict[str, float] = {}
         total = 0.0
         ingredient_deductions = {}
         serving_allocations = []
+        seen_item_signatures = set()
         for raw in raw_items:
             item_id = raw.get("id")
             quantity = _number(raw.get("quantity"))
             recipe = _recipe(state, item_id)
             product = _find(state["products"], item_id)
             _require(quantity > 0 and (recipe or product), "В чеке есть недоступная позиция")
+            item = recipe or product
+            modifier_selection, selected_modifiers = _selected_modifiers(state, item, raw.get("modifiers", []))
+            signature = tuple((row["setId"], tuple(row["modifierIds"])) for row in modifier_selection)
+            item_signature = (str(item_id), str(raw.get("lotId") or ""), signature)
+            _require(item_signature not in seen_item_signatures, "Одинаковые позиции с одинаковыми модификаторами объедините в одну строку")
+            seen_item_signatures.add(item_signature)
             ingredient_allocations = []
+            modifier_allocations = []
+            modifier_cost = 0.0
             if product or user.get("plan_code") == "restaurant":
                 _require(not raw.get("lotId"), "Партия указывается только для блюда с витрины")
             if recipe and user.get("plan_code") == "restaurant":
@@ -2162,13 +2343,48 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 unit_cost = line_cost / quantity
             else:
                 _require(bool(product.get("weighted")) or quantity.is_integer(), "Штучный товар продаётся целым количеством")
-                _require(quantity <= _stock(state, branch_id, product["id"]), f"Недостаточно остатка: {product['name']}", 409)
-                ready_deductions.append((product, quantity))
+                product_deductions[str(product["id"])] = product_deductions.get(str(product["id"]), 0) + quantity
                 item = product
                 unit_cost = _cost(state, branch_id, product["id"])
                 batch_allocations = []
-            price = _number(item.get("price"))
-            sale_items.append({"id": item["id"], **_station_route(state, item, branch_id), "name": item["name"], "category": item["category"], "unit": "порция" if recipe else item.get("unit", "шт"), "price": price, "unitCost": unit_cost, "quantity": quantity, "noDiscount": bool(item.get("noDiscount")), "batchAllocations": batch_allocations, "ingredientAllocations": ingredient_allocations})
+            modifier_price = 0.0
+            modifier_snapshots = []
+            for modifier in selected_modifiers:
+                modifier_price += modifier["price"]
+                source_type = modifier["sourceType"]
+                source_id = modifier["sourceId"]
+                source_name = ""
+                if source_type == "ingredient":
+                    source = _find(state["ingredients"], source_id)
+                    source_name = source["name"]
+                    required = modifier["quantity"] * quantity
+                    ingredient_deductions[source_id] = ingredient_deductions.get(source_id, 0) + required
+                    modifier_cost += modifier["quantity"] * _cost(state, branch_id, source_id)
+                    modifier_allocations.append({
+                        "sourceType": "ingredient",
+                        "itemId": source_id, "name": source_name, "unit": source.get("unit", "кг"),
+                        "quantity": required, "unitCost": _cost(state, branch_id, source_id),
+                    })
+                elif source_type == "product":
+                    source = _find(state["products"], source_id)
+                    source_name = source["name"]
+                    required = modifier["quantity"] * quantity
+                    product_deductions[source_id] = product_deductions.get(source_id, 0) + required
+                    modifier_cost += modifier["quantity"] * _cost(state, branch_id, source_id)
+                    modifier_allocations.append({
+                        "sourceType": "product",
+                        "itemId": source_id, "name": source_name, "unit": source.get("unit", "шт"),
+                        "quantity": required, "unitCost": _cost(state, branch_id, source_id),
+                    })
+                modifier_snapshots.append({
+                    "setId": modifier["setId"], "setName": modifier["setName"],
+                    "id": modifier["id"], "name": modifier["name"], "price": modifier["price"],
+                    "sourceType": source_type, "sourceId": source_id, "sourceName": source_name,
+                    "quantity": modifier["quantity"],
+                })
+            price = _number(item.get("price")) + modifier_price
+            unit_cost += modifier_cost / quantity
+            sale_items.append({"id": item["id"], **_station_route(state, item, branch_id), "name": item["name"], "category": item["category"], "unit": "порция" if recipe else item.get("unit", "шт"), "price": price, "unitCost": unit_cost, "quantity": quantity, "noDiscount": bool(item.get("noDiscount")), "batchAllocations": batch_allocations, "ingredientAllocations": ingredient_allocations, "modifierAllocations": modifier_allocations, "modifiers": modifier_snapshots})
             total += price * quantity
         subtotal = total
         customer = _find(pos["customers"], payload.get("customerId"))
@@ -2190,6 +2406,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         if ingredient_deductions:
             _require_unlocked(state, branch_id)
         for ingredient_id, quantity in ingredient_deductions.items():
+            _require(quantity <= _stock(state, branch_id, ingredient_id) + 0.000001, f"Недостаточно ингредиентов для модификатора: {(_find(state['ingredients'], ingredient_id) or {}).get('name', ingredient_id)}", 409)
             _set_stock(state, branch_id, ingredient_id, _stock(state, branch_id, ingredient_id) - quantity)
             _ledger(state, branch_id=branch_id, item_id=ingredient_id, quantity=-quantity, unit_cost=_cost(state, branch_id, ingredient_id), movement_type="sale_consumption", document_number="POS", actor=actor)
         for lot, weight in serving_allocations:
@@ -2197,7 +2414,9 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         for batch, allocated in allocations:
             batch["soldPortions"] = _number(batch.get("soldPortions")) + allocated
             batch["servedPortions"] = batch["soldPortions"]
-        for product, quantity in ready_deductions:
+        for product_id, quantity in product_deductions.items():
+            product = _find(state["products"], product_id)
+            _require(quantity <= _stock(state, branch_id, product_id) + 0.000001, f"Недостаточно остатка: {product['name']}", 409)
             _set_stock(state, branch_id, product["id"], _stock(state, branch_id, product["id"]) - quantity)
             _ledger(state, branch_id=branch_id, item_id=product["id"], quantity=-quantity, unit_cost=_cost(state, branch_id, product["id"]), movement_type="sale", document_number="POS", actor=actor)
         branch_sales = [sale for sale in state["sales"] if sale.get("branchId") == branch_id]

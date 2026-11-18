@@ -19,6 +19,8 @@ const terminalDeviceDefaults = { receiptPrinterMode: "browser", receiptPrinterNa
 let terminalDeviceSettings = { ...terminalDeviceDefaults };
 let currentCustomer = null;
 let currentOpenOrderId = null;
+let pendingModifierProductId = null;
+let pendingModifierLotId = null;
 let selectedReceiptId = null;
 let posSupplyContext = { suppliers: [], items: [], accounts: [], supplies: [] };
 let posSupplyLineSequence = 0;
@@ -80,6 +82,7 @@ function hydrateWorkspace(response) {
     available: availableRecipePortions(recipe, branchId),
     availableLots: recipe.availableLots,
     groupName: recipe.groupName || "", parentId: recipe.parentId == null ? "" : String(recipe.parentId), variantName: recipe.variantName || "",
+    modifierSetIds: recipe.modifierSetIds || [],
     portionSize: recipe.portionSize, portionUnit: recipe.portionUnit,
     kind: "recipe"
   }));
@@ -90,13 +93,14 @@ function hydrateWorkspace(response) {
     category: product.category,
     image: product.image || "",
     groupName: product.groupName || "", parentId: product.parentId || "", variantName: product.variantName || "", barcode: product.barcode || "", station: product.station || "",
+    modifierSetIds: product.modifierSetIds || [],
     color: product.color || workspaceState.menuCategories?.find((category) => category.name === product.category)?.color || "#7b8ba2",
     unit: product.unit || "шт",
     available: Math.max(0, Number(branchStock[String(product.id)] || 0)),
     kind: "product",
     noDiscount: Boolean(product.noDiscount)
   }));
-  products = [...recipes, ...readyProducts].filter((product) => product.price > 0);
+  products = [...recipes, ...readyProducts].filter((product) => product.price > 0 || modifierGroups(product).some(group => group.options.some(option => Number(option.price) > 0)));
   configureOrderSettings(!cart.size);
   sales = Array.isArray(workspaceState.sales) ? workspaceState.sales : [];
   posState = {
@@ -107,16 +111,18 @@ function hydrateWorkspace(response) {
   if (currentCustomer) currentCustomer = posState.customers.find((customer) => customer.id === currentCustomer.id) || null;
   for (const [id, item] of cart) {
     const current = products.find((product) => product.id === item.id);
+    const modifiers = item.modifiers || [];
+    const currentItem = current ? { ...current, modifiers, price: Number(current.price || 0) + modifierExtraPrice(modifiers), cartKey: id } : null;
     if (current && item.lotId) {
       const lot = current.availableLots?.find(lot=>lot.id===item.lotId);
-      cart.set(id,{...current,lotId:item.lotId,cartKey:id,servingLine:item.servingLine,available:Number(lot?.available||0),quantity:item.quantity});
+      cart.set(id,{...currentItem,lotId:item.lotId,servingLine:item.servingLine,available:Number(lot?.available||0),quantity:item.quantity});
       continue;
     }
     if (currentOpenOrderId && (!current || item.quantity > current.available)) {
-      cart.set(id, { ...item, ...(current || {}), cartKey:id, quantity:item.quantity, available:Number(current?.available || 0) });
+      cart.set(id, { ...item, ...(currentItem || {}), cartKey:id, modifiers, price:currentItem?.price ?? item.price, quantity:item.quantity, available:Number(current?.available || 0) });
     }
     else if (!current || item.quantity > current.available) cart.delete(id);
-    else cart.set(id, { ...current, quantity: item.quantity });
+    else cart.set(id, { ...currentItem, quantity: item.quantity });
   }
   return true;
 }
@@ -239,11 +245,11 @@ function renderProducts() {
     if (!product.variantName) return product;
     const groupId = product.parentId || product.id;
     const variants = products.filter(item => item.id === groupId || item.parentId === groupId);
-    return {...product, id:groupId, name:product.groupName, price:Math.min(...variants.map(item=>item.price)), available:variants.reduce((sum,item)=>sum + Math.max(0,item.available - (cart.get(item.id)?.quantity || 0)),0), variantCount:variants.length};
+    return {...product, id:groupId, name:product.groupName, price:Math.min(...variants.map(item=>item.price)), available:variants.reduce((sum,item)=>sum + Math.max(0,item.available - cartQuantityFor(item.id)),0), variantCount:variants.length};
   });
   $("#catalogCount").textContent = `${visibleProducts.length} ${visibleProducts.length === 1 ? "позиция" : "позиций"}`;
   $("#productGrid").innerHTML = visibleProducts.length ? visibleProducts.map((product) => {
-    const inCart = product.variantCount ? 0 : [...cart.values()].filter(item=>item.id===product.id).reduce((sum,item)=>sum+Number(item.quantity),0);
+    const inCart = product.variantCount ? 0 : cartQuantityFor(product.id);
     const unavailable = product.available - inCart < (product.kind === "recipe" && posCompanySettings().general.fractional ? 0.01 : 1);
     return `
       <button class="product-card" style="--product-accent:${escapeHtml(product.color || "#3987df")}" data-product-id="${escapeHtml(product.id)}" type="button" ${unavailable ? "disabled" : ""}>
@@ -259,15 +265,83 @@ function renderProducts() {
   }).join("") : `<div class="no-products">Нет доступных позиций или ничего не найдено.</div>`;
 }
 
+function cartQuantityFor(productId, lotId = undefined) {
+  return [...cart.values()].filter(item => String(item.id) === String(productId) && (lotId === undefined || String(item.lotId || "") === String(lotId || ""))).reduce((sum, item) => sum + Number(item.quantity || 0), 0);
+}
+
+function modifierSetById(setId) {
+  return (workspaceState?.modifierSets || []).find(group => String(group.id) === String(setId));
+}
+
+function modifierGroups(product) {
+  return (product?.modifierSetIds || []).map(modifierSetById).filter(Boolean);
+}
+
+function modifierRows(selection = []) {
+  return (selection || []).flatMap(group => (group.modifierIds || []).map(id => {
+    const set = modifierSetById(group.setId);
+    const option = set?.options?.find(row => String(row.id) === String(id));
+    return option ? { ...option, setId: set.id, setName: set.name } : null;
+  }).filter(Boolean));
+}
+
+function modifierExtraPrice(selection = []) {
+  return modifierRows(selection).reduce((sum, option) => sum + Number(option.price || 0), 0);
+}
+
+function modifierLabel(item) {
+  const rows = item?.modifiers || [];
+  const groupedNames = new Map();
+  for (const group of rows) {
+    const setName = group.setName || modifierSetById(group.setId)?.name || "Модификаторы";
+    const names = group.modifierIds
+      ? modifierRows([{ setId: group.setId, modifierIds: group.modifierIds }]).map(option => option.name)
+      : group.name ? [group.name] : [];
+    if (names.length) groupedNames.set(setName, [...(groupedNames.get(setName) || []), ...names]);
+  }
+  return [...groupedNames].map(([setName, names]) => `${setName}: ${names.join(", ")}`).join(" · ");
+}
+
+function modifiersCartKey(product, lotId, selection) {
+  const chosen = (selection || []).filter(group => group.modifierIds?.length);
+  const suffix = chosen.length ? `::mods:${encodeURIComponent(JSON.stringify(chosen))}` : "";
+  return `${product.id}${lotId ? `::${lotId}` : ""}${suffix}`;
+}
+
 function cartItemAvailabilityIssue(item) {
   const product = products.find(entry => entry.id === String(item.id));
   if (!product) return `${item.name}: позиция недоступна. Удалите её или замените.`;
   const available = item.lotId ? Number(product.availableLots?.find(lot => lot.id === item.lotId)?.available || 0) : Number(product.available || 0);
-  return item.quantity > available ? `${item.name}: доступно ${available} ${item.unit}. Уменьшите количество или замените позицию.` : '';
+  const totalQuantity = cartQuantityFor(item.id, item.lotId || "");
+  return totalQuantity > available ? `${item.name}: доступно ${available} ${item.unit}. Уменьшите количество или замените позицию.` : '';
 }
 
 function cartAvailabilityIssue() {
-  return [...cart.values()].map(cartItemAvailabilityIssue).find(Boolean) || '';
+  const lineIssue = [...cart.values()].map(cartItemAvailabilityIssue).find(Boolean);
+  if (lineIssue) return lineIssue;
+  const requirements = new Map();
+  for (const item of cart.values()) {
+    if (item.kind === "product") {
+      const key = `product:${item.id}`;
+      const product = products.find(entry => String(entry.id) === String(item.id));
+      const requirement = requirements.get(key) || { quantity: 0, available: Number(product?.available ?? 0), name: item.name, unit: item.unit };
+      requirement.quantity += Number(item.quantity || 0);
+      requirements.set(key, requirement);
+    }
+    for (const option of modifierRows(item.modifiers)) {
+      if (!["ingredient", "product"].includes(option.sourceType)) continue;
+      const key = `${option.sourceType}:${option.sourceId}`;
+      const requirement = requirements.get(key) || { quantity: 0, available: Number(option.available ?? 0), name: option.sourceName || option.name, unit: option.sourceUnit || "" };
+      requirement.quantity += Number(option.quantity || 0) * Number(item.quantity || 0);
+      requirements.set(key, requirement);
+    }
+  }
+  for (const requirement of requirements.values()) {
+    if (requirement.quantity > requirement.available + 0.000001) {
+      return `Недостаточно остатка для модификатора «${requirement.name}»: доступно ${requirement.available} ${requirement.unit}.`;
+    }
+  }
+  return "";
 }
 
 function renderCart() {
@@ -298,13 +372,13 @@ function renderCart() {
 
   $("#orderItems").innerHTML = items.map((item) => `
     <div class="order-row">
-      <div><div class="order-row-title">${escapeHtml(item.name)}</div><div class="order-row-price">${money(item.price)} · ${escapeHtml(item.unit)}${item.servingLine ? `<small>${escapeHtml(item.servingLine)}</small>` : ""}</div>${cartItemAvailabilityIssue(item) ? `<small class="danger-text">${escapeHtml(cartItemAvailabilityIssue(item))}</small><button type="button" class="danger-button" data-quantity-action="remove" data-product-id="${escapeHtml(item.cartKey || item.id)}">Убрать из заказа</button>` : ''}</div>
+      <div><div class="order-row-title">${escapeHtml(item.name)}</div><div class="order-row-price">${money(item.price)} · ${escapeHtml(item.unit)}${item.servingLine ? `<small>${escapeHtml(item.servingLine)}</small>` : ""}</div>${modifierLabel(item) ? `<small class="order-modifier-label">${escapeHtml(modifierLabel(item))}</small>` : ""}${cartItemAvailabilityIssue(item) ? `<small class="danger-text">${escapeHtml(cartItemAvailabilityIssue(item))}</small><button type="button" class="danger-button" data-quantity-action="remove" data-product-id="${escapeHtml(item.cartKey || item.id)}">Убрать из заказа</button>` : ''}</div>
       <div class="order-row-right">
         <span class="row-sum">${money(item.price * item.quantity)}</span>
         <div class="quantity-control">
           <button data-quantity-action="minus" data-product-id="${escapeHtml(item.cartKey || item.id)}" type="button">−</button>
-          ${item.kind === "recipe" && posCompanySettings().general.fractional ? `<input class="fractional-quantity" aria-label="Количество ${escapeHtml(item.name)}" data-fractional-id="${escapeHtml(item.cartKey || item.id)}" type="number" min="0.01" max="${item.available}" step="0.01" value="${item.quantity}">` : `<span>${item.quantity}</span>`}
-          <button data-quantity-action="plus" data-product-id="${escapeHtml(item.cartKey || item.id)}" type="button" ${item.quantity >= item.available ? "disabled" : ""}>+</button>
+          ${item.kind === "recipe" && posCompanySettings().general.fractional ? `<input class="fractional-quantity" aria-label="Количество ${escapeHtml(item.name)}" data-fractional-id="${escapeHtml(item.cartKey || item.id)}" type="number" min="0.01" max="${Math.max(0, item.available - cartQuantityFor(item.id, item.lotId || "") + item.quantity)}" step="0.01" value="${item.quantity}">` : `<span>${item.quantity}</span>`}
+          <button data-quantity-action="plus" data-product-id="${escapeHtml(item.cartKey || item.id)}" type="button" ${cartQuantityFor(item.id, item.lotId || "") >= item.available ? "disabled" : ""}>+</button>
         </div>
       </div>
     </div>`).join("");
@@ -317,34 +391,83 @@ function chooseProduct(id) {
   $("#productVariantDialog > p").textContent = "Выберите модификацию";
   $("#variantDialogTitle").textContent = product.groupName;
   $("#variantDialogOptions").innerHTML = products.filter(item => item.id === groupId || item.parentId === groupId).map(item => {
-    const remaining = item.available - (cart.get(item.id)?.quantity || 0);
+    const remaining = item.available - cartQuantityFor(item.id);
     return `<button type="button" data-select-variant="${escapeHtml(item.id)}" ${remaining <= 0 ? "disabled" : ""}><span class="variant-cover" style="background:${escapeHtml(item.color || "#633d60")}">${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : escapeHtml(item.variantName.slice(0,1))}</span><span>${escapeHtml(item.variantName)}<small>${remaining > 0 ? `Остаток: ${remaining} ${escapeHtml(item.unit)}` : "Нет на складе"}</small></span><strong>${money(item.price)}</strong></button>`;
   }).join("");
   $("#productVariantDialog").showModal();
 }
-function addProduct(id, lotId = null) {
+function openModifierDialog(product, lotId = null) {
+  const groups = modifierGroups(product);
+  if (!groups.length) return addProduct(product.id, lotId, []);
+  if (window.OfflinePos?.isOffline()) {
+    showToast("В автономном режиме продажа позиции с модификаторами недоступна");
+    return;
+  }
+  pendingModifierProductId = product.id;
+  pendingModifierLotId = lotId;
+  $("#modifierDialogTitle").textContent = product.name;
+  $("#modifierDialogError").textContent = "";
+  $("#modifierDialogGroups").innerHTML = groups.map(group => {
+    const choices = group.options.map(option => {
+      const noStock = option.sourceType !== "none" && Number(option.available || 0) <= 0;
+      const sourceInfo = option.sourceType === "none"
+        ? "Без списания со склада"
+        : `${option.sourceName || "Списание со склада"} · ${option.sourceUnit || ""} · остаток ${Number(option.available || 0)}`;
+      return `<label class="pos-modifier-choice"><input type="${group.selectionMode === "single" ? "radio" : "checkbox"}" name="modifier-${escapeHtml(group.id)}" value="${escapeHtml(option.id)}" data-modifier-price="${Number(option.price || 0)}" ${noStock ? "disabled" : ""}><span><strong>${escapeHtml(option.name)}</strong><small>${escapeHtml(sourceInfo)}</small></span><b>${Number(option.price || 0) ? `+${money(option.price)}` : "Без доплаты"}</b></label>`;
+    }).join("");
+    const max = group.selectionMode === "multiple" ? ` · максимум ${group.maxSelections}` : "";
+    return `<fieldset class="pos-modifier-group" data-pos-modifier-set="${escapeHtml(group.id)}" data-pos-required="${group.required}" data-pos-max="${group.selectionMode === "single" ? 1 : group.maxSelections}"><legend>${escapeHtml(group.name)}<small>${group.required ? "Обязательно" : "По желанию"}${max}</small></legend>${choices}</fieldset>`;
+  }).join("");
+  $("#modifierDialog").showModal();
+}
+
+function confirmModifierSelection() {
+  const selection = [];
+  for (const group of $("#modifierDialogGroups").querySelectorAll("[data-pos-modifier-set]")) {
+    const modifierIds = [...group.querySelectorAll("input:checked")].map(input => input.value);
+    const required = group.dataset.posRequired === "true";
+    const maximum = Number(group.dataset.posMax);
+    if ((required && !modifierIds.length) || modifierIds.length > maximum) {
+      $("#modifierDialogError").textContent = required ? "Выберите обязательный вариант в каждой группе." : "Выбрано слишком много вариантов.";
+      return;
+    }
+    selection.push({ setId: group.dataset.posModifierSet, modifierIds });
+  }
+  const productId = pendingModifierProductId, lotId = pendingModifierLotId;
+  pendingModifierProductId = pendingModifierLotId = null;
+  $("#modifierDialog").close();
+  if (productId) addProduct(productId, lotId, selection);
+}
+
+function addProduct(id, lotId = null, modifierSelection = null) {
   if (activeOperator?.staffRole === "production") return;
   let product = products.find((entry) => entry.id === String(id));
   if (!product) return;
-  let existing = cart.get(product.id);
-  let cartKey = product.id;
+  let selectedLot = null;
   if (Array.isArray(product.availableLots)) {
-    const lot = product.availableLots.find(lot=>lot.id===(lotId || existing?.lotId)) || (product.availableLots.length===1 ? product.availableLots[0] : null);
-    if (!lot) {
+    selectedLot = product.availableLots.find(lot=>lot.id === lotId) || (product.availableLots.length === 1 ? product.availableLots[0] : null);
+    if (!selectedLot) {
       if (!product.availableLots.length) { showToast("Нет принятого остатка на витрине"); return; }
       $("#productVariantDialog > p").textContent = "Укажите, с какой витрины отпущено блюдо.";
       $("#variantDialogTitle").textContent = `${product.name} · откуда выдано`;
       $("#variantDialogOptions").innerHTML = product.availableLots.map(lot=>`<button type="button" data-select-lot="${escapeHtml(lot.id)}" data-lot-product="${escapeHtml(product.id)}"><span>${escapeHtml(lot.line)}<small>${escapeHtml(lot.batchNumber)} · ${escapeHtml(lot.responsibleName || 'Ответственный не зафиксирован')}</small></span><strong>${lot.available} порц.</strong></button>`).join('');
       $("#productVariantDialog").showModal(); return;
     }
-    cartKey=product.id+'::'+lot.id; existing=cart.get(cartKey);
-    product={...product,cartKey,lotId:lot.id,servingLine:`${lot.line} · ${lot.batchNumber}`,available:Number(lot.available)};
+    product = { ...product, lotId: selectedLot.id, servingLine: `${selectedLot.line} · ${selectedLot.batchNumber}`, available: Number(selectedLot.available) };
   }
-  const quantityStep = product.kind === "recipe" && posCompanySettings().general.fractional ? Math.min(1, Math.floor((product.available - (existing?.quantity || 0)) * 100) / 100) : 1;
+  if (modifierSelection === null) {
+    if (modifierGroups(product).length) return openModifierDialog(product, selectedLot?.id || null);
+    modifierSelection = [];
+  }
+  const cartKey = modifiersCartKey(product, selectedLot?.id || null, modifierSelection);
+  const existing = cart.get(cartKey);
+  const sameStockQuantity = cartQuantityFor(product.id, selectedLot?.id || "");
+  const quantityStep = product.kind === "recipe" && posCompanySettings().general.fractional ? Math.min(1, Math.floor((product.available - sameStockQuantity) * 100) / 100) : 1;
   const nextQuantity = (existing?.quantity || 0) + quantityStep;
   if (quantityStep <= 0) return;
-  if (nextQuantity > product.available) { showToast(`Недостаточно доступного количества: ${product.name}`); return; }
-  cart.set(cartKey, { ...product, quantity: nextQuantity });
+  if (sameStockQuantity + quantityStep > product.available) { showToast(`Недостаточно доступного количества: ${product.name}`); return; }
+  const basePrice = Number(products.find(entry => entry.id === String(id))?.price || 0);
+  cart.set(cartKey, { ...product, cartKey, modifiers: modifierSelection, price: basePrice + modifierExtraPrice(modifierSelection), quantity: nextQuantity });
   renderCart();
 }
 
@@ -353,7 +476,7 @@ function updateQuantity(id, delta) {
   if (!item) return;
   const quantity = item.quantity + delta;
   if (quantity <= 0) cart.delete(String(id));
-  else if (delta < 0 || quantity <= item.available) cart.set(String(id), { ...item, quantity });
+  else if (delta < 0 || quantity + cartQuantityFor(item.id, item.lotId || "") - item.quantity <= item.available) cart.set(String(id), { ...item, quantity });
   else showToast(`Доступно только ${item.available} ${item.unit}`);
   renderCart();
 }
@@ -441,7 +564,7 @@ async function recoverPayment() {
     const response = await window.AshkanaApi.action('sale.create', pending.payload);
     try{localStorage.removeItem(paymentRetryKey());}catch(_){/* A storage cleanup failure must not replay a confirmed payment. */}
     hydrateWorkspace(response);
-    const currentItems = [...cart.values()].map(item=>({id:item.id,quantity:item.quantity,lotId:item.lotId}));
+    const currentItems = [...cart.values()].map(item=>({id:item.id,quantity:item.quantity,lotId:item.lotId,modifiers:item.modifiers || []}));
     if (JSON.stringify(currentItems)===JSON.stringify(pending.payload.items)) { closePayment(); startNewOrder(); }
     showToast('Оплата восстановлена. Чек сохранён один раз.');
   } catch (error) {
@@ -456,6 +579,10 @@ async function completePayment() {
   if (!allowProtectedAction("closeReceipt") || (currentDiscountPercent() && !allowProtectedAction("discount"))) return;
   const total = cartTotal();
   if (!total) return;
+  if (window.OfflinePos?.isOffline() && [...cart.values()].some(item => modifierGroups(item).length)) {
+    showToast("В автономном режиме продажа позиции с модификаторами недоступна");
+    return;
+  }
   updatePaymentState();
   if ($("#confirmPaymentButton").disabled) return;
   const payments = checkoutPayments().filter(part => part.amount > 0);
@@ -474,7 +601,7 @@ async function completePayment() {
       customerId: currentCustomer?.id || null,
       discountPercent: currentDiscountPercent(),
       comment: $("#orderComment").value.trim(),
-      items: [...cart.values()].map((item) => ({ id: item.id, quantity: item.quantity, lotId: item.lotId }))
+      items: [...cart.values()].map((item) => ({ id: item.id, quantity: item.quantity, lotId: item.lotId, modifiers: item.modifiers || [] }))
     };
     const prior = pendingPayment();
     const request = prior || {payload:{...payload,requestId:crypto.randomUUID()}};
@@ -539,7 +666,7 @@ function orderTotal(order) {
   let discountable = 0;
   const subtotal = (order.items || []).reduce((sum, row) => {
     const product = products.find((entry) => entry.id === String(row.id));
-    const lineTotal = Number(product?.price || 0) * Number(row.quantity || 0);
+    const lineTotal = (Number(product?.price ?? row.price ?? 0) + modifierExtraPrice(row.modifiers)) * Number(row.quantity || 0);
     if (!product?.noDiscount) discountable += lineTotal;
     return sum + lineTotal;
   }, 0);
@@ -575,6 +702,10 @@ function renderOpenOrders() {
 async function saveOpenOrder(printByStation = false) {
   if (activeOperator?.staffRole === "production") return;
   if (!cart.size) return;
+  if (window.OfflinePos?.isOffline() && [...cart.values()].some(item => modifierGroups(item).length)) {
+    showToast("В автономном режиме заказ с модификаторами сохранить нельзя");
+    return;
+  }
   const button = $("#saveOrderButton");
   button.disabled = true;
   try {
@@ -585,7 +716,7 @@ async function saveOpenOrder(printByStation = false) {
       customerId: currentCustomer?.id || null,
       discountPercent: currentDiscountPercent(),
       comment: $("#orderComment").value.trim(),
-      items: [...cart.values()].map((item) => ({ id: item.id, quantity: item.quantity, lotId: item.lotId })),
+      items: [...cart.values()].map((item) => ({ id: item.id, quantity: item.quantity, lotId: item.lotId, modifiers: item.modifiers || [] })),
     });
     hydrateWorkspace(response);
     cart.clear();
@@ -611,8 +742,9 @@ async function loadOpenOrder(orderId) {
   for (const row of order.items || []) {
     const product = products.find((entry) => entry.id === String(row.id)) || { id:String(row.id), name:row.name || 'Недоступная позиция', price:Number(row.price || 0), unit:row.unit || 'шт', available:0, kind:'product' };
     const lot = row.lotId ? product.availableLots?.find(lot=>lot.id===row.lotId) : null;
-    const key=row.lotId ? product.id+'::'+row.lotId : product.id;
-    restored.set(key, { ...product, cartKey:key, lotId:row.lotId || undefined, servingLine:lot ? `${lot.line} · ${lot.batchNumber}` : '', available:row.lotId ? Number(lot?.available || 0) : product.available, quantity:Number(row.quantity) });
+    const modifiers = row.modifiers || [];
+    const key = modifiersCartKey(product, row.lotId || null, modifiers);
+    restored.set(key, { ...product, cartKey:key, modifiers, price:Number(product.price || 0) + modifierExtraPrice(modifiers), lotId:row.lotId || undefined, servingLine:lot ? `${lot.line} · ${lot.batchNumber}` : '', available:row.lotId ? Number(lot?.available || 0) : product.available, quantity:Number(row.quantity) });
   }
   try {
     cart = restored;
@@ -785,7 +917,7 @@ function kitchenOrderHtml(order) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push({...line, name:line.name || product?.name || line.id});
   }
-  return [...groups].map(([route,lines]) => `<section class="kitchen-print-ticket"><h1>${escapeHtml(route)}</h1><p>Заказ ${escapeHtml(order.number || order.id || "")}</p>${order.table ? `<p>Стол: ${escapeHtml(order.table)}</p>` : ""}${lines.map(line=>`<p><span>${escapeHtml(line.name)}</span><b>× ${Number(line.quantity)}</b></p>`).join("")}${order.comment ? `<hr><p>${escapeHtml(order.comment)}</p>` : ""}</section>`).join("");
+  return [...groups].map(([route,lines]) => `<section class="kitchen-print-ticket"><h1>${escapeHtml(route)}</h1><p>Заказ ${escapeHtml(order.number || order.id || "")}</p>${order.table ? `<p>Стол: ${escapeHtml(order.table)}</p>` : ""}${lines.map(line=>`<p><span>${escapeHtml(line.name)}</span><b>× ${Number(line.quantity)}</b></p>${modifierLabel(line) ? `<small>${escapeHtml(modifierLabel(line))}</small>` : ""}`).join("")}${order.comment ? `<hr><p>${escapeHtml(order.comment)}</p>` : ""}</section>`).join("");
 }
 function printKitchenOrder(order) {
   const html = kitchenOrderHtml(order);
@@ -1745,6 +1877,14 @@ $("#saveOrderButton").addEventListener("click", () => saveOpenOrder());
 $("#sendKitchenOrderButton").addEventListener("click", () => saveOpenOrder(true));
 $("#closeVariantDialog").addEventListener("click", () => $("#productVariantDialog").close());
 $("#variantDialogOptions").addEventListener("click", event => { const button = event.target.closest("[data-select-variant]"); if (!button || button.disabled) return; addProduct(button.dataset.selectVariant); $("#productVariantDialog").close(); });
+const dismissModifierDialog = () => {
+  $("#modifierDialog").close();
+  pendingModifierProductId = pendingModifierLotId = null;
+};
+$("#closeModifierDialog").addEventListener("click", dismissModifierDialog);
+$("#cancelModifierSelection").addEventListener("click", dismissModifierDialog);
+$("#confirmModifierSelection").addEventListener("click", confirmModifierSelection);
+$("#modifierDialog").addEventListener("close", () => { pendingModifierProductId = pendingModifierLotId = null; });
 $("#supplyButton").addEventListener("click", openPosSupply);
 $("#closeSupplyButton").addEventListener("click", () => closeDrawer("#supplyDrawer"));
 $("#supplyDrawer").addEventListener("click", (event) => { if (event.target === $("#supplyDrawer")) closeDrawer("#supplyDrawer"); });
@@ -1898,7 +2038,8 @@ $("#orderItems").addEventListener("change", event => {
   if (!input) return;
   const item = cart.get(input.dataset.fractionalId);
   const quantity = Number(input.value);
-  if (!item || !Number.isFinite(quantity) || quantity <= 0 || quantity > item.available) { showToast("Проверьте количество и доступный остаток"); renderCart(); return; }
+  const otherQuantity = item ? cartQuantityFor(item.id, item.lotId || "") - item.quantity : 0;
+  if (!item || !Number.isFinite(quantity) || quantity <= 0 || quantity + otherQuantity > item.available) { showToast("Проверьте количество и доступный остаток"); renderCart(); return; }
   item.quantity = Math.round(quantity * 100) / 100;
   renderCart();
 });

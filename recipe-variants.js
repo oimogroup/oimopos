@@ -37,9 +37,12 @@
     if(!el('recipeVariantsEnabled').checked)return false;
     rows[active]=capture();
     rows=rows.map(r=>({...r,name:r.name || (r.portionSize ? `${r.portionSize} ${r.portionUnit}` : '')}));
+    const modifierData=window.CatalogModifiers.read();
+    if(!modifierData)return true;
+    const hasPaidModifier=modifierData.modifierSets.some(group=>group.options.some(option=>option.price>0));
     const name=el('recipeNameInput').value.trim(),station=el('recipeStationInput').value;
-    if(!name || !station || !rows.length || rows.some(r=>!r.name || !Number.isFinite(r.price) || r.price<0 || !Number.isFinite(r.yield) || r.yield<=0 || !r.components.length || (r.portionSize!=null && (!Number.isFinite(r.portionSize) || r.portionSize<=0))) || new Set(rows.map(r=>r.name.toLocaleLowerCase('ru'))).size!==rows.length){showToast('Укажите разные названия модификаций, выход, состав и корректные цены и объёмы');return true;}
-    const payload={id:editingRecipeId,name,category:el('recipeCategoryInput').value,station,variants:rows.map(r=>({...r,portionSize:r.portionSize ?? null,portionUnit:r.portionUnit || 'мл'}))};
+    if(!name || !station || !rows.length || rows.some(r=>!r.name || !Number.isFinite(r.price) || r.price<0 || !Number.isFinite(r.yield) || r.yield<=0 || !r.components.length || (r.portionSize!=null && (!Number.isFinite(r.portionSize) || r.portionSize<=0))) || (!rows.some(r=>r.price>0) && !hasPaidModifier) || new Set(rows.map(r=>r.name.toLocaleLowerCase('ru'))).size!==rows.length){showToast('Укажите разные названия модификаций, выход, состав и цену блюда или платного варианта');return true;}
+    const payload={...modifierData,id:editingRecipeId,name,category:el('recipeCategoryInput').value,station,variants:rows.map(r=>({...r,modifierSetIds:modifierData.modifierSetIds,portionSize:r.portionSize ?? null,portionUnit:r.portionUnit || 'мл'}))};
     if(serverMode){if(!await runServerAction('recipe.group.upsert',payload))return true;}
     else {
       let next=Math.max(100,...recipes.map(r=>Number(r.id)||0))+1;
@@ -47,8 +50,9 @@
       rows.forEach((row,i)=>{
         const id=i===0 ? rootId : row.id || next++;
         let item=recipes.find(r=>r.id===id);if(!item){item={id};recipes.push(item);}
-        Object.assign(item,row,{id,name:`${name} — ${row.name}`,category:payload.category,station,groupName:name,variantName:row.name,parentId:i===0 ? null : rootId});
+        Object.assign(item,row,{id,name:`${name} — ${row.name}`,category:payload.category,station,groupName:name,variantName:row.name,parentId:i===0 ? null : rootId,modifierSetIds:modifierData.modifierSetIds});
       });saveRecipes();renderAll();
+      window.CatalogModifiers.saveLocal(modifierData);
     }
     el('recipeModal').classList.add('hidden');switchMenuPage('recipes');showToast('Техкарта с модификациями сохранена');return true;
   }
