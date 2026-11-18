@@ -1,6 +1,6 @@
 (() => {
   const el = (id) => document.getElementById(id);
-  let groups = new Map(), attached = [], sources = [], root = null, scope = "default";
+  let groups = new Map(), attached = [], sources = [], root = null, scope = "default", itemLabel = "товара";
 
   const id = (prefix) => `${prefix}-${crypto.randomUUID()}`;
   const copy = (value) => structuredClone(value);
@@ -23,7 +23,7 @@
     const available = [...groups.values()].filter((group) => !attached.includes(group.id));
     root.innerHTML = `<div class="modifier-set-toolbar"><button type="button" class="secondary-action" data-modifier-create>+ Новая группа</button>${available.length ? `<label><span>Добавить готовую группу</span><select data-modifier-attach><option value="">Выберите группу…</option>${available.map((group) => `<option value="${escapeHtml(group.id)}">${escapeHtml(group.name)}</option>`).join("")}</select></label>` : ""}</div>${attachedGroups.map((group) => `
       <section class="modifier-set-card" data-modifier-group="${escapeHtml(group.id)}">
-        <header><label><span>Название группы</span><input data-group-name maxlength="80" value="${escapeHtml(group.name)}"></label><label><span>Выбор</span><select data-group-mode><option value="single" ${group.selectionMode === "single" ? "selected" : ""}>Один вариант</option><option value="multiple" ${group.selectionMode === "multiple" ? "selected" : ""}>Несколько вариантов</option></select></label><label class="modifier-required"><input data-group-required type="checkbox" ${group.required ? "checked" : ""}> Обязательный выбор</label>${group.selectionMode === "multiple" ? `<label class="modifier-max"><span>Максимум вариантов</span><input data-group-max type="number" min="1" max="30" step="1" value="${group.maxSelections}"></label>` : ""}<button type="button" class="danger-button" data-modifier-detach="${escapeHtml(group.id)}">Убрать группу</button></header>
+        <header><label><span>Название группы</span><input data-group-name maxlength="80" value="${escapeHtml(group.name)}"></label><label><span>Выбор</span><select data-group-mode><option value="single" ${group.selectionMode === "single" ? "selected" : ""}>Один вариант</option><option value="multiple" ${group.selectionMode === "multiple" ? "selected" : ""}>Несколько вариантов</option></select></label><label class="modifier-required"><input data-group-required type="checkbox" ${group.required ? "checked" : ""}> Обязательный выбор</label>${group.selectionMode === "multiple" ? `<label class="modifier-max"><span>Максимум вариантов</span><input data-group-max type="number" min="1" max="30" step="1" value="${group.maxSelections}"></label>` : ""}<button type="button" class="danger-button" data-modifier-detach="${escapeHtml(group.id)}" title="Снять группу только с этого ${itemLabel}">Убрать из ${itemLabel}</button></header>
         <p>Группа общая: изменения сохранятся во всех блюдах и товарах, где она используется.</p>
         <div class="modifier-options">${group.options.map((option) => `<div class="modifier-option-row" data-modifier-option="${escapeHtml(option.id)}"><label><span>Название варианта</span><input data-option-name maxlength="80" value="${escapeHtml(option.name)}"></label><label><span>Списание</span><select data-option-source>${sourceOptions(sourceKey(option.sourceType, option.sourceId))}</select></label><label class="modifier-quantity"><span>Кол-во на порцию</span><div><input data-option-quantity type="number" min="0.001" step="any" value="${option.sourceType === "none" ? "" : option.quantity}" ${option.sourceType === "none" ? "disabled" : ""}><small>${escapeHtml(sources.find((row) => row.type === option.sourceType && String(row.id) === String(option.sourceId))?.unit || "")}</small></div></label><label><span>Доплата</span><div><input data-option-price type="number" min="0" step="0.01" value="${option.price}"><small>сом</small></div></label><button type="button" class="danger-button" data-modifier-option-remove="${escapeHtml(option.id)}" ${group.options.length < 2 ? "disabled" : ""}>×</button></div>`).join("")}</div>
         <button type="button" class="secondary-action" data-modifier-option-add="${escapeHtml(group.id)}">+ Добавить вариант</button>
@@ -33,6 +33,7 @@
   function open(item, catalog) {
     const serverMode = Boolean(catalog.serverMode);
     scope = String(catalog.scope || "default");
+    itemLabel = catalog.kind === "recipe" ? "блюда" : "товара";
     let existingSets = Array.isArray(catalog.modifierSets) ? catalog.modifierSets : [];
     if (!serverMode) {
       try {
