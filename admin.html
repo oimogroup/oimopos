@@ -71,7 +71,8 @@
             <button class="active" data-menu-page="recipes" type="button">Тех. карты</button>
             <button data-menu-page="preparations" type="button">Полуфабрикаты</button>
             <button data-menu-page="ingredients" type="button">Ингредиенты</button>
-            <button data-menu-page="menu-categories" type="button">Категории товаров и тех. карт</button>
+            <button data-menu-page="product-categories" type="button">Категории товаров</button>
+            <button data-menu-page="recipe-categories" type="button">Категории тех. карт</button>
             <button data-menu-page="ingredient-categories" type="button">Категории ингредиентов</button>
             <button data-menu-page="stations" type="button">Цеха</button>
           </div>
@@ -253,8 +254,12 @@
               </article>
             </div>
 
-            <div class="menu-pane" id="menu-pane-menu-categories">
-              <article class="panel table-panel service-list-panel"><div class="service-list-intro"><strong>Категории товаров и тех. карт</strong><p>Эти категории видит кассир на терминале. Они объединяют продаваемые блюда и готовые товары.</p></div><table class="data-table"><thead><tr><th>Категория</th><th>Тип</th><th>Позиций</th><th>Отображается</th><th>Цвет на кассе</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="menuCategoriesTable"></tbody></table></article>
+            <div class="menu-pane" id="menu-pane-product-categories">
+              <article class="panel table-panel service-list-panel"><div class="service-list-intro"><strong>Категории товаров</strong><p>Отдельные группы для готовых товаров, продаваемых без приготовления.</p></div><table class="data-table"><thead><tr><th>Категория</th><th>Товаров</th><th>Цвет на кассе</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="productCategoriesTable"></tbody></table></article>
+            </div>
+
+            <div class="menu-pane" id="menu-pane-recipe-categories">
+              <article class="panel table-panel service-list-panel"><div class="service-list-intro"><strong>Категории тех. карт</strong><p>Отдельные группы для блюд и напитков, которые готовятся по техкарте.</p></div><table class="data-table"><thead><tr><th>Категория</th><th>Тех. карт</th><th>Цвет на кассе</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="recipeCategoriesTable"></tbody></table></article>
             </div>
 
             <div class="menu-pane" id="menu-pane-ingredient-categories">
@@ -1145,7 +1150,7 @@
     <script src="product-variants.js?v=variant-removal-1"></script>
     <script src="recipe-variants.js?v=modifiers-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=product-save-loading-1"></script>
+    <script src="admin.js?v=category-split-1"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

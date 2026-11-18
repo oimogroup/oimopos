@@ -3,7 +3,7 @@
   <head><meta charset="utf-8"><title>Admin smoke test</title></head>
   <body>
     <div id="results">WAIT</div>
-    <iframe id="app" src="../admin?test=1#inventory" style="display:none"></iframe>
+    <iframe id="app" src="../admin.html?test=1#inventory" style="display:none"></iframe>
     <script>
       document.querySelector("#app").addEventListener("load", async () => {
         const frame = document.querySelector("#app");
@@ -11,7 +11,7 @@
         const doc = frame.contentDocument;
         const checks = [];
         const check = (name, condition) => checks.push(`${condition ? "PASS" : "FAIL"}:${name}`);
-        const keys = ["ashkana-admin-ingredients-v1", "ashkana-admin-recipes-v1", "ashkana-admin-preparations-v1", "ashkana-admin-products-v1", "ashkana-menu-categories-v1", "ashkana-ingredient-categories-v1", "ashkana-stations-v1", "ashkana-stock-documents-v1", "ashkana-production-logistics-v3", "ashkana-stock-suppliers-v1", "ashkana-finance-v1", "ashkana-branches-v1", "ashkana-access-accounts-v1", "ashkana-pos-sales", "ashkana-notifications-read-v1-test"];
+        const keys = ["ashkana-admin-ingredients-v1", "ashkana-admin-recipes-v1", "ashkana-admin-preparations-v1", "ashkana-admin-products-v1", "ashkana-menu-categories-v1", "ashkana-recipe-categories-v1", "ashkana-product-categories-v1", "ashkana-ingredient-categories-v1", "ashkana-stations-v1", "ashkana-stock-documents-v1", "ashkana-production-logistics-v3", "ashkana-stock-suppliers-v1", "ashkana-finance-v1", "ashkana-branches-v1", "ashkana-access-accounts-v1", "ashkana-pos-sales", "ashkana-notifications-read-v1-test"];
         const snapshot = Object.fromEntries(keys.map((key) => [key, win.localStorage.getItem(key)]));
         try {
           check("single-point", doc.querySelectorAll("#branchCards .branch-card").length === 1 && doc.querySelector("#branchCards").textContent.includes("Манаса"));
@@ -131,32 +131,35 @@
           doc.querySelector("#confirmCatalogDeleteButton").click();
           check("preparation-delete", !JSON.parse(win.localStorage.getItem("ashkana-admin-preparations-v1") || "[]").some((item) => item.id === savedPreparation.id));
 
-          win.switchMenuPage("menu-categories");
-          const hotCategoryRow = [...doc.querySelectorAll("#menuCategoriesTable tr")].find((row) => row.textContent.includes("Горячее"));
-          hotCategoryRow.querySelector("[data-menu-category-edit]").click();
+          win.switchMenuPage("recipe-categories");
+          const hotCategoryRow = [...doc.querySelectorAll("#recipeCategoriesTable tr")].find((row) => row.textContent.includes("Горячее"));
+          win.eval('products.find((product) => product.id === "p-1").category = "Горячее"; saveProducts();');
+          hotCategoryRow.querySelector("[data-recipe-category-edit]").click();
           check("menu-category-edit-form", !doc.querySelector("#categoryModal").classList.contains("hidden") && doc.querySelector("#categoryNameInput").value === "Горячее");
           doc.querySelector("#categoryNameInput").value = "Основные блюда тест";
           doc.querySelector("#categoryColorText").value = "#123456";
           win.saveCategoryForm();
           let savedRecipes = JSON.parse(win.localStorage.getItem("ashkana-admin-recipes-v1") || "[]");
-          check("menu-category-edit", savedRecipes.find((recipe) => recipe.id === 201)?.category === "Основные блюда тест" && JSON.parse(win.localStorage.getItem("ashkana-menu-categories-v1") || "[]").some(category => category.name === "Основные блюда тест" && category.color === "#123456") && doc.querySelector("#menuCategoriesTable").textContent.includes("Основные блюда тест"));
-          const renamedMenuIndex = [...doc.querySelectorAll("#menuCategoriesTable tr")].find((row) => row.textContent.includes("Основные блюда тест"))?.querySelector("[data-menu-category-edit]")?.dataset.menuCategoryEdit;
-          win.openCategoryForm("menu", renamedMenuIndex);
+          const savedProductsAfterRecipeRename = JSON.parse(win.localStorage.getItem("ashkana-admin-products-v1") || "[]");
+          check("recipe-category-edit-is-scoped", savedRecipes.find((recipe) => recipe.id === 201)?.category === "Основные блюда тест" && savedProductsAfterRecipeRename.find((product) => product.id === "p-1")?.category === "Горячее" && JSON.parse(win.localStorage.getItem("ashkana-recipe-categories-v1") || "[]").some(category => category.name === "Основные блюда тест" && category.color === "#123456") && doc.querySelector("#recipeCategoriesTable").textContent.includes("Основные блюда тест"));
+          win.eval('products.find((product) => product.id === "p-1").category = "Напитки"; saveProducts(); renderAll();');
+          const renamedMenuIndex = [...doc.querySelectorAll("#recipeCategoriesTable tr")].find((row) => row.textContent.includes("Основные блюда тест"))?.querySelector("[data-recipe-category-edit]")?.dataset.recipeCategoryEdit;
+          win.openCategoryForm("recipe", renamedMenuIndex);
           doc.querySelector("#categoryNameInput").value = "Горячее";
           doc.querySelector("#categoryColorText").value = "#E39A3D";
           win.saveCategoryForm();
-          win.switchMenuPage("menu-categories");
+          win.switchMenuPage("recipe-categories");
           doc.querySelector("#menuPageActionButton").click();
           doc.querySelector("#categoryNameInput").value = "Тестовая категория меню";
           doc.querySelector("#categoryColorText").value = "#445566";
           win.saveCategoryForm();
-          const savedMenuCategories = JSON.parse(win.localStorage.getItem("ashkana-menu-categories-v1") || "[]");
-          check("menu-category-create", savedMenuCategories.some((category) => category.name === "Тестовая категория меню" && category.color === "#445566"));
-          const testMenuCategoryRow = [...doc.querySelectorAll("#menuCategoriesTable tr")].find((row) => row.textContent.includes("Тестовая категория меню"));
-          testMenuCategoryRow.querySelector("[data-menu-category-edit]").click();
+          const savedMenuCategories = JSON.parse(win.localStorage.getItem("ashkana-recipe-categories-v1") || "[]");
+          check("recipe-category-create", savedMenuCategories.some((category) => category.name === "Тестовая категория меню" && category.color === "#445566"));
+          const testMenuCategoryRow = [...doc.querySelectorAll("#recipeCategoriesTable tr")].find((row) => row.textContent.includes("Тестовая категория меню"));
+          testMenuCategoryRow.querySelector("[data-recipe-category-edit]").click();
           doc.querySelector("#deleteCategoryButton").click();
           doc.querySelector("#confirmCatalogDeleteButton").click();
-          check("menu-category-delete", !JSON.parse(win.localStorage.getItem("ashkana-menu-categories-v1") || "[]").some((category) => category.name === "Тестовая категория меню"));
+          check("recipe-category-delete", !JSON.parse(win.localStorage.getItem("ashkana-recipe-categories-v1") || "[]").some((category) => category.name === "Тестовая категория меню"));
 
           win.switchMenuPage("ingredient-categories");
           const meatCategoryRow = [...doc.querySelectorAll("#ingredientCategoriesTable tr")].find((row) => row.textContent.includes("Мясо"));

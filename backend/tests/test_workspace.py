@@ -363,6 +363,24 @@ def test_owner_can_create_and_rename_catalog_categories() -> None:
     assert "Крупы и зерно" in state["ingredientCategories"]
 
 
+def test_recipe_and_product_categories_are_independent() -> None:
+    state = default_state()
+    state["products"][0]["category"] = "Горячее"
+
+    apply_action(state, OWNER, "category.upsert", {
+        "kind": "recipe", "originalName": "Горячее", "name": "Основные блюда", "color": "#123456",
+    })
+    apply_action(state, OWNER, "category.upsert", {
+        "kind": "product", "name": "Основные блюда", "color": "#abcdef",
+    })
+
+    assert all(recipe["category"] == "Основные блюда" for recipe in state["recipes"] if recipe["id"] in {201, 203, 205})
+    assert state["products"][0]["category"] == "Горячее"
+    assert any(category["name"] == "Основные блюда" for category in state["recipeCategories"])
+    assert any(category["name"] == "Основные блюда" for category in state["productCategories"])
+    assert sum(category["name"] == "Основные блюда" for category in state["menuCategories"]) == 1
+
+
 def test_branch_cannot_manage_catalog_categories() -> None:
     state = default_state()
     with pytest.raises(WorkspaceError) as error:
@@ -491,6 +509,10 @@ def test_owner_can_delete_unused_catalog_entries() -> None:
     apply_action(state, OWNER, "category.upsert", {"kind": "menu", "name": "Пустая категория", "color": "#123456"})
     apply_action(state, OWNER, "catalog.delete", {"kind": "menu-category", "id": "Пустая категория"})
     assert all(category["name"] != "Пустая категория" for category in state["menuCategories"])
+
+    apply_action(state, OWNER, "category.upsert", {"kind": "recipe", "name": "Пустая категория техкарт", "color": "#123456"})
+    apply_action(state, OWNER, "catalog.delete", {"kind": "recipe-category", "id": "Пустая категория техкарт"})
+    assert all(category["name"] != "Пустая категория техкарт" for category in state["recipeCategories"])
 
     apply_action(state, OWNER, "station.upsert", {"name": "Пустой цех", "branchId": "b1", "destination": "Без печати"})
     apply_action(state, OWNER, "catalog.delete", {"kind": "station", "id": "Пустой цех"})
