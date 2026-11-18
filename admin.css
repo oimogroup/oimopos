@@ -1533,6 +1533,10 @@ body[data-ui=admin] #view-recipes .catalog-ledger tbody > tr:hover {background:#
 body[data-ui=admin] #view-recipes .catalog-ledger .catalog-number {text-align:right;font-variant-numeric:tabular-nums;white-space:nowrap;}
 body[data-ui=admin] #view-recipes .catalog-ledger .catalog-number strong {font-weight:600;}
 body[data-ui=admin] #view-recipes .catalog-ledger .catalog-number small {display:block;margin-top:3px;font-size:11px;color:var(--muted);font-weight:400;}
+.catalog-inline-price {min-height:32px;padding:4px 7px;border:0;border-radius:5px;background:transparent;color:inherit;font:inherit;font-weight:600;font-variant-numeric:tabular-nums;cursor:pointer;}
+.catalog-inline-price:hover {background:#f1f5fa;color:var(--purple);}
+.catalog-inline-price:focus-visible {outline:2px solid var(--purple);outline-offset:1px;}
+.catalog-inline-price-input {width:100%;min-width:82px;max-width:120px;height:36px;padding:4px 8px;border:1px solid var(--purple);border-radius:6px;background:#fff;color:inherit;font:inherit;text-align:right;font-variant-numeric:tabular-nums;}
 body[data-ui=admin] #view-recipes .catalog-unit {color:var(--muted);font-size:12px;}
 body[data-ui=admin] #view-recipes .catalog-zero {color:#a4a9ae;}
 body[data-ui=admin] #view-recipes .catalog-ledger tfoot td {background:#f7f8f9;border-top:1px solid var(--line);border-bottom:0;}

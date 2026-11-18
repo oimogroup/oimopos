@@ -2922,6 +2922,104 @@ function stoppedBadge(isActive) {
   return isActive === false ? '<span class="catalog-stopped-badge">СТОП</span>' : '';
 }
 
+function inlineCatalogPrice(kind, item) {
+  return `<button class="catalog-inline-price" data-inline-catalog-price="${kind}" data-inline-catalog-id="${escapeHtml(String(item.id))}" data-inline-catalog-name="${escapeHtml(item.name)}" data-inline-catalog-price-value="${Number(item.price || 0)}" type="button" aria-label="Изменить цену продажи: ${escapeHtml(item.name)}" title="Нажмите, чтобы изменить цену">${money(item.price)}</button>`;
+}
+
+async function saveInlineCatalogPrice(kind, id, price) {
+  const isRecipe = kind === "recipe";
+  const item = isRecipe ? recipes.find(row => String(row.id) === String(id)) : productById(id);
+  if (!item) {
+    showToast("Позиция не найдена");
+    return false;
+  }
+  if (isRecipe) {
+    if (serverMode) return Boolean(await runServerAction("recipe.upsert", { ...item, station: recipeStation(item), price, is_active: item.is_active !== false }, "Цена техкарты обновлена"));
+    item.price = price;
+    saveRecipes();
+    renderRecipes();
+    showToast("Цена техкарты обновлена");
+    return true;
+  }
+  if (serverMode) {
+    return Boolean(await runServerAction("product.upsert", {
+      id: item.id,
+      name: item.name,
+      category: item.category || "Без категории",
+      barcode: item.barcode || "",
+      unit: item.unit || "шт",
+      price,
+      limit: Number(item.limit || 0),
+      weighted: Boolean(item.weighted),
+      station: item.station || "",
+      image: item.image || "",
+      color: item.color || "#5b8fbd",
+      markup: Number(item.markup || 0),
+      noDiscount: Boolean(item.noDiscount),
+      averageCost: Number(item.averageCost || 0),
+      is_active: item.is_active !== false
+    }, "Цена товара обновлена"));
+  }
+  item.price = price;
+  saveProducts();
+  renderProducts();
+  showToast("Цена товара обновлена");
+  return true;
+}
+
+function beginInlineCatalogPriceEdit(button) {
+  const { inlineCatalogPrice: kind, inlineCatalogId: id, inlineCatalogName: name } = button.dataset;
+  const originalPrice = Number(button.dataset.inlineCatalogPriceValue);
+  const cell = button.closest("td");
+  const input = document.createElement("input");
+  input.className = "catalog-inline-price-input";
+  input.type = "number";
+  input.min = "0.01";
+  input.step = "0.01";
+  input.value = String(originalPrice);
+  input.dataset.inlinePriceEditor = "true";
+  input.setAttribute("aria-label", `Цена продажи: ${name}`);
+  cell.replaceChildren(input);
+
+  let finished = false;
+  const rerender = () => kind === "recipe" ? renderRecipes() : renderProducts();
+  const cancel = () => {
+    if (finished) return;
+    finished = true;
+    rerender();
+  };
+  const commit = async () => {
+    if (finished) return;
+    const entered = Number(input.value);
+    if (!Number.isFinite(entered) || entered <= 0) {
+      finished = true;
+      showToast("Цена продажи должна быть больше нуля");
+      rerender();
+      return;
+    }
+    const price = Math.round(entered * 100) / 100;
+    finished = true;
+    if (price === originalPrice) {
+      rerender();
+      return;
+    }
+    input.disabled = true;
+    if (!await saveInlineCatalogPrice(kind, id, price)) rerender();
+  };
+  input.addEventListener("keydown", event => {
+    if (event.key === "Escape") {
+      event.preventDefault();
+      cancel();
+    } else if (event.key === "Enter") {
+      event.preventDefault();
+      void commit();
+    }
+  });
+  input.addEventListener("blur", () => void commit());
+  input.focus();
+  input.select();
+}
+
 // Capture menu commands before row handlers open the composition editor.
 document.addEventListener('click', event => {
   const more = event.target.closest('[data-catalog-more]');
@@ -2959,7 +3057,7 @@ function renderRecipes() {
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
     const variants=recipe.variantName ? [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))] : [];
-    return `<tr data-recipe-id="${recipe.id}" class="${recipe.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.groupName || recipe.name)}</strong>${stoppedBadge(recipe.is_active)}${variants.length ? `<small>${variants.length} модификаций · ${variants.map(item=>escapeHtml(item.variantName)).join(', ')}</small>` : ''}</div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${variants.length ? 'По модификациям' : `${decimal(recipe.yield,3)} <span class="catalog-unit">г</span>`}</td><td class="catalog-number"><strong>${variants.length ? 'По модификациям' : money(cost)}</strong></td><td class="catalog-number"><strong>${variants.length ? `от ${money(Math.min(...variants.map(item=>item.price)))}` : money(recipe.price)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" ${variants.length ? 'data-recipe-edit' : 'data-recipe-compose'}="${recipe.id}" type="button">${variants.length ? 'Составы' : 'Состав'}</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button>${catalogRowMenu('recipe', recipe.id, recipe.groupName || recipe.name, 'Удалить техкарту', recipe.is_active)}</div></td></tr>`;
+    return `<tr data-recipe-id="${recipe.id}" class="${recipe.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.groupName || recipe.name)}</strong>${stoppedBadge(recipe.is_active)}${variants.length ? `<small>${variants.length} модификаций · ${variants.map(item=>escapeHtml(item.variantName)).join(', ')}</small>` : ''}</div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${variants.length ? 'По модификациям' : `${decimal(recipe.yield,3)} <span class="catalog-unit">г</span>`}</td><td class="catalog-number"><strong>${variants.length ? 'По модификациям' : money(cost)}</strong></td><td class="catalog-number"><strong>${variants.length ? `от ${money(Math.min(...variants.map(item=>item.price)))}` : inlineCatalogPrice("recipe", recipe)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" ${variants.length ? 'data-recipe-edit' : 'data-recipe-compose'}="${recipe.id}" type="button">${variants.length ? 'Составы' : 'Состав'}</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button>${catalogRowMenu('recipe', recipe.id, recipe.groupName || recipe.name, 'Удалить техкарту', recipe.is_active)}</div></td></tr>`;
   }).join("") || '<tr class="table-empty"><td colspan="6">Техкарты не найдены. Измените поиск или категорию.</td></tr>';
 }
 
@@ -2972,7 +3070,7 @@ function renderProducts() {
     const unitCost = branchUnitCost(branchId, product.id);
     const productMarkup = unitCost ? (product.price - unitCost) / unitCost * 100 : 0;
     const variants = product.variantName ? [product, ...products.filter(item => item.parentId === product.id)] : [];
-    const priceLabel = variants.length ? `от ${money(Math.min(...variants.map(item => item.price)))}` : money(product.price);
+    const priceLabel = variants.length ? `от ${money(Math.min(...variants.map(item => item.price)))}` : inlineCatalogPrice("product", product);
     const stockTotal = variants.length ? variants.reduce((sum,item) => sum + branchStock(branchId, item.id), 0) : branchStock(branchId, product.id);
     return `<tr class="${product.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong>${stoppedBadge(product.is_active)}<small>${product.variantName ? `${1 + products.filter(row => row.parentId === product.id).length} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogRowMenu('product', product.id, product.groupName || product.name, 'Удалить товар', product.is_active)}</div></td></tr>`;
   }).join("");
@@ -6652,6 +6750,16 @@ $("#recipeCategory").addEventListener("change", renderRecipes);
 $("#recipeStationFilter").addEventListener("change", renderRecipes);
 $("#productSearch").addEventListener("input", renderProducts);
 $("#productsTable").addEventListener("click", (event) => {
+  if (event.target.closest("[data-inline-price-editor]")) {
+    event.stopPropagation();
+    return;
+  }
+  const priceButton = event.target.closest("[data-inline-catalog-price]");
+  if (priceButton) {
+    event.stopPropagation();
+    beginInlineCatalogPriceEdit(priceButton);
+    return;
+  }
   const button = event.target.closest("[data-product-edit]");
   if (button) openProductForm(button.dataset.productEdit);
 });
@@ -6954,6 +7062,16 @@ $("#servingSoldPortions").addEventListener("input", updateServingCloseBalance);
 $("#servingRemainingWeight").addEventListener("input", updateServingCloseBalance);
 $("#saveServingCloseButton").addEventListener("click", saveServingClose);
 $("#recipesTable").addEventListener("click", (event) => {
+  if (event.target.closest("[data-inline-price-editor]")) {
+    event.stopPropagation();
+    return;
+  }
+  const priceButton = event.target.closest("[data-inline-catalog-price]");
+  if (priceButton) {
+    event.stopPropagation();
+    beginInlineCatalogPriceEdit(priceButton);
+    return;
+  }
   const editButton = event.target.closest("[data-recipe-edit]");
   if (editButton) {
     event.stopPropagation();
