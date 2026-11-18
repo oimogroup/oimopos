@@ -39,10 +39,6 @@ def _menu_category_registry(state: dict, kind: str) -> list[dict]:
         if isinstance(raw, dict):
             category.update({key: raw[key] for key in ("image", "is_active") if key in raw})
         registry.append(category)
-    for item in items:
-        name = str(item.get("category") or "Без категории").strip() or "Без категории"
-        if not any(category["name"].lower() == name.lower() for category in registry):
-            registry.append({"name": name, "color": palette[len(registry) % len(palette)]})
     state[registry_key] = registry
     return registry
 

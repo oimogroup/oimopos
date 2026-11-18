@@ -366,6 +366,8 @@ def test_owner_can_create_and_rename_catalog_categories() -> None:
 def test_recipe_and_product_categories_are_independent() -> None:
     state = default_state()
     state["products"][0]["category"] = "Горячее"
+    state["recipeCategories"] = [{"name": "Горячее", "color": "#e39a3d"}]
+    state["productCategories"] = [{"name": "Напитки", "color": "#5b8fbd"}]
 
     apply_action(state, OWNER, "category.upsert", {
         "kind": "recipe", "originalName": "Горячее", "name": "Основные блюда", "color": "#123456",
@@ -378,6 +380,8 @@ def test_recipe_and_product_categories_are_independent() -> None:
     assert state["products"][0]["category"] == "Горячее"
     assert any(category["name"] == "Основные блюда" for category in state["recipeCategories"])
     assert any(category["name"] == "Основные блюда" for category in state["productCategories"])
+    assert {category["name"] for category in state["recipeCategories"]} == {"Основные блюда"}
+    assert {category["name"] for category in state["productCategories"]} == {"Напитки", "Основные блюда"}
     assert sum(category["name"] == "Основные блюда" for category in state["menuCategories"]) == 1
 
 

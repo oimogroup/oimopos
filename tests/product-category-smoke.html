@@ -1,6 +1,10 @@
 <!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre><iframe id="app" src="../admin.html?test=1#menu/products"></iframe><script>
 if(new URLSearchParams(location.search).has("preview")) app.style.cssText="position:fixed;inset:0;width:100%;height:100%;border:0;background:white";
 app.onload=async()=>{const w=app.contentWindow,d=w.document,c=[];const check=(n,v)=>c.push(`${v?'PASS':'FAIL'}:${n}`);try{
+w.eval('productCategories = [{name:"Напитки",color:"#5b8fbd"}]; recipeCategories = [{name:"Десерты",color:"#bd6557"}]; products[0].category = "Сладости"; recipes.find(recipe => String(recipe.id) === "201").category = "Старая категория";');
+w.openProductForm();check('product-category-list-only-created',Array.from(d.querySelector('#productCategoryOptions').options).map(option=>option.value).join('|')==='Напитки');
+w.openRecipeForm(201);check('recipe-category-list-only-created',Array.from(d.querySelector('#recipeCategoryInput').options).map(option=>option.value).join('|')==='Десерты'&&d.querySelector('#recipeCategoryInput').value==='');
+w.document.querySelector('#recipeModal').classList.add('hidden');
 w.openProductForm();d.querySelector('#productNameInput').value='Тест новой категории';d.querySelector('#productPriceInput').value=150;d.querySelector('#productBarcodeInput').value='555666';d.querySelector('#productCategorySearch').value='Новая категория тест';
 d.querySelector('#productCostInput').value=100;d.querySelector('#productMarkupInput').value=50;d.querySelector('#productMarkupInput').dispatchEvent(new w.Event('input',{bubbles:true}));check('markup-calculates-price',d.querySelector('#productPriceInput').value==='150');
 d.querySelector('#productPriceInput').value=200;w.updateProductCalculation();check('price-calculates-markup',d.querySelector('#productMarkupInput').value==='100');d.querySelector('#productPriceInput').value=150;w.updateProductCalculation();

@@ -466,7 +466,7 @@ function normalizeScopedCategories(saved, linkedItems, fallbackCategories = menu
   const source = Array.isArray(saved)
     ? saved
     : fallbackCategories.filter((category) => linkedItems.some((item) => item.category === category.name));
-  return normalizeMenuCategories(source, linkedItems);
+  return normalizeMenuCategories(source, []);
 }
 
 function mergeMenuCategoryRegistries(...registries) {
@@ -488,9 +488,9 @@ function normalizeIngredientCategories(saved) {
 
 function loadMenuCategories() {
   try {
-    return normalizeMenuCategories(JSON.parse(localStorage.getItem(menuCategoriesKey)));
+    return normalizeMenuCategories(JSON.parse(localStorage.getItem(menuCategoriesKey)), []);
   } catch {
-    return normalizeMenuCategories([]);
+    return normalizeMenuCategories([], []);
   }
 }
 
@@ -4854,7 +4854,10 @@ function openRecipeForm(recipeId = null) {
   editingRecipeId = recipe?.id || null;
   renderRecipeImportNotes("#recipeImportNotes", recipe);
   recipeCategories = normalizeScopedCategories(recipeCategories, recipes);
-  $("#recipeCategoryInput").innerHTML = recipeCategories.map((category) => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join("");
+  $("#recipeCategoryInput").innerHTML = recipeCategories.length
+    ? recipeCategories.map((category) => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join("")
+    : '<option value="">Сначала создайте категорию</option>';
+  $("#recipeCategoryInput").disabled = !recipeCategories.length;
   const stationNames = stationNamesWithLegacy();
   $("#recipeStationInput").innerHTML = stationNames.length
     ? stationNames.map((name) => `<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("")
@@ -4862,7 +4865,10 @@ function openRecipeForm(recipeId = null) {
   $("#recipeModalTitle").textContent = recipe ? "Редактировать техкарту" : "Новая техкарта";
   $("#recipeNameInput").value = recipe?.name || "";
   CatalogCover.open("recipe", recipe);
-  $("#recipeCategoryInput").value = recipe?.category || (recipeCategories.some((category) => category.name === "Горячее") ? "Горячее" : recipeCategories[0]?.name || "Без категории");
+  const recipeCategory = recipeCategories.some((category) => category.name === recipe?.category)
+    ? recipe.category
+    : recipe ? "" : recipeCategories.find((category) => category.name === "Горячее")?.name || recipeCategories[0]?.name || "";
+  $("#recipeCategoryInput").value = recipeCategory;
   $("#recipeStationInput").value = recipe ? recipeStation(recipe) : stationNames[0] || "";
   $("#recipePriceInput").value = recipe?.price || 0;
   $("#recipeYieldInput").value = "";
@@ -4888,6 +4894,10 @@ async function saveRecipeForm() {
   const hasPaidModifier = modifierData.modifierSets.some(group => group.options.some(option => option.price > 0));
   if (!name || !station || (!price && !hasPaidModifier) || !recipeDraftComponents.length || recipeYield == null || recipeYield <= 0) {
     showToast("Заполните название, цех и цену или добавьте платный модификатор; проверьте состав и выход");
+    return;
+  }
+  if (!recipeCategories.some((category) => category.name === $("#recipeCategoryInput").value)) {
+    showToast("Выберите категорию из списка созданных категорий");
     return;
   }
   const existing = recipes.find((entry) => entry.id === editingRecipeId);
@@ -5193,11 +5203,10 @@ function openProductForm(productId = null) {
   $("#productWarehouseInput").value = pendingOwnerObjectScope || branches[0]?.id;
   productCategories = normalizeScopedCategories(productCategories, products);
   const categories = productCategories.map((category) => category.name);
-  if (!categories.includes("Без категории")) categories.push("Без категории");
   $("#productCategoryInput").innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("");
   $("#productModalTitle").textContent = product ? "Редактировать товар" : "Новый товар";
   $("#productNameInput").value = product?.name || "";
-  $("#productCategoryInput").value = product?.category || categories[0];
+  $("#productCategoryInput").value = categories.includes(product?.category) ? product.category : product ? "" : categories[0] || "";
   $("#productCategoryOptions").innerHTML = categories.map(category => `<option value="${escapeHtml(category)}"></option>`).join("");
   $("#productCategorySearch").value = $("#productCategoryInput").value;
   $("#productCategoryHint").textContent = "";
