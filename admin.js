@@ -3065,16 +3065,17 @@ function renderRecipes() {
 
 function renderProducts() {
   const query = $("#productSearch").value.trim().toLowerCase();
-  const visible = products.filter((product) => !product.parentId && (!query || [product, ...products.filter(item => item.parentId === product.id)].some(item => item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query))));
+  const visible = products.filter((product) => !product.parentId && (!query || [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].some(item => item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query))));
   $("#productsCount").textContent = products.filter(product => !product.parentId).length;
   $("#productsTable").innerHTML = visible.map((product) => {
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
     const unitCost = branchUnitCost(branchId, product.id);
     const productMarkup = unitCost ? (product.price - unitCost) / unitCost * 100 : 0;
-    const variants = product.variantName ? [product, ...products.filter(item => item.parentId === product.id)] : [];
+    const variants = product.variantName ? [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)] : [];
     const priceLabel = variants.length ? `от ${money(Math.min(...variants.map(item => item.price)))}` : inlineCatalogPrice("product", product);
     const stockTotal = variants.length ? variants.reduce((sum,item) => sum + branchStock(branchId, item.id), 0) : branchStock(branchId, product.id);
-    return `<tr class="${product.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong>${stoppedBadge(product.is_active)}<small>${product.variantName ? `${1 + products.filter(row => row.parentId === product.id).length} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogRowMenu('product', product.id, product.groupName || product.name, 'Удалить товар', product.is_active)}</div></td></tr>`;
+    const variantCount = variants.length;
+    return `<tr class="${product.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong>${stoppedBadge(product.is_active)}<small>${product.variantName ? `${variantCount} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogRowMenu('product', product.id, product.groupName || product.name, 'Удалить товар', product.is_active)}</div></td></tr>`;
   }).join("");
 }
 

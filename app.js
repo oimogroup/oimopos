@@ -70,7 +70,7 @@ function hydrateWorkspace(response) {
   const branchId = currentSession.branchId;
   window.OimoPwa?.configure(currentSession, (workspaceState.branches || []).find(row => String(row.id) === String(branchId)));
   const branchStock = workspaceState.logisticsState?.branchStocks?.[branchId] || {};
-  const recipes = (workspaceState.recipes || []).map((recipe) => ({
+  const recipes = (workspaceState.recipes || []).filter((recipe) => recipe.is_active !== false).map((recipe) => ({
     id: String(recipe.id),
     name: recipe.name,
     image: recipe.image || "",
@@ -86,7 +86,7 @@ function hydrateWorkspace(response) {
     portionSize: recipe.portionSize, portionUnit: recipe.portionUnit,
     kind: "recipe"
   }));
-  const readyProducts = (workspaceState.products || []).map((product) => ({
+  const readyProducts = (workspaceState.products || []).filter((product) => product.is_active !== false).map((product) => ({
     id: String(product.id),
     name: product.name,
     price: Number(product.price || 0),
@@ -197,7 +197,7 @@ function nextReceiptNumber() {
 }
 
 function visibleInCatalog(product) {
-  return workspaceState?.serviceMode === "restaurant" || product.kind !== "recipe" || product.available > 0;
+  return product.is_active !== false && (workspaceState?.serviceMode === "restaurant" || product.kind !== "recipe" || product.available > 0);
 }
 
 function categories() {

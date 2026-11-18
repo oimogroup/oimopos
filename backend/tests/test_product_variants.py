@@ -66,3 +66,85 @@ def test_product_variant_volumes_survive_edit_and_cashier_projection():
     with pytest.raises(WorkspaceError):
         apply_action(state, OWNER, 'product.group.upsert', payload)
     assert state == before
+
+
+def test_product_variant_can_be_removed_and_replaced_without_losing_history():
+    state = default_state()
+    payload, variants = create(state)
+    removed = variants[1]
+    state['logisticsState']['branchStocks']['b1'][removed['id']] = 1
+    _, sale_id = apply_action(state, CASHIER, 'sale.create', {'paymentMethod':'card','items':[{'id':removed['id'],'quantity':1}]})
+    payload['variants'] = [
+        {'id': variants[0]['id'], 'name': variants[0]['variantName'], 'price': variants[0]['price']},
+        {'name': 'Манго', 'price': 150},
+    ]
+
+    apply_action(state, OWNER, 'product.group.upsert', payload)
+
+    archived = next(product for product in state['products'] if product['id'] == removed['id'])
+    sale = next(sale for sale in state['sales'] if sale['id'] == sale_id)
+    active_variants = [product for product in state['products'] if product.get('groupName') == 'Сок' and product.get('is_active', True)]
+    visible_ids = {product['id'] for product in visible_state(state, CASHIER)['products']}
+    assert archived['is_active'] is False
+    assert archived['parentId'] == 'juice'
+    assert sale['items'][0]['id'] == removed['id']
+    assert {product['variantName'] for product in active_variants} == {'Яблочный', 'Манго'}
+    assert removed['id'] not in visible_ids
+
+
+def test_product_variant_can_be_removed_as_group_root_without_rewriting_history():
+    state = default_state()
+    payload, variants = create(state)
+    removed_root = variants[0]
+    state['logisticsState']['branchStocks']['b1'][removed_root['id']] = 1
+    _, sale_id = apply_action(state, CASHIER, 'sale.create', {'paymentMethod':'card','items':[{'id':removed_root['id'],'quantity':1}]})
+    promoted = variants[1]
+    payload.update({
+        'id': promoted['id'],
+        'previousGroupId': removed_root['id'],
+        'variants': [{'id': promoted['id'], 'name': promoted['variantName'], 'price': promoted['price']}],
+    })
+
+    apply_action(state, OWNER, 'product.group.upsert', payload)
+
+    archived_root = next(product for product in state['products'] if product['id'] == removed_root['id'])
+    promoted_root = next(product for product in state['products'] if product['id'] == promoted['id'])
+    sale = next(sale for sale in state['sales'] if sale['id'] == sale_id)
+    assert archived_root['is_active'] is False
+    assert archived_root['parentId'] == promoted['id']
+    assert promoted_root['parentId'] is None
+    assert sale['items'][0]['id'] == removed_root['id']
+    assert promoted['id'] in {product['id'] for product in visible_state(state, CASHIER)['products']}
+
+
+def test_product_variant_with_stock_cannot_be_removed():
+    state = default_state()
+    payload, variants = create(state)
+    state['logisticsState']['branchStocks']['b1'][variants[1]['id']] = 2
+    payload['variants'] = [{'id': variants[0]['id'], 'name': variants[0]['variantName'], 'price': variants[0]['price']}]
+    before = deepcopy(state)
+
+    with pytest.raises(WorkspaceError, match='обнулите остаток'):
+        apply_action(state, OWNER, 'product.group.upsert', payload)
+
+    assert state == before
+
+
+def test_product_group_can_replace_all_saved_variants_with_a_new_root():
+    state = default_state()
+    payload, variants = create(state)
+    payload.update({
+        'id': 'product-new-root',
+        'previousGroupId': 'juice',
+        'variants': [{'name': 'Манго', 'price': 150}],
+    })
+
+    apply_action(state, OWNER, 'product.group.upsert', payload)
+
+    active = [product for product in state['products'] if product.get('groupName') == 'Сок' and product.get('is_active', True)]
+    assert len(active) == 1
+    assert active[0]['id'] == 'product-new-root' and active[0]['parentId'] is None
+    for variant in variants:
+        archived = next(product for product in state['products'] if product['id'] == variant['id'])
+        assert archived['is_active'] is False
+        assert archived['parentId'] == 'product-new-root'

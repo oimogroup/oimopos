@@ -944,7 +944,7 @@
           </section>
 
           <label class="product-variant-mode"><input id="productVariantsEnabled" type="checkbox"> С модификациями <small>Несколько видов товара со своими ценами и остатками</small></label>
-          <section class="catalog-form-section hidden" id="productVariantsSection"><div id="productVariantRows"></div><button class="poster-action secondary-action" id="addProductVariant" type="button">+ Добавить модификацию</button><p class="product-variant-help">Обложка выше общая для всех модификаций. Отдельное фото можно настроить в строке нужного варианта. Остатки и себестоимость учитываются отдельно.</p></section>
+          <section class="catalog-form-section hidden" id="productVariantsSection"><div id="productVariantRows"></div><button class="poster-action secondary-action" id="addProductVariant" type="button">+ Добавить модификацию</button><p class="product-variant-help">Обложка выше общая для всех модификаций. Отдельное фото можно настроить в строке нужного варианта. Сохранённые модификации можно удалять при нулевом остатке на всех точках; продажи останутся в истории. Оставьте хотя бы одну модификацию.</p></section>
           <section class="catalog-form-section" id="productSinglePriceSection">
             <div class="catalog-section-heading"><div><h3>Цена и наценка</h3></div></div>
             <div class="product-price-grid"><label><span>Закупочная цена</span><div class="unit-input"><input id="productCostInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Цена продажи</span><div class="unit-input"><input id="productPriceInput" type="number" min="0" step="0.01" value="0" /><b>сом</b></div></label><label><span>Наценка</span><div class="unit-input"><input id="productMarkupInput" type="number" min="-100" step="0.01" value="0" /><b>%</b></div></label></div><small id="productMarkupValue"></small>
@@ -1142,10 +1142,10 @@
     <script src="catalog-modifiers.js?v=modifiers-2"></script>
     <script src="ingredients-list.js?v=prices-per-kg-9"></script>
     <script src="ingredient-picker.js?v=1"></script>
-    <script src="product-variants.js?v=modifiers-1"></script>
+    <script src="product-variants.js?v=variant-removal-1"></script>
     <script src="recipe-variants.js?v=modifiers-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=modifiers-1"></script>
+    <script src="admin.js?v=variant-removal-1"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

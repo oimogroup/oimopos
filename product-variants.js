@@ -8,7 +8,7 @@
     el('productVariantRows').innerHTML = rows.map((row,i) => {
       const custom = row.image != null || Boolean(row.color);
       const artwork = i === 0 ? '' : `<details class="variant-artwork" data-variant-artwork="${i}" ${expanded.has(String(i)) ? 'open' : ''}><summary>${custom ? 'Своё фото и цвет' : 'Общая обложка · настроить отдельно'}</summary><div class="variant-artwork-controls">${CatalogCover.thumb({name:el('productNameInput').value,image:row.image ?? productPhotoDraft,color:row.color || el('productColorInput').value})}<label class="secondary-action variant-upload">Загрузить своё фото<input type="file" accept="image/jpeg,image/png,image/webp" data-variant-photo="${i}"></label><small data-variant-photo-status role="status" aria-live="polite"></small><label class="variant-color-label"><span>Цвет</span><input type="color" data-variant-color="${i}" value="${row.color || el('productColorInput').value}" aria-label="Цвет модификации"></label>${custom ? `<button type="button" class="secondary-action variant-reset" data-variant-clear="${i}">Вернуть общую обложку</button>` : ''}</div></details>`;
-      return `<div class="product-variant-row"><label class="variant-field-name"><span>Модификация</span><input data-variant-name maxlength="80" value="${escapeHtml(row.name)}" placeholder="Например, 250 мл"></label><label class="variant-field-size"><span>Объём / вес</span><div class="variant-portion-fields"><input data-variant-size type="number" min="0.001" step="any" value="${row.portionSize ?? ''}" placeholder="Объём / вес" aria-label="Объём или вес"><select data-variant-unit aria-label="Единица объёма или веса">${['мл','г','шт'].map(unit=>`<option ${unit === (row.portionUnit || 'мл') ? 'selected' : ''}>${unit}</option>`).join('')}</select></div></label><label class="variant-field-barcode"><span>Штрихкод</span><input data-variant-barcode maxlength="64" value="${escapeHtml(row.barcode || '')}"></label><label class="variant-field-markup"><span>Наценка, %</span><input data-variant-markup type="number" min="-100" step="0.01" value="${row.markup || 0}"></label><label class="variant-field-price"><span>Цена</span><input data-variant-price type="number" min="0.01" step="0.01" value="${row.price || 0}"></label><button class="icon-button danger-button variant-remove" type="button" data-remove-variant="${i}" aria-label="Удалить модификацию" ${row.id ? 'disabled title="Сохранённая модификация имеет отдельную складскую историю"' : ''}>×</button>${artwork}</div>`;
+      return `<div class="product-variant-row"><label class="variant-field-name"><span>Модификация</span><input data-variant-name maxlength="80" value="${escapeHtml(row.name)}" placeholder="Например, 250 мл"></label><label class="variant-field-size"><span>Объём / вес</span><div class="variant-portion-fields"><input data-variant-size type="number" min="0.001" step="any" value="${row.portionSize ?? ''}" placeholder="Объём / вес" aria-label="Объём или вес"><select data-variant-unit aria-label="Единица объёма или веса">${['мл','г','шт'].map(unit=>`<option ${unit === (row.portionUnit || 'мл') ? 'selected' : ''}>${unit}</option>`).join('')}</select></div></label><label class="variant-field-barcode"><span>Штрихкод</span><input data-variant-barcode maxlength="64" value="${escapeHtml(row.barcode || '')}"></label><label class="variant-field-markup"><span>Наценка, %</span><input data-variant-markup type="number" min="-100" step="0.01" value="${row.markup || 0}"></label><label class="variant-field-price"><span>Цена</span><input data-variant-price type="number" min="0.01" step="0.01" value="${row.price || 0}"></label><button class="icon-button danger-button variant-remove" type="button" data-remove-variant="${i}" aria-label="Удалить модификацию" ${rows.length <= 1 ? 'disabled title="В товаре должна остаться хотя бы одна модификация"' : ''}>×</button>${artwork}</div>`;
     }).join('');
   }
   function refresh() {
@@ -29,7 +29,7 @@
     const hasVariants = Boolean(product?.variantName);
     el('productVariantsEnabled').checked = hasVariants;
     el('productVariantsEnabled').disabled = hasVariants;
-    rows = hasVariants ? [product, ...products.filter(row => row.parentId === product.id)].map(row => ({id: row.id, image:row.image && row.image !== product.image ? row.image : undefined, color:row.color !== product.color ? row.color : undefined, name: row.variantName, portionSize: row.portionSize, portionUnit: row.portionUnit, price: row.price, barcode: row.barcode, markup: row.markup, averageCost: branchUnitCost(currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id, row.id)})) : [{id: product?.id || '', name: '', price: product?.price || 0, barcode: product?.barcode || '', averageCost: product?.averageCost || 0}];
+    rows = hasVariants ? [product, ...products.filter(row => String(row.parentId) === String(product.id) && row.is_active !== false)].map(row => ({id: row.id, image:row.image && row.image !== product.image ? row.image : undefined, color:row.color !== product.color ? row.color : undefined, name: row.variantName, portionSize: row.portionSize, portionUnit: row.portionUnit, price: row.price, barcode: row.barcode, markup: row.markup, averageCost: branchUnitCost(currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id, row.id)})) : [{id: product?.id || '', name: '', price: product?.price || 0, barcode: product?.barcode || '', averageCost: product?.averageCost || 0}];
     if (hasVariants) el('productNameInput').value = product.groupName;
     el('productVariantRows').replaceChildren();
     render(); toggle();
@@ -44,17 +44,38 @@
     const name = el('productNameInput').value.trim();
     if (!name || !rows.length || rows.some(r => !r.name || !Number.isFinite(r.price) || r.price < 0 || !Number.isFinite(r.markup) || r.markup < -100 || (r.portionSize !== null && (!Number.isFinite(r.portionSize) || r.portionSize <= 0))) || (!rows.some(r=>r.price>0) && !hasPaidModifier) || new Set(rows.map(r=>r.name.toLocaleLowerCase('ru'))).size !== rows.length) { showToast('Укажите название товара, разные названия модификаций и цену товара или платного варианта'); return true; }
     if (!await ensureProductCategory()) return true;
-    const rootId = editingProductId || productIdFromName(name);
-    const payload = {...modifierData, id: rootId, name, category: el('productCategoryInput').value, station: el('productStationInput').value, unit: el('productUnitInput').value, image: productPhotoDraft, color: el('productColorInput').value, weighted: el('productWeightedInput').checked, noDiscount: el('productNoDiscountInput').checked, limit: Number(el('productLimitInput').value || 0), variants: rows.map(row=>({...row,image:row.image ?? productPhotoDraft,color:row.color || el('productColorInput').value}))};
+    const previousRootId = editingProductId ? String(editingProductId) : "";
+    const rootId = String(rows[0]?.id || (previousRootId ? `product-${crypto.randomUUID()}` : productIdFromName(name)));
+    const retainedIds = new Set(rows.map((row, index) => String(row.id || (index === 0 ? rootId : ""))).filter(Boolean));
+    const removedVariants = previousRootId
+      ? products.filter(item => (String(item.id) === previousRootId || String(item.parentId) === previousRootId) && item.is_active !== false && !retainedIds.has(String(item.id)))
+      : [];
+    if (!serverMode && removedVariants.some(item => Object.values(logisticsState.branchStocks || {}).some(stock => Number(stock[item.id] || 0) > 0.000001))) {
+      showToast("Сначала обнулите остаток удаляемой модификации на всех точках");
+      return true;
+    }
+    const payload = {...modifierData, id: rootId, ...(previousRootId ? {previousGroupId: previousRootId} : {}), name, category: el('productCategoryInput').value, station: el('productStationInput').value, unit: el('productUnitInput').value, image: productPhotoDraft, color: el('productColorInput').value, weighted: el('productWeightedInput').checked, noDiscount: el('productNoDiscountInput').checked, limit: Number(el('productLimitInput').value || 0), variants: rows.map(row=>({...row,image:row.image ?? productPhotoDraft,color:row.color || el('productColorInput').value}))};
     if (serverMode) { if (!await runServerAction('product.group.upsert', payload)) return true; }
     else {
       rows.forEach((row,i) => {
         const id = i === 0 ? rootId : row.id || productIdFromName(`${name}-${row.name}`);
         let item = productById(id);
         if (!item) { item = {id, stock:0, averageCost:0}; products.push(item); }
-        const {variants, modifierSets, modifierSetIds, ...common} = payload;
+        const {variants, modifierSets, modifierSetIds, previousGroupId: ignoredPreviousGroupId, ...common} = payload;
         Object.assign(item, common, payload.variants[i], {id, name:`${name} — ${row.name}`, groupName:name, variantName:row.name, parentId:i===0 ? null : rootId, modifierSetIds});
       });
+      for (const item of removedVariants) {
+        item.is_active = false;
+        item.modifierSetIds = [];
+        item.parentId = rootId;
+      }
+      if (previousRootId && previousRootId !== rootId) {
+        for (const item of products) {
+          if (String(item.id) === previousRootId || String(item.parentId) === previousRootId) {
+            if (String(item.id) !== rootId) item.parentId = rootId;
+          }
+        }
+      }
       window.CatalogModifiers.saveLocal(modifierData);
       saveProducts(); renderAll();
     }

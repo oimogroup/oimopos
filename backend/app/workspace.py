@@ -1286,29 +1286,50 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         draft = deepcopy(state)
         _persist_modifier_sets(draft, payload.get("modifierSets"))
         root_id = str(payload.get("id") or f"product-{uuid4().hex[:12]}")
+        previous_root_id = str(payload.get("previousGroupId") or root_id)
         existing = _find(draft["products"], root_id)
-        _require(not existing or not existing.get("parentId"), "Редактируйте основную карточку товара")
+        previous_root = _find(draft["products"], previous_root_id)
+        if previous_root_id != root_id:
+            _require(previous_root is not None and not previous_root.get("parentId"), "Исходная карточка группы товаров не найдена")
+            _require(not existing or str(existing.get("parentId")) == previous_root_id, "Выберите модификацию из этой группы")
+        else:
+            _require(not existing or not existing.get("parentId"), "Редактируйте основную карточку товара")
         variants = payload.get("variants")
         _require(isinstance(variants, list) and 1 <= len(variants) <= 50, "Добавьте от 1 до 50 модификаций")
         name = str(payload.get("name", "")).strip()
         _require(name and len(name) <= 200, "Укажите название товара")
-        old_ids = {str(item["id"]) for item in draft["products"] if item.get("parentId") == root_id or str(item["id"]) == root_id}
+        old_ids = {
+            str(item["id"])
+            for item in draft["products"]
+            if str(item["id"]) == previous_root_id
+            or (str(item.get("parentId")) == previous_root_id and item.get("is_active", True))
+        }
         used_ids, used_names = set(), set()
         for index, raw in enumerate(variants):
             _require(isinstance(raw, dict), "Проверьте модификации")
             variant_name = str(raw.get("name", "")).strip()
             _require(variant_name and len(variant_name) <= 80 and variant_name.casefold() not in used_names, "Укажите разные названия модификаций")
             used_names.add(variant_name.casefold())
-            variant_id = root_id if index == 0 else str(raw.get("id") or f"product-{uuid4().hex[:12]}")
-            _require(not raw.get("id") or str(raw["id"]) == variant_id, "Первая модификация должна сохранять код товара")
+            variant_id = str(raw.get("id") or (root_id if index == 0 else f"product-{uuid4().hex[:12]}"))
+            _require(index != 0 or variant_id == root_id, "Первая модификация должна быть основной карточкой товара")
             found = _find(draft["products"], variant_id)
             _require(variant_id not in used_ids and (not found or variant_id in old_ids), "Некорректный код модификации")
             used_ids.add(variant_id)
             _require(_number(raw.get("price")) >= 0, "Укажите корректную цену модификации")
             apply_action(draft, user, "product.upsert", {**payload, **raw, "id": variant_id, "name": f"{name} — {variant_name}", "averageCost": found.get("averageCost", 0) if found else 0})
             variant = _find(draft["products"], variant_id)
-            variant.update({"groupName": name, "variantName": variant_name, "parentId": None if index == 0 else root_id})
-        _require(old_ids <= used_ids, "Сохранённые модификации нельзя исключать из карточки: сохраните их складскую историю", 409)
+            variant.update({"groupName": name, "variantName": variant_name, "parentId": None if variant_id == root_id else root_id})
+        _require(root_id in used_ids, "В группе должна остаться хотя бы одна модификация")
+        for variant_id in old_ids - used_ids:
+            variant = _find(draft["products"], variant_id)
+            branches_with_stock = [branch["name"] for branch in draft["branches"] if _stock(draft, str(branch["id"]), variant_id) > 0.000001]
+            _require(not branches_with_stock, f"Сначала обнулите остаток модификации «{variant.get('variantName', variant['name'])}»: {', '.join(branches_with_stock[:3])}", 409)
+            variant.update({"is_active": False, "modifierSetIds": [], "parentId": root_id})
+        if previous_root_id != root_id:
+            for variant in draft["products"]:
+                if str(variant["id"]) == previous_root_id or str(variant.get("parentId")) == previous_root_id:
+                    if str(variant["id"]) != root_id:
+                        variant["parentId"] = root_id
         state.clear()
         state.update(draft)
         return "product", root_id
