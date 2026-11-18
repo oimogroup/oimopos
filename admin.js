@@ -3006,6 +3006,12 @@ function beginInlineCatalogPriceEdit(button) {
       return;
     }
     input.disabled = true;
+    const status = document.createElement("span");
+    status.className = "catalog-inline-price-saving";
+    status.setAttribute("role", "status");
+    status.setAttribute("aria-live", "polite");
+    status.innerHTML = '<span class="admin-loading-spinner" aria-hidden="true"></span><span>Сохраняем цену…</span>';
+    cell.replaceChildren(status);
     if (!await saveInlineCatalogPrice(kind, id, price)) rerender();
   };
   input.addEventListener("keydown", event => {
@@ -5137,7 +5143,7 @@ async function saveIngredientForm() {
 function productById(id) { return products.find((product) => String(product.id) === String(id)); }
 
 let productPhotoDraft = "";
-let productPhotoToken = 0, productPhotoBusy = false;
+let productPhotoToken = 0, productPhotoBusy = false, productSaveInProgress = false;
 function setProductPhotoLoading(busy) {
   productPhotoBusy = busy;
   CatalogCover.loading($('#productCoverPreview'),$('#productPhotoStatus'),busy,'Сжимаем фото…');
@@ -5225,7 +5231,27 @@ async function ensureProductCategory() {
 }
 
 async function saveProductForm(createAnother = false) {
+  if (productSaveInProgress) return;
   if (productPhotoBusy) { showToast("Дождитесь загрузки фото"); return; }
+  productSaveInProgress = true;
+  const buttons = [$("#saveProductButton"), $("#saveProductAndNewButton")];
+  const previousDisabled = buttons.map(button => button.disabled);
+  const activeButton = buttons[createAnother ? 1 : 0];
+  const previousLabel = activeButton.textContent;
+  buttons.forEach(button => { button.disabled = true; });
+  activeButton.innerHTML = '<span class="admin-loading-spinner" aria-hidden="true"></span><span>Сохраняем…</span>';
+  activeButton.setAttribute("aria-busy", "true");
+  try {
+    await saveProductFormContent(createAnother);
+  } finally {
+    productSaveInProgress = false;
+    activeButton.textContent = previousLabel;
+    activeButton.removeAttribute("aria-busy");
+    buttons.forEach((button, index) => { button.disabled = previousDisabled[index]; });
+  }
+}
+
+async function saveProductFormContent(createAnother = false) {
   if (await window.ProductVariants.save(createAnother)) return;
   const modifierData = window.CatalogModifiers.read();
   if (!modifierData) return;

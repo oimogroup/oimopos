@@ -1563,6 +1563,11 @@ body[data-ui=admin] #view-recipes .catalog-ledger .catalog-number small {display
 .catalog-inline-price:hover {background:#f1f5fa;color:var(--purple);}
 .catalog-inline-price:focus-visible {outline:2px solid var(--purple);outline-offset:1px;}
 .catalog-inline-price-input {width:100%;min-width:82px;max-width:120px;height:36px;padding:4px 8px;border:1px solid var(--purple);border-radius:6px;background:#fff;color:inherit;font:inherit;text-align:right;font-variant-numeric:tabular-nums;}
+.admin-loading-spinner {width:14px;height:14px;flex:0 0 14px;box-sizing:border-box;border:2px solid currentColor;border-left-color:transparent;border-radius:50%;animation:admin-loading-spin .75s linear infinite;}
+.catalog-inline-price-saving {display:inline-flex;align-items:center;gap:7px;color:#59646b;font-size:12px;font-weight:500;white-space:nowrap;}
+.catalog-editor-footer button:disabled {cursor:wait;opacity:.76;}
+@keyframes admin-loading-spin {to{transform:rotate(360deg)}}
+@media(prefers-reduced-motion:reduce){.admin-loading-spinner{animation:none}}
 body[data-ui=admin] #view-recipes .catalog-unit {color:var(--muted);font-size:12px;}
 body[data-ui=admin] #view-recipes .catalog-zero {color:#a4a9ae;}
 body[data-ui=admin] #view-recipes .catalog-ledger tfoot td {background:#f7f8f9;border-top:1px solid var(--line);border-bottom:0;}
