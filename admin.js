@@ -3103,7 +3103,8 @@ function renderRecipes() {
 
 function renderProducts() {
   const query = $("#productSearch").value.trim().toLowerCase();
-  const visible = products.filter((product) => !product.parentId && (!query || [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].some(item => item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query))));
+  const category = $("#productCategoryFilter").value;
+  const visible = products.filter((product) => !product.parentId && (category === "Все категории" || product.category === category) && (!query || [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].some(item => item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query))));
   $("#productsCount").textContent = products.filter(product => !product.parentId).length;
   $("#productsTable").innerHTML = visible.map((product) => {
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
@@ -3179,6 +3180,9 @@ function refreshCategoryControls() {
   const selectedRecipeCategory = $("#recipeCategory").value;
   $("#recipeCategory").innerHTML = `<option>Все категории</option>${recipeCategories.map((category) => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join("")}`;
   $("#recipeCategory").value = [...$("#recipeCategory").options].some((option) => option.value === selectedRecipeCategory) ? selectedRecipeCategory : "Все категории";
+  const selectedProductCategory = $("#productCategoryFilter").value;
+  $("#productCategoryFilter").innerHTML = `<option>Все категории</option>${productCategories.map((category) => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join("")}`;
+  $("#productCategoryFilter").value = [...$("#productCategoryFilter").options].some((option) => option.value === selectedProductCategory) ? selectedProductCategory : "Все категории";
   const selectedStockCategory = $("#stockCategoryFilter").value;
   const stockCategories = [...new Set([...ingredientCategories, ...menuCategories.map((category) => category.name)])];
   $("#stockCategoryFilter").innerHTML = `<option>Все категории</option>${stockCategories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}`;
@@ -6854,6 +6858,7 @@ $("#recipeSearch").addEventListener("input", renderRecipes);
 $("#recipeCategory").addEventListener("change", renderRecipes);
 $("#recipeStationFilter").addEventListener("change", renderRecipes);
 $("#productSearch").addEventListener("input", renderProducts);
+$("#productCategoryFilter").addEventListener("change", renderProducts);
 $("#productsTable").addEventListener("click", (event) => {
   if (event.target.closest("[data-inline-price-editor]")) {
     event.stopPropagation();
