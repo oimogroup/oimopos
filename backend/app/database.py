@@ -1,8 +1,9 @@
 from collections.abc import Iterator
 
+from fastapi import HTTPException
 from psycopg import Connection
 from psycopg.rows import dict_row
-from psycopg_pool import ConnectionPool
+from psycopg_pool import ConnectionPool, PoolTimeout
 
 from .config import get_settings
 
@@ -25,6 +26,13 @@ def close_pool() -> None:
 
 
 def get_connection() -> Iterator[Connection]:
-    with pool.connection() as connection:
-        yield connection
+    try:
+        with pool.connection(timeout=5) as connection:
+            yield connection
+    except PoolTimeout as error:
+        raise HTTPException(
+            status_code=503,
+            detail="Сервер занят. Повторите попытку через несколько секунд.",
+            headers={"Retry-After": "5"},
+        ) from error
 

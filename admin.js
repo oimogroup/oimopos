@@ -278,11 +278,13 @@ async function runServerAction(action, payload, successMessage = "") {
   }
 }
 
+let workspaceRefreshInFlight = false;
 async function refreshServerWorkspace({ silent = true } = {}) {
-  if (!serverMode || document.querySelector(".modal-backdrop:not(.hidden), .side-drawer-backdrop:not(.hidden)")) return;
+  if (workspaceRefreshInFlight || !serverMode || document.querySelector(".modal-backdrop:not(.hidden), .side-drawer-backdrop:not(.hidden)")) return;
+  workspaceRefreshInFlight = true;
   try {
-    const response = await window.AshkanaApi.workspace();
-    if (Number(response.version) !== workspaceVersion) {
+    const response = await window.AshkanaApi.workspace(workspaceVersion);
+    if (!response.unchanged && Number(response.version) !== workspaceVersion) {
       hydrateServerWorkspace(response);
       renderAll();
       if (!silent) showToast("Данные обновлены с сервера");
@@ -292,6 +294,8 @@ async function refreshServerWorkspace({ silent = true } = {}) {
       sessionStorage.removeItem(authSessionKey);
       location.replace("/login?access=changed");
     } else if (!silent) showToast(error.message);
+  } finally {
+    workspaceRefreshInFlight = false;
   }
 }
 

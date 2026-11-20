@@ -141,7 +141,7 @@
     updateWorkspaceAddress: workspaceSubdomain => request("/account/workspace-address", {
       method: "PUT", body: JSON.stringify({ workspace_subdomain: workspaceSubdomain }),
     }),
-    workspace: () => request("/workspace"),
+    workspace: version => request(Number.isInteger(version) && version >= 0 ? `/workspace?since_version=${version}` : "/workspace"),
     exportInventory: (id, items) => request(`/workspace/inventories/${encodeURIComponent(id)}/export`, { method: "POST", body: JSON.stringify({ items }) }),
     action,
     offlineLease: (token,version) => request('/pos/offline/lease', {method:'POST',body:JSON.stringify({token,version})}),

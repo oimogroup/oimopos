@@ -2416,8 +2416,14 @@ def list_platform_events(
 
 
 @app.get("/api/v1/workspace", tags=["operations"])
-def get_workspace(user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
+def get_workspace(user: dict = Depends(current_user), connection: Connection = Depends(get_connection), since_version: int | None = Query(default=None, ge=0)) -> dict:
     tenant_id = _tenant_user(user)
+    if since_version is not None:
+        metadata = connection.execute(
+            "SELECT version FROM operational_state WHERE tenant_id = %s", (tenant_id,),
+        ).fetchone()
+        if metadata and metadata["version"] == since_version:
+            return {"version": since_version, "unchanged": True}
     row = _workspace_row(connection, tenant_id)
     return {"version": row["version"], "updatedAt": row["updated_at"], "state": visible_state(row["payload"], user)}
 
@@ -2513,7 +2519,7 @@ def workspace_action(
         acting_user["_company_write"] = True
     try:
         with connection.transaction():
-            row = _workspace_row(connection, tenant_id, for_update=True)
+            row = locked_workspace
             state = row["payload"]
             if acting_user.get("staff_role") == "production" and not command.action.startswith(("production.shift.", "work.shift.")):
                 kitchen_shift = production_shifts.current(state, str(acting_user.get("branch_id")))
