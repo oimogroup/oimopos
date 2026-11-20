@@ -4,6 +4,8 @@ import pytest
 from fastapi import HTTPException
 from fastapi.testclient import TestClient
 from psycopg_pool import PoolTimeout
+from psycopg import OperationalError
+from psycopg.errors import AdminShutdown, SerializationFailure
 
 from app import database, main
 from app.workspace import default_state
@@ -62,3 +64,43 @@ def test_exhausted_pool_returns_retryable_service_unavailable(monkeypatch):
         next(database.get_connection())
     assert error.value.status_code == 503
     assert error.value.headers == {'Retry-After': '5'}
+
+
+@pytest.mark.parametrize('failure', [OperationalError('SSL SYSCALL error: EOF detected'), AdminShutdown('server stopped')])
+@pytest.mark.parametrize('phase', ['acquire', 'query', 'commit'])
+def test_connection_loss_returns_503_without_replaying_write(monkeypatch, failure, phase):
+    attempts = []
+    class InterruptedPool:
+        @contextmanager
+        def connection(self, timeout):
+            attempts.append('acquire')
+            if phase == 'acquire':
+                raise failure
+            yield object()
+            if phase == 'commit':
+                raise failure
+
+    monkeypatch.setattr(database, 'pool', InterruptedPool())
+    dependency = database.get_connection()
+    with pytest.raises(HTTPException) as error:
+        next(dependency)
+        if phase == 'query':
+            dependency.throw(failure)
+        else:
+            next(dependency)
+    assert error.value.status_code == 503
+    assert 'проверьте' in error.value.detail
+    assert attempts == ['acquire']
+
+
+def test_sql_transaction_conflict_is_not_misreported_as_connection_loss(monkeypatch):
+    class Pool:
+        @contextmanager
+        def connection(self, timeout):
+            yield object()
+
+    monkeypatch.setattr(database, 'pool', Pool())
+    dependency = database.get_connection()
+    next(dependency)
+    with pytest.raises(SerializationFailure):
+        dependency.throw(SerializationFailure('transaction conflict'))
