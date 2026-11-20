@@ -18,38 +18,45 @@ class WorkspaceError(ValueError):
         self.status_code = status_code
 
 
-def _menu_category_registry(state: dict, kind: str) -> list[dict]:
-    registry_key = f"{kind}Categories"
-    source = state.get(registry_key)
-    items = state["recipes" if kind == "recipe" else "products"]
-    if not isinstance(source, list):
-        linked_names = {str(item.get("category") or "Без категории").strip().lower() for item in items}
-        source = [
-            raw for raw in state.get("menuCategories", [])
-            if str(raw if isinstance(raw, str) else raw.get("name", "") if isinstance(raw, dict) else "").strip().lower() in linked_names
-        ]
+def _menu_category_registry(state: dict, kind: str = "menu") -> list[dict]:
+    """One menu registry; old recipe/product fields remain compatibility views."""
     palette = ["#e39a3d", "#62a56f", "#4e9b8d", "#5b8fbd", "#bd6557", "#7b69d4"]
     registry: list[dict] = []
-    for raw in source:
-        name = str(raw if isinstance(raw, str) else raw.get("name", "") if isinstance(raw, dict) else "").strip()
-        color = str(raw.get("color", "") if isinstance(raw, dict) else "")
-        if not name or any(category["name"].lower() == name.lower() for category in registry):
-            continue
-        category = {"name": name, "color": color if len(color) == 7 and color.startswith("#") else palette[len(registry) % len(palette)]}
-        if isinstance(raw, dict):
-            category.update({key: raw[key] for key in ("image", "is_active") if key in raw})
-        registry.append(category)
-    state[registry_key] = registry
+    by_name: dict[str, dict] = {}
+    sources = [state.get(key, []) for key in ("menuCategories", "recipeCategories", "productCategories")]
+    sources.append([{"name": str(item.get("category") or "Без категории").strip() or "Без категории"}
+                    for item in [*state.get("recipes", []), *state.get("products", [])]])
+    for source in sources:
+        for raw in source if isinstance(source, list) else []:
+            name = str(raw if isinstance(raw, str) else raw.get("name", "") if isinstance(raw, dict) else "").strip()
+            if not name:
+                continue
+            existing = by_name.get(name.lower())
+            if existing is not None:
+                if isinstance(raw, dict):
+                    if not existing.get("image") and raw.get("image"):
+                        existing["image"] = raw["image"]
+                    if raw.get("is_active") is False:
+                        existing["is_active"] = False
+                continue
+            color = str(raw.get("color", "") if isinstance(raw, dict) else "")
+            category = {"name": name, "color": color if re.fullmatch(r"#[0-9a-fA-F]{6}", color) else palette[len(registry) % len(palette)]}
+            if isinstance(raw, dict):
+                category.update({key: raw[key] for key in ("image", "is_active") if key in raw})
+            registry.append(category)
+            by_name[name.lower()] = category
+    for item in [*state.get("recipes", []), *state.get("products", [])]:
+        name = str(item.get("category") or "Без категории").strip() or "Без категории"
+        item["category"] = by_name[name.lower()]["name"]
+    state["menuCategories"] = registry
+    # Persist the common registry once; legacy API views are derived on reads.
+    state.pop("recipeCategories", None)
+    state.pop("productCategories", None)
     return registry
 
 
 def _sync_menu_categories(state: dict) -> None:
-    merged: list[dict] = []
-    for kind in ("recipe", "product"):
-        for category in _menu_category_registry(state, kind):
-            if not any(entry["name"].lower() == category["name"].lower() for entry in merged):
-                merged.append(deepcopy(category))
-    state["menuCategories"] = merged
+    _menu_category_registry(state)
 
 
 def sale_payment_amount(sale: dict, method: str) -> Decimal:
@@ -568,6 +575,9 @@ def production_context(state, branch_id):
 
 def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]:
     output = deepcopy(state)
+    _sync_menu_categories(output)
+    output["recipeCategories"] = output["menuCategories"]
+    output["productCategories"] = output["menuCategories"]
     freeze_batch_portions(output)
     output["serviceMode"] = "restaurant" if user.get("plan_code") == "restaurant" else "canteen"
     if output["serviceMode"] == "restaurant" and user.get("branch_id"):
@@ -893,6 +903,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         previous = operation_replay(state, user, action, payload)
         if previous:
             return previous
+    _sync_menu_categories(state)
     freeze_batch_portions(state)
     if action == "sale.create":
         previous = sale_replay(state, user, payload)
@@ -1116,63 +1127,23 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         original_name = str(payload.get("originalName") or "").strip()
         _require(kind in {"menu", "recipe", "product", "ingredient"}, "Неизвестный тип категории")
         _require(name and len(name) <= 80, "Название категории должно содержать от 1 до 80 символов")
-        if kind in {"recipe", "product"}:
-            registry = _menu_category_registry(state, kind)
-            items = state["recipes" if kind == "recipe" else "products"]
+        if kind in {"menu", "recipe", "product"}:
+            registry = _menu_category_registry(state)
             entry = next((category for category in registry if category["name"].lower() == original_name.lower()), None) if original_name else None
             _require(not original_name or entry is not None, "Категория не найдена", 404)
             _require(not any(category is not entry and category["name"].lower() == name.lower() for category in registry), "Категория с таким названием уже существует", 409)
             color = str(payload.get("color", "")).lower()
-            if not (len(color) == 7 and color.startswith("#") and all(character in "0123456789abcdef" for character in color[1:])):
-                color = entry["color"] if entry else ["#e39a3d", "#62a56f", "#4e9b8d", "#5b8fbd", "#bd6557", "#7b69d4"][len(registry) % 6]
+            if not re.fullmatch(r"#[0-9a-f]{6}", color):
+                color = entry["color"] if entry else "#e39a3d"
             if entry is None:
                 registry.append({"name": name, "is_active": bool(payload.get("is_active", True)), **_appearance({**payload, "color": color})})
             else:
                 previous_name = entry["name"]
                 entry.update({"name": name, "is_active": bool(payload.get("is_active", entry.get("is_active", True))), **_appearance({**payload, "color": color}, entry)})
-                for item in items:
-                    if item.get("category") == previous_name:
+                for item in [*state["recipes"], *state["products"]]:
+                    if str(item.get("category", "")).lower() == previous_name.lower():
                         item["category"] = name
             _sync_menu_categories(state)
-        elif kind == "menu":
-            palette = ["#e39a3d", "#62a56f", "#4e9b8d", "#5b8fbd", "#bd6557", "#7b69d4"]
-            registry = state.get("menuCategories")
-            if not isinstance(registry, list):
-                registry = []
-            normalized_registry: list[dict[str, str]] = []
-            for index, raw in enumerate(registry):
-                category_name = str(raw if isinstance(raw, str) else raw.get("name", "")).strip()
-                category_color = str(raw.get("color", "") if isinstance(raw, dict) else "")
-                if category_name and not any(entry["name"].lower() == category_name.lower() for entry in normalized_registry):
-                    normalized_registry.append({"image": raw.get("image", "") if isinstance(raw, dict) else "", "name": category_name, "color": category_color if len(category_color) == 7 and category_color.startswith("#") else palette[index % len(palette)]})
-            for item in [*state["recipes"], *state["products"]]:
-                category_name = str(item.get("category") or "Без категории").strip() or "Без категории"
-                if not any(entry["name"].lower() == category_name.lower() for entry in normalized_registry):
-                    normalized_registry.append({"name": category_name, "color": palette[len(normalized_registry) % len(palette)]})
-            state["menuCategories"] = normalized_registry
-            entry = next((category for category in normalized_registry if category["name"].lower() == original_name.lower()), None) if original_name else None
-            _require(not original_name or entry is not None, "Категория не найдена", 404)
-            _require(not any(category is not entry and category["name"].lower() == name.lower() for category in normalized_registry), "Категория с таким названием уже существует", 409)
-            color = str(payload.get("color", "")).lower()
-            if not (len(color) == 7 and color.startswith("#") and all(character in "0123456789abcdef" for character in color[1:])):
-                color = entry["color"] if entry else palette[len(normalized_registry) % len(palette)]
-            if entry is None:
-                normalized_registry.append({"name": name, "is_active": bool(payload.get("is_active", True)), **_appearance({**payload, "color": color})})
-            else:
-                previous_name = entry["name"]
-                entry.update({"name": name, "is_active": bool(payload.get("is_active", entry.get("is_active", True))), **_appearance({**payload, "color": color}, entry)})
-                for recipe in state["recipes"]:
-                    if recipe.get("category") == previous_name:
-                        recipe.update({"category": name})
-                for product in state["products"]:
-                    if product.get("category") == previous_name:
-                        product["category"] = name
-                for scoped_kind in ("recipe", "product"):
-                    scoped_registry = state.get(f"{scoped_kind}Categories")
-                    if isinstance(scoped_registry, list):
-                        scoped_entry = next((category for category in scoped_registry if category.get("name", "").lower() == previous_name.lower()), None)
-                        if scoped_entry:
-                            scoped_entry.update({"name": name, "color": color, **_appearance({**payload, "color": color}, scoped_entry)})
         else:
             registry = state.get("ingredientCategories")
             normalized_registry = []
@@ -1550,22 +1521,19 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                     if isinstance(prices, dict):
                         prices.pop(entry_id, None)
         elif kind in {"recipe-category", "product-category", "menu-category", "ingredient-category"}:
-            if kind in {"recipe-category", "product-category"}:
-                scoped_kind = "recipe" if kind == "recipe-category" else "product"
-                registry_name = f"{scoped_kind}Categories"
-                registry = _menu_category_registry(state, scoped_kind)
-                linked = state["recipes" if scoped_kind == "recipe" else "products"]
+            if kind != "ingredient-category":
+                registry = _menu_category_registry(state)
+                linked = [*state["recipes"], *state["products"]]
             else:
-                registry_name = "menuCategories" if kind == "menu-category" else "ingredientCategories"
-                registry = state.setdefault(registry_name, [])
-                linked = [*state["recipes"], *state["products"]] if kind == "menu-category" else state["ingredients"]
+                registry = state.setdefault("ingredientCategories", [])
+                linked = state["ingredients"]
             index = next((index for index, raw in enumerate(registry) if str(raw.get("name", "") if isinstance(raw, dict) else raw).lower() == entry_id.lower()), None)
             _require(index is not None, "Категория не найдена", 404)
             linked_count = sum(str(item.get("category", "")).lower() == entry_id.lower() for item in linked)
-            unit = "техкарт" if kind == "recipe-category" else "товаров" if kind == "product-category" else "связанных позиций"
+            unit = "связанных позиций"
             _require(not linked_count, f"Сначала перенесите {linked_count} {unit} в другую категорию", 409)
             registry.pop(index)
-            if kind in {"recipe-category", "product-category"}:
+            if kind != "ingredient-category":
                 _sync_menu_categories(state)
             if kind == "ingredient-category":
                 state.get("ingredientCategoryCovers", {}).pop(entry_id, None)
@@ -1604,17 +1572,9 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             entry = _find(state["products"], entry_id)
             _require(entry is not None, "Товар не найден", 404)
             entry["is_active"] = is_active
-        elif kind == "menu-category":
-            registry = state.get("menuCategories")
-            if not isinstance(registry, list):
-                registry = []
-            entry = next((category for category in registry if str(category.get("name", "")).lower() == entry_id.lower()), None)
-            _require(entry is not None, "Категория не найдена", 404)
-            entry["is_active"] = is_active
         else:
-            scoped_kind = "recipe" if kind == "recipe-category" else "product"
-            registry = _menu_category_registry(state, scoped_kind)
-            entry = next((category for category in registry if str(category.get("name", "")).lower() == entry_id.lower()), None)
+            registry = _menu_category_registry(state)
+            entry = next((category for category in registry if category["name"].lower() == entry_id.lower()), None)
             _require(entry is not None, "Категория не найдена", 404)
             entry["is_active"] = is_active
             _sync_menu_categories(state)

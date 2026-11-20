@@ -363,26 +363,21 @@ def test_owner_can_create_and_rename_catalog_categories() -> None:
     assert "Крупы и зерно" in state["ingredientCategories"]
 
 
-def test_recipe_and_product_categories_are_independent() -> None:
+def test_recipe_and_product_categories_share_one_registry() -> None:
     state = default_state()
     state["products"][0]["category"] = "Горячее"
     state["recipeCategories"] = [{"name": "Горячее", "color": "#e39a3d"}]
     state["productCategories"] = [{"name": "Напитки", "color": "#5b8fbd"}]
-
     apply_action(state, OWNER, "category.upsert", {
         "kind": "recipe", "originalName": "Горячее", "name": "Основные блюда", "color": "#123456",
     })
-    apply_action(state, OWNER, "category.upsert", {
-        "kind": "product", "name": "Основные блюда", "color": "#abcdef",
-    })
-
     assert all(recipe["category"] == "Основные блюда" for recipe in state["recipes"] if recipe["id"] in {201, 203, 205})
-    assert state["products"][0]["category"] == "Горячее"
-    assert any(category["name"] == "Основные блюда" for category in state["recipeCategories"])
-    assert any(category["name"] == "Основные блюда" for category in state["productCategories"])
-    assert {category["name"] for category in state["recipeCategories"]} == {"Основные блюда"}
-    assert {category["name"] for category in state["productCategories"]} == {"Напитки", "Основные блюда"}
+    assert state["products"][0]["category"] == "Основные блюда"
+    output = visible_state(state, OWNER)
+    assert output["recipeCategories"] == output["productCategories"] == output["menuCategories"]
     assert sum(category["name"] == "Основные блюда" for category in state["menuCategories"]) == 1
+    with pytest.raises(WorkspaceError, match="уже существует"):
+        apply_action(state, OWNER, "category.upsert", {"kind": "product", "name": "Основные блюда"})
 
 
 def test_branch_cannot_manage_catalog_categories() -> None:
@@ -516,7 +511,7 @@ def test_owner_can_delete_unused_catalog_entries() -> None:
 
     apply_action(state, OWNER, "category.upsert", {"kind": "recipe", "name": "Пустая категория техкарт", "color": "#123456"})
     apply_action(state, OWNER, "catalog.delete", {"kind": "recipe-category", "id": "Пустая категория техкарт"})
-    assert all(category["name"] != "Пустая категория техкарт" for category in state["recipeCategories"])
+    assert all(category["name"] != "Пустая категория техкарт" for category in state["menuCategories"])
 
     apply_action(state, OWNER, "station.upsert", {"name": "Пустой цех", "branchId": "b1", "destination": "Без печати"})
     apply_action(state, OWNER, "catalog.delete", {"kind": "station", "id": "Пустой цех"})

@@ -245,9 +245,8 @@ function hydrateServerWorkspace(response) {
   products = Array.isArray(state.products) ? state.products : [];
   modifierSets = Array.isArray(state.modifierSets) ? state.modifierSets : [];
   preparations = Array.isArray(state.preparations) ? state.preparations : [];
-  recipeCategories = normalizeScopedCategories(state.recipeCategories, recipes, state.menuCategories);
-  productCategories = normalizeScopedCategories(state.productCategories, products, state.menuCategories);
-  menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories);
+  menuCategories = mergeMenuCategoryRegistries(state.menuCategories || [], state.recipeCategories || [], state.productCategories || [], normalizeMenuCategories([], [...recipes, ...products]));
+  recipeCategories = productCategories = menuCategories;
   ingredientCategories = normalizeIngredientCategories(state.ingredientCategories);
   ingredientCategoryCovers = state.ingredientCategoryCovers || {};
   stations = normalizeStations(state.stations, false);
@@ -543,16 +542,28 @@ function normalizeMenuCategories(saved, linkedItems = [...recipes, ...products])
 }
 
 function normalizeScopedCategories(saved, linkedItems, fallbackCategories = menuCategories) {
-  const source = Array.isArray(saved)
-    ? saved
-    : fallbackCategories.filter((category) => linkedItems.some((item) => item.category === category.name));
-  return normalizeMenuCategories(source, []);
+  return mergeMenuCategoryRegistries(fallbackCategories || [], saved || [], normalizeMenuCategories([], [...recipes, ...products]));
+}
+
+function syncMenuCategoryRegistries() {
+  menuCategories = mergeMenuCategoryRegistries(menuCategories, recipeCategories, productCategories, normalizeMenuCategories([], [...recipes, ...products]));
+  const names = new Map(menuCategories.map(category => [category.name.toLowerCase(), category.name]));
+  [...recipes, ...products].forEach(item => { item.category = names.get((String(item.category || 'Без категории').trim() || 'Без категории').toLowerCase()); });
+  recipeCategories = productCategories = menuCategories;
 }
 
 function mergeMenuCategoryRegistries(...registries) {
   const merged = [];
   registries.flat().forEach((category) => {
-    if (!merged.some((entry) => entry.name.toLowerCase() === category.name.toLowerCase())) merged.push(category);
+    if (!category) return;
+    if (typeof category === 'string') category = {name: category};
+    if (!category.name) return;
+    const existing = merged.find(entry => entry.name.trim().toLowerCase() === category.name.trim().toLowerCase());
+    if (!existing) merged.push({...category});
+    else {
+      if (!existing.image && category.image) existing.image = category.image;
+      if (category.is_active === false) existing.is_active = false;
+    }
   });
   return normalizeMenuCategories(merged, []);
 }
@@ -592,7 +603,7 @@ function loadIngredientCategories() {
 
 function saveCategoryRegistries() {
   if (serverMode) return;
-  menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories);
+  syncMenuCategoryRegistries();
   localStorage.setItem(menuCategoriesKey, JSON.stringify(menuCategories));
   localStorage.setItem(recipeCategoriesKey, JSON.stringify(recipeCategories));
   localStorage.setItem(productCategoriesKey, JSON.stringify(productCategories));
@@ -3230,16 +3241,13 @@ function renderPreparations() {
 function renderIngredientsMenu() { window.IngredientsList.render(); }
 
 function renderMenuCategories() {
-  recipeCategories = normalizeScopedCategories(recipeCategories, recipes);
-  productCategories = normalizeScopedCategories(productCategories, products);
-  menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories);
+  syncMenuCategoryRegistries();
   ingredientCategories = normalizeIngredientCategories(ingredientCategories);
-  const categoryRows = (categories, items, kind) => categories.length ? categories.map((category, index) => {
-    const linkedCount = items.filter((item) => item.category === category.name).length;
-    return `<tr class="${category.is_active === false ? 'catalog-stopped' : ''}"><td><div class="menu-category-cell">${CatalogCover.thumb(category)}<strong>${escapeHtml(category.name)}</strong>${stoppedBadge(category.is_active)}</div></td><td>${linkedCount}</td><td>${category.color.toUpperCase()}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-${kind}-category-edit="${index}" type="button">Изменить</button>${catalogRowMenu(`${kind}-category`, category.name, category.name, `Удалить категорию ${kind === "recipe" ? "тех. карт" : "товаров"}`, category.is_active)}</div></td></tr>`;
-  }).join("") : '<tr class="table-empty"><td colspan="4">Категории ещё не созданы.</td></tr>';
-  $("#productCategoriesTable").innerHTML = categoryRows(productCategories, products, "product");
-  $("#recipeCategoriesTable").innerHTML = categoryRows(recipeCategories, recipes, "recipe");
+  $("#menuCategoriesTable").innerHTML = menuCategories.length ? menuCategories.map((category, index) => {
+    const recipeCount = recipes.filter(item => item.category === category.name).length;
+    const productCount = products.filter(item => item.category === category.name).length;
+    return `<tr class="${category.is_active === false ? 'catalog-stopped' : ''}"><td><div class="menu-category-cell">${CatalogCover.thumb(category)}<strong>${escapeHtml(category.name)}</strong>${stoppedBadge(category.is_active)}</div></td><td>${productCount}</td><td>${recipeCount}</td><td>${category.color.toUpperCase()}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-menu-category-edit="${index}" type="button">Изменить</button>${catalogRowMenu('menu-category', category.name, category.name, 'Удалить категорию меню', category.is_active)}</div></td></tr>`;
+  }).join('') : '<tr class="table-empty"><td colspan="5">Категории ещё не созданы.</td></tr>';
 
   $("#ingredientCategoriesTable").innerHTML = ingredientCategories.map((category, index) => {
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
@@ -3276,21 +3284,20 @@ function refreshCategoryControls() {
 }
 
 function openCategoryForm(kind, index = null) {
-  editingCategoryKind = kind === "menu" ? "product" : kind;
-  const isMenuCategory = ["recipe", "product"].includes(editingCategoryKind);
-  const registry = editingCategoryKind === "recipe" ? recipeCategories : editingCategoryKind === "product" ? productCategories : ingredientCategories;
+  syncMenuCategoryRegistries();
+  editingCategoryKind = ["recipe", "product", "menu"].includes(kind) ? "menu" : kind;
+  const isMenuCategory = editingCategoryKind === "menu";
+  const registry = isMenuCategory ? menuCategories : ingredientCategories;
   const entry = index == null ? null : registry[Number(index)];
   editingCategoryName = isMenuCategory ? entry?.name || null : entry || null;
-  const linkedItems = editingCategoryKind === "recipe" ? recipes : editingCategoryKind === "product" ? products : ingredients;
+  const linkedItems = isMenuCategory ? [...recipes, ...products] : ingredients;
   const linkedCount = isMenuCategory
     ? linkedItems.filter((item) => item.category === editingCategoryName).length
     : ingredients.filter((item) => item.category === editingCategoryName).length;
-  $("#categoryModalEyebrow").textContent = editingCategoryKind === "recipe" ? "Меню / Категории тех. карт" : editingCategoryKind === "product" ? "Меню / Категории товаров" : "Меню / Категории ингредиентов";
+  $("#categoryModalEyebrow").textContent = isMenuCategory ? "Меню / Категории товаров и техкарт" : "Меню / Категории ингредиентов";
   $("#categoryModalTitle").textContent = entry ? "Редактировать категорию" : "Новая категория";
-  $("#categoryModalDescription").textContent = editingCategoryKind === "recipe"
-    ? "Категория используется только для техкарт и отображается на кассе."
-    : editingCategoryKind === "product"
-    ? "Категория используется только для товаров и отображается на кассе."
+  $("#categoryModalDescription").textContent = isMenuCategory
+    ? "Общая категория для товаров и техкарт. Изменения отображаются на кассе."
     : "Категория используется в складском учёте, фильтрах и инвентаризации.";
   $("#categoryNameInput").value = editingCategoryName || "";
   $("#categoryColorField").classList.remove("hidden");
@@ -3314,8 +3321,8 @@ async function saveCategoryForm() {
     showToast("Введите название категории");
     return;
   }
-  const isMenuCategory = ["recipe", "product"].includes(editingCategoryKind);
-  const categoryRegistry = editingCategoryKind === "recipe" ? recipeCategories : editingCategoryKind === "product" ? productCategories : ingredientCategories;
+  const isMenuCategory = editingCategoryKind === "menu";
+  const categoryRegistry = isMenuCategory ? menuCategories : ingredientCategories;
   const duplicate = isMenuCategory
     ? categoryRegistry.some((category) => category.name.toLowerCase() === name.toLowerCase() && category.name !== editingCategoryName)
     : ingredientCategories.some((category) => category.toLowerCase() === name.toLowerCase() && category !== editingCategoryName);
@@ -3331,19 +3338,19 @@ async function saveCategoryForm() {
     const response = await runServerAction("category.upsert", payload);
     if (!response) return;
     $("#categoryModal").classList.add("hidden");
-    switchMenuPage(editingCategoryKind === "recipe" ? "recipe-categories" : editingCategoryKind === "product" ? "product-categories" : "ingredient-categories");
+    switchMenuPage(isMenuCategory ? "menu-categories" : "ingredient-categories");
     showToast(editingCategoryName ? "Категория и связанные позиции обновлены" : "Категория создана");
     return;
   }
   if (isMenuCategory) {
-    const items = editingCategoryKind === "recipe" ? recipes : products;
+    const items = [...recipes, ...products];
     if (editingCategoryName) {
       const category = categoryRegistry.find((item) => item.name === editingCategoryName);
       if (category) Object.assign(category, { name, color, image });
       items.forEach((item) => { if (item.category === editingCategoryName) item.category = name; });
     } else categoryRegistry.push({ name, color, image });
-    if (editingCategoryKind === "recipe") saveRecipes();
-    else saveProducts();
+    saveRecipes();
+    saveProducts();
   } else {
     if (editingCategoryName) {
       const categoryIndex = ingredientCategories.indexOf(editingCategoryName);
@@ -3353,11 +3360,11 @@ async function saveCategoryForm() {
     saveIngredients();
   }
   if (!isMenuCategory) { if (editingCategoryName && editingCategoryName !== name) delete ingredientCategoryCovers[editingCategoryName]; ingredientCategoryCovers[name] = {color,image}; }
-  menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories);
+  syncMenuCategoryRegistries();
   saveCategoryRegistries();
   $("#categoryModal").classList.add("hidden");
   renderAll();
-  switchMenuPage(editingCategoryKind === "recipe" ? "recipe-categories" : editingCategoryKind === "product" ? "product-categories" : "ingredient-categories");
+  switchMenuPage(isMenuCategory ? "menu-categories" : "ingredient-categories");
   showToast(editingCategoryName ? "Категория и связанные позиции обновлены" : "Категория создана");
 }
 
@@ -5372,7 +5379,7 @@ async function ensureProductCategory() {
   let category = productCategories.find(item => item.name.toLocaleLowerCase("ru") === name.toLocaleLowerCase("ru"));
   if (!category && name !== "Без категории") {
     if (serverMode) {
-      if (!await runServerAction("category.upsert", {kind: "product", originalName: null, name, color: "#5b8fbd"})) return false;
+      if (!await runServerAction("category.upsert", {kind: "menu", originalName: null, name, color: "#5b8fbd"})) return false;
     } else { productCategories.push({name, color: "#5b8fbd"}); menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories); saveCategoryRegistries(); }
     category = productCategories.find(item => item.name === name);
   }
@@ -5481,9 +5488,9 @@ const catalogDeleteConfig = {
   preparation: { label: "Полуфабрикат", deleted: "Полуфабрикат удалён", modal: "preparationModal", page: "preparations" },
   ingredient: { label: "Ингредиент", deleted: "Ингредиент удалён", modal: "ingredientModal", page: "ingredients" },
   product: { label: "Товар", deleted: "Товар удалён", modal: "productModal", page: "products" },
-  "menu-category": { label: "Категория меню", deleted: "Категория удалена", modal: "categoryModal", page: "product-categories" },
-  "recipe-category": { label: "Категория тех. карт", deleted: "Категория тех. карт удалена", modal: "categoryModal", page: "recipe-categories" },
-  "product-category": { label: "Категория товаров", deleted: "Категория товаров удалена", modal: "categoryModal", page: "product-categories" },
+  "menu-category": { label: "Категория меню", deleted: "Категория удалена", modal: "categoryModal", page: "menu-categories" },
+  "recipe-category": { label: "Категория тех. карт", deleted: "Категория тех. карт удалена", modal: "categoryModal", page: "menu-categories" },
+  "product-category": { label: "Категория товаров", deleted: "Категория товаров удалена", modal: "categoryModal", page: "menu-categories" },
   "ingredient-category": { label: "Категория ингредиентов", deleted: "Категория удалена", modal: "categoryModal", page: "ingredient-categories" },
   station: { label: "Цех", deleted: "Цех удалён", modal: "stationModal", page: "stations" }
 };
@@ -5517,17 +5524,9 @@ function catalogDeleteConstraint(kind, id) {
     if (logisticsUsesCatalogItem(id)) return "Позиция есть в складских документах. Удаление нарушит историю движения.";
     if (getSales().some((sale) => (sale.items || []).some((item) => String(item.id) === key))) return "По позиции уже есть продажи. История чеков должна сохраниться.";
   }
-  if (kind === "menu-category") {
-    const count = [...recipes, ...products].filter((item) => item.category === id).length;
+  if (["menu-category", "recipe-category", "product-category"].includes(kind)) {
+    const count = [...recipes, ...products].filter(item => String(item.category).toLowerCase() === String(id).toLowerCase()).length;
     if (count) return `Сначала перенесите ${count} ${pluralRu(count, "позицию", "позиции", "позиций")} в другую категорию.`;
-  }
-  if (kind === "recipe-category") {
-    const count = recipes.filter((item) => item.category === id).length;
-    if (count) return `Сначала перенесите ${count} ${pluralRu(count, "техкарту", "техкарты", "техкарт")} в другую категорию.`;
-  }
-  if (kind === "product-category") {
-    const count = products.filter((item) => item.category === id).length;
-    if (count) return `Сначала перенесите ${count} ${pluralRu(count, "товар", "товара", "товаров")} в другую категорию.`;
   }
   if (kind === "ingredient-category") {
     const count = ingredients.filter((item) => item.category === id).length;
@@ -5598,9 +5597,11 @@ function deleteCatalogLocally({ kind, id }) {
     saveRecipes(); savePreparations(); removeById(ingredients); saveIngredients();
   }
   else if (kind === "product") { products.filter(item => item.parentId === String(id)).forEach(item => deleteCatalogLocally({kind:"product", id:item.id})); removeById(products); saveProducts(); }
-  else if (kind === "menu-category") { recipeCategories = recipeCategories.filter((category) => category.name !== id); productCategories = productCategories.filter((category) => category.name !== id); menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories); saveCategoryRegistries(); }
-  else if (kind === "recipe-category") { recipeCategories = recipeCategories.filter((category) => category.name !== id); menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories); saveCategoryRegistries(); }
-  else if (kind === "product-category") { productCategories = productCategories.filter((category) => category.name !== id); menuCategories = mergeMenuCategoryRegistries(recipeCategories, productCategories); saveCategoryRegistries(); }
+  else if (["menu-category", "recipe-category", "product-category"].includes(kind)) {
+    menuCategories = menuCategories.filter(category => category.name.toLowerCase() !== String(id).toLowerCase());
+    recipeCategories = productCategories = menuCategories;
+    saveCategoryRegistries();
+  }
   else if (kind === "ingredient-category") { ingredientCategories = ingredientCategories.filter((category) => category !== id); saveCategoryRegistries(); }
   else if (kind === "station") { stations = stations.filter((station) => station.name !== id); saveStations(); }
   if (["ingredient", "product"].includes(kind)) {
@@ -6693,15 +6694,13 @@ const menuPageConfig = {
   recipes: { title: "Технологические карты", description: "Блюда, которые готовятся по рецепту и продаются гостям", action: "Добавить тех. карту" },
   preparations: { title: "Полуфабрикаты", description: "Заготовки из ингредиентов, которые используются в составе блюд", action: "Добавить полуфабрикат" },
   ingredients: { title: "Ингредиенты", description: "Сырьё, из которого готовятся блюда и полуфабрикаты", action: "Добавить ингредиент" },
-  "menu-categories": { title: "Категории товаров", description: "Отдельные группы для готовых товаров", action: "Добавить категорию" },
-  "product-categories": { title: "Категории товаров", description: "Отдельные группы для готовых товаров", action: "Добавить категорию" },
-  "recipe-categories": { title: "Категории тех. карт", description: "Отдельные группы для блюд и напитков по техкартам", action: "Добавить категорию" },
+  "menu-categories": { title: "Категории товаров и техкарт", description: "Общие группы меню для готовых товаров и блюд по техкарте", action: "Добавить категорию" },
   "ingredient-categories": { title: "Категории ингредиентов", description: "Группы сырья для складского учёта и инвентаризации", action: "Добавить категорию" },
   stations: { title: "Цеха", description: "Места приготовления, склады списания и печать заказов", action: "Добавить цех" }
 };
 
 function switchMenuPage(page) {
-  if (page === "menu-categories") page = "product-categories";
+  if (["product-categories", "recipe-categories"].includes(page)) page = "menu-categories";
   const config = menuPageConfig[page] || menuPageConfig.recipes;
   if (!$("#view-recipes").classList.contains("active")) switchView("recipes");
   document.querySelectorAll(".menu-pane").forEach((pane) => pane.classList.toggle("active", pane.id === `menu-pane-${page}`));
@@ -6998,13 +6997,9 @@ $("#ingredientsTable").addEventListener("click", (event) => {
   const button = event.target.closest("[data-ingredient-edit]");
   if (button) openIngredientForm(button.dataset.ingredientEdit);
 });
-$("#productCategoriesTable").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-product-category-edit]");
-  if (button) openCategoryForm("product", button.dataset.productCategoryEdit);
-});
-$("#recipeCategoriesTable").addEventListener("click", (event) => {
-  const button = event.target.closest("[data-recipe-category-edit]");
-  if (button) openCategoryForm("recipe", button.dataset.recipeCategoryEdit);
+$("#menuCategoriesTable").addEventListener("click", (event) => {
+  const button = event.target.closest("[data-menu-category-edit]");
+  if (button) openCategoryForm("menu", button.dataset.menuCategoryEdit);
 });
 $("#ingredientCategoriesTable").addEventListener("click", (event) => {
   const button = event.target.closest("[data-ingredient-category-edit]");
@@ -7317,8 +7312,7 @@ $("#menuPageActionButton").addEventListener("click", () => {
   else if (action === "preparations") openPreparationForm();
   else if (action === "ingredients") openIngredientForm();
   else if (action === "products") openProductForm();
-  else if (action === "menu-categories" || action === "product-categories") openCategoryForm("product");
-  else if (action === "recipe-categories") openCategoryForm("recipe");
+  else if (["menu-categories", "product-categories", "recipe-categories"].includes(action)) openCategoryForm("menu");
   else if (action === "ingredient-categories") openCategoryForm("ingredient");
   else if (action === "stations") openStationForm();
   else {
@@ -7390,7 +7384,7 @@ $("#categoryColorText").addEventListener("input", () => {
 $("#saveCategoryButton").addEventListener("click", saveCategoryForm);
 $("#deleteCategoryButton").addEventListener("click", () => {
   if (!editingCategoryName) return;
-  const kind = { recipe: "recipe-category", product: "product-category", ingredient: "ingredient-category" }[editingCategoryKind];
+  const kind = { menu: "menu-category", ingredient: "ingredient-category" }[editingCategoryKind];
   requestCatalogDelete(kind, editingCategoryName, editingCategoryName);
 });
 $("#stationDestinationMode").addEventListener("change", updateStationDestinationField);
