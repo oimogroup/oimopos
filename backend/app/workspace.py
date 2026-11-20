@@ -4,7 +4,7 @@ from . import custody
 import re
 from copy import deepcopy
 from datetime import datetime, timezone, timedelta
-from math import floor, isfinite
+from math import floor, isfinite, isclose
 from decimal import Decimal, InvalidOperation, ROUND_HALF_UP
 from typing import Any
 from uuid import uuid4
@@ -1449,15 +1449,25 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             raw_components = payload.get("components", [])
             components: list[dict[str, Any]] = []
             calculated_yield = 0.0
-            for raw in raw_components if isinstance(raw_components, list) else []:
-                _require(isinstance(raw, dict), "Проверьте состав техкарты")
+            for index, raw in enumerate(raw_components if isinstance(raw_components, list) else [], start=1):
+                _require(isinstance(raw, dict), f"Строка {index}: некорректный состав ингредиента")
                 ingredient_id = str(raw.get("ingredientId", ""))
+                ingredient = _find(state["ingredients"], ingredient_id)
+                _require(ingredient is not None, f"Строка {index}: ингредиент не найден. Выберите его из списка")
+                label = f"Строка {index}, «{ingredient.get('name', ingredient_id)}»"
                 gross = _number(raw.get("gross"))
                 net = _number(raw.get("net"))
-                _require(_find(state["ingredients"], ingredient_id) is not None and gross > 0 and net > 0 and net <= gross, "Проверьте состав техкарты")
+                _require(gross > 0, f"{label}: брутто должно быть числом больше нуля")
+                _require(net > 0, f"{label}: нетто должно быть числом больше нуля")
+                # Converting grams to fractional pieces can introduce round-off.
+                if net > gross and isclose(net, gross, rel_tol=1e-9, abs_tol=1e-6):
+                    net = gross
+                unit = "шт" if ingredient.get("unit") == "шт" else "мл" if ingredient.get("unit") == "л" else "г"
+                scale = 1000 if unit == "шт" else 1
+                _require(net <= gross, f"{label}: нетто ({net / scale:g} {unit}) больше брутто ({gross / scale:g} {unit})")
                 components.append({**raw, "ingredientId": ingredient_id, "gross": gross, "net": net})
                 calculated_yield += net
-            _require(components and calculated_yield > 0, "Проверьте состав техкарты")
+            _require(components and calculated_yield > 0, "Добавьте хотя бы один ингредиент с положительным брутто и нетто")
             output_yield = _number(payload.get("yield")) if "yield" in payload else calculated_yield
             _require(output_yield > 0, "Укажите выход готового блюда")
             station = str(payload.get("station", "")).strip()
