@@ -1747,3 +1747,6 @@ body[data-ui=admin] .recipe-variant-toolbar :is(button,select) { min-height:40px
 .catalog-photo-status:empty{display:none}
 @keyframes catalog-photo-spin{to{transform:rotate(360deg)}}
 @media(prefers-reduced-motion:reduce){.catalog-photo-loading::after{animation:none}}
+
+.catalog-save-status {flex:1;min-width:0;color:var(--muted);font-size:12px;}
+:is(#saveRecipeButton,#savePreparationButton) {display:inline-flex;align-items:center;justify-content:center;gap:8px;}

@@ -2454,6 +2454,7 @@ def workspace_action(
     command: WorkspaceActionInput, request: Request, user: dict = Depends(current_user),
     ashkana_pos_operator: str | None = Cookie(default=None),
     connection: Connection = Depends(get_connection),
+    compact_catalog: bool = False,
 ) -> dict:
     _check_origin(request)
     if command.action in {"sale.create", "sale.import"} and request.headers.get("X-Ashkana-Client") != "pos":
@@ -2521,6 +2522,9 @@ def workspace_action(
         with connection.transaction():
             row = locked_workspace
             state = row["payload"]
+            from .workspace_patch import CATALOG_ACTIONS, state_patch
+            compact = compact_catalog and acting_user.get("role") == "owner" and command.action in CATALOG_ACTIONS
+            before_visible = visible_state(state, acting_user) if compact else None
             if acting_user.get("staff_role") == "production" and not command.action.startswith(("production.shift.", "work.shift.")):
                 kitchen_shift = production_shifts.current(state, str(acting_user.get("branch_id")))
                 if not kitchen_shift or str(kitchen_shift["employeeId"]) != str(acting_user["id"]):
@@ -2562,7 +2566,11 @@ def workspace_action(
             )
     except WorkspaceError as error:
         raise HTTPException(status_code=error.status_code, detail=str(error)) from error
-    return {"version": version, "state": visible_state(state, user if request.headers.get("X-Ashkana-Client") == "pos" else acting_user), "entity": {"type": entity_type, "id": entity_id}}
+    result = {"version": version, "entity": {"type": entity_type, "id": entity_id}}
+    output = visible_state(state, user if request.headers.get("X-Ashkana-Client") == "pos" else acting_user)
+    if compact:
+        return {**result, "baseVersion": row["version"], "statePatch": state_patch(before_visible, output)}
+    return {**result, "state": output}
 
 
 @app.get("/api/v1/audit-events", tags=["operations"])

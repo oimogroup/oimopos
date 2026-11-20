@@ -43,7 +43,8 @@
     const name=el('recipeNameInput').value.trim(),station=el('recipeStationInput').value;
     if(!name || !station || !rows.length || rows.some(r=>!r.name || !Number.isFinite(r.price) || r.price<0 || !Number.isFinite(r.yield) || r.yield<=0 || !r.components.length || (r.portionSize!=null && (!Number.isFinite(r.portionSize) || r.portionSize<=0))) || (!rows.some(r=>r.price>0) && !hasPaidModifier) || new Set(rows.map(r=>r.name.toLocaleLowerCase('ru'))).size!==rows.length){showToast('Укажите разные названия модификаций, выход, состав и цену блюда или платного варианта');return true;}
     const payload={...modifierData,id:editingRecipeId,name,category:el('recipeCategoryInput').value,station,variants:rows.map(r=>({...r,modifierSetIds:modifierData.modifierSetIds,portionSize:r.portionSize ?? null,portionUnit:r.portionUnit || 'мл'}))};
-    if(serverMode){if(!await runServerAction('recipe.group.upsert',payload))return true;}
+    let response;
+    if(serverMode){response=await runServerAction('recipe.group.upsert',payload);if(!response)return true;}
     else {
       let next=Math.max(100,...recipes.map(r=>Number(r.id)||0))+1;
       const rootId=editingRecipeId || next++;
@@ -54,7 +55,7 @@
       });saveRecipes();renderAll();
       window.CatalogModifiers.saveLocal(modifierData);
     }
-    el('recipeModal').classList.add('hidden');switchMenuPage('recipes');showToast('Техкарта с модификациями сохранена');return true;
+    el('recipeModal').classList.add('hidden');switchMenuPage('recipes');if(!response?.refreshFailed)showToast('Техкарта с модификациями сохранена');return true;
   }
   function mount() {
     el('recipeVariantsEnabled').addEventListener('change',toggle);

@@ -105,8 +105,9 @@
     if (crypto.randomUUID) return crypto.randomUUID();
     return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
   }
-  function action(actionName, payload = {}) {
-    if (!replayProtectedActions.has(actionName)) return request("/workspace/actions", { method: "POST", body: JSON.stringify({ action: actionName, payload }) });
+  function action(actionName, payload = {}, { compactCatalog = false } = {}) {
+    const path = compactCatalog ? "/workspace/actions?compact_catalog=true" : "/workspace/actions";
+    if (!replayProtectedActions.has(actionName)) return request(path, { method: "POST", body: JSON.stringify({ action: actionName, payload }) });
     const signature = JSON.stringify([operationScope(), actionName, canonicalPayload(payload)]);
     if (pendingActions.has(signature)) return pendingActions.get(signature);
     const pending = (async () => {

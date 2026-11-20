@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=product-save-loading-1" />
+    <link rel="stylesheet" href="admin.css?v=catalog-save-feedback-1" />
     <link rel="stylesheet" href="minimal.css?v=modifiers-1" />
       <link rel="stylesheet" href="oimo.css?v=photo-upload-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
@@ -824,7 +824,7 @@
           <section class="catalog-form-section modifier-form-section"><div class="catalog-section-heading"><span>3</span><div><h3>Модификаторы для кассы</h3><p>Варианты выбора, доплата и списание ингредиентов или товаров</p></div></div><div id="recipeModifierEditor"></div></section>
           <div class="recipe-live-calculation catalog-calculation"><div><span>Себестоимость</span><strong id="recipeLiveCost">0 сом</strong></div><div><span>Фудкост</span><strong id="recipeLiveFoodCost">0%</strong></div><div><span>Наценка</span><strong id="recipeLiveMarkup">0%</strong></div></div>
         </div>
-        <div class="modal-actions catalog-editor-footer"><button class="danger-button modal-delete-action hidden" id="deleteRecipeButton" type="button"><svg class="ui-icon"><use href="#ui-trash"/></svg>Удалить</button><span></span><button class="secondary-action" data-close="recipeModal" type="button">Отмена</button><button class="primary-button" id="saveRecipeButton" type="button">Сохранить</button></div>
+        <div class="modal-actions catalog-editor-footer"><button class="danger-button modal-delete-action hidden" id="deleteRecipeButton" type="button"><svg class="ui-icon"><use href="#ui-trash"/></svg>Удалить</button><span class="catalog-save-slot"><span id="recipeSaveStatus" class="catalog-save-status" role="status" aria-live="polite" hidden></span></span><button class="secondary-action" data-close="recipeModal" type="button">Отмена</button><button class="primary-button" id="saveRecipeButton" type="button">Сохранить</button></div>
       </section>
     </div>
 
@@ -895,7 +895,7 @@
           <div class="recipe-live-calculation preparation-live-calculation catalog-calculation"><div><span>Выход по составу</span><strong id="preparationNetWeight">0 г</strong></div><div><span>Себестоимость партии</span><strong id="preparationBatchCost">0 сом</strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationUnitCost">0 сом</strong></div></div>
           <div class="calculation-note"><svg class="ui-icon"><use href="#ui-info"/></svg><p><strong>Себестоимость считается автоматически.</strong>При изменении закупочных цен ингредиентов расчёт будет обновляться.</p></div>
         </div>
-        <div class="modal-actions catalog-editor-footer"><button class="icon-button danger-button modal-delete-action hidden" id="deletePreparationButton" type="button" title="Удалить полуфабрикат" aria-label="Удалить полуфабрикат"><svg class="ui-icon" aria-hidden="true"><use href="#ui-trash"/></svg></button><span></span><button class="secondary-action" data-close="preparationModal" type="button">Отмена</button><button class="primary-button" id="savePreparationButton" type="button">Сохранить</button></div>
+        <div class="modal-actions catalog-editor-footer"><button class="icon-button danger-button modal-delete-action hidden" id="deletePreparationButton" type="button" title="Удалить полуфабрикат" aria-label="Удалить полуфабрикат"><svg class="ui-icon" aria-hidden="true"><use href="#ui-trash"/></svg></button><span class="catalog-save-slot"><span id="preparationSaveStatus" class="catalog-save-status" role="status" aria-live="polite" hidden></span></span><button class="secondary-action" data-close="preparationModal" type="button">Отмена</button><button class="primary-button" id="savePreparationButton" type="button">Сохранить</button></div>
       </section>
     </div>
 
@@ -1140,7 +1140,7 @@
     <dialog id="payrollDialog" class="payroll-dialog"><form id="payrollForm"><header><div><p id="payrollDialogEyebrow">Зарплата</p><h2 id="payrollDialogTitle"></h2></div><button type="button" id="payrollDialogClose" class="icon-button" aria-label="Закрыть">×</button></header><div id="payrollFormFields"></div><p id="payrollFormError" role="alert"></p><footer><button type="button" class="secondary-action" id="payrollDialogCancel">Отмена</button><button type="submit" class="primary-button" id="payrollDialogSubmit">Сохранить</button></footer></form></dialog>
     <div class="admin-toast hidden" id="adminToast"></div>
     <script src="numeric-inputs.js?v=1"></script>
-    <script src="api-client.js?v=technical-cards-url-2"></script>
+    <script src="api-client.js?v=compact-catalog-1"></script>
     <script src="catalog-cover.js?v=photo-upload-2"></script>
     <script src="company-settings.js?v=modifiers-1"></script>
     <script src="catalog-units.js?v=1"></script>
@@ -1148,9 +1148,9 @@
     <script src="ingredients-list.js?v=prices-per-kg-9"></script>
     <script src="ingredient-picker.js?v=1"></script>
     <script src="product-variants.js?v=variant-removal-1"></script>
-    <script src="recipe-variants.js?v=modifiers-1"></script>
+    <script src="recipe-variants.js?v=save-feedback-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=category-split-1"></script>
+    <script src="admin.js?v=catalog-save-feedback-1"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

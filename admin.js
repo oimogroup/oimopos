@@ -229,10 +229,13 @@ let serverMode = false;
 let serverSales = [];
 let workspaceVersion = 0;
 let workspaceRefreshTimer = null;
+let serverWorkspaceState = null;
+const catalogSavesInProgress = new Set();
 
 function hydrateServerWorkspace(response) {
   const state = response?.state;
   if (!state) return false;
+  serverWorkspaceState = state;
   document.body.dataset.serviceMode = state.serviceMode || "canteen";
   workspaceVersion = Number(response.version || workspaceVersion || 0);
   branches = Array.isArray(state.branches) ? state.branches : [];
@@ -261,12 +264,12 @@ function hydrateServerWorkspace(response) {
 }
 
 async function runServerAction(action, payload, successMessage = "") {
+  let response;
+  const savingPrefix = action.startsWith('recipe.') ? 'recipe' : action === 'preparation.upsert' ? 'preparation' : null;
   try {
-    const response = await window.AshkanaApi.action(action, payload);
-    hydrateServerWorkspace(response);
-    renderAll();
-    if (successMessage) showToast(typeof successMessage === "function" ? successMessage(response) : successMessage);
-    return response;
+    response = await window.AshkanaApi.action(action, payload, {
+      compactCatalog: Boolean(serverWorkspaceState) && ['recipe.upsert', 'recipe.group.upsert', 'preparation.upsert'].includes(action),
+    });
   } catch (error) {
     if (error.status === 401) {
       sessionStorage.removeItem(authSessionKey);
@@ -274,17 +277,90 @@ async function runServerAction(action, payload, successMessage = "") {
       return null;
     }
     showToast(error.message || "Не удалось сохранить данные на сервере");
+    if (catalogSavesInProgress.has(savingPrefix)) setCatalogSaveStatus(savingPrefix, error.message || 'Не удалось подтвердить сохранение');
     return null;
+  }
+  if (catalogSavesInProgress.has(savingPrefix)) setCatalogSaveStatus(savingPrefix, 'Сохранено. Обновляем список…');
+  await new Promise(resolve => setTimeout(resolve, 0));
+  // The server has confirmed the write. Rendering errors must not imply a failed save.
+  try {
+    if (response.statePatch) {
+      if (Number(response.baseVersion) !== workspaceVersion || !serverWorkspaceState) {
+        const latest = await window.AshkanaApi.workspace();
+        hydrateServerWorkspace(latest);
+      } else {
+        hydrateServerWorkspace({version: response.version, state: applyWorkspacePatch(serverWorkspaceState, response.statePatch)});
+      }
+    } else hydrateServerWorkspace(response);
+    renderAll();
+  } catch (error) {
+    console.error('Saved operation: workspace refresh failed', error);
+    showToast('Изменения сохранены. Не удалось обновить экран — обновите страницу.');
+    response.refreshFailed = true;
+  }
+  if (successMessage && !response.refreshFailed) showToast(typeof successMessage === "function" ? successMessage(response) : successMessage);
+  return response;
+}
+
+function applyWorkspacePatch(state, patch) {
+  const result = {...state, ...patch.replace};
+  for (const key of patch.remove) delete result[key];
+  for (const [key, changes] of Object.entries(patch.collections)) {
+    const items = new Map((state[key] || []).map(item => [String(item.id), item]));
+    for (const item of changes.upsert) items.set(String(item.id), item);
+    result[key] = changes.order.map(id => {
+      if (!items.has(id)) throw new Error('Workspace patch references an unknown item');
+      return items.get(id);
+    });
+  }
+  return result;
+}
+
+function setCatalogSaveStatus(prefix, message) {
+  const status = document.getElementById(`${prefix}SaveStatus`);
+  if (status) { status.hidden = !message; status.textContent = message; }
+}
+
+async function withCatalogSave(prefix, save) {
+  if (catalogSavesInProgress.has(prefix) || !CatalogCover.ready(prefix)) return;
+  catalogSavesInProgress.add(prefix);
+  const modal = document.getElementById(`${prefix}Modal`);
+  const button = document.getElementById(prefix === 'recipe' ? 'saveRecipeButton' : 'savePreparationButton');
+  const controls = [...modal.querySelectorAll('button, input, select, textarea')].map(control => [control, control.disabled]);
+  const label = button.innerHTML;
+  controls.forEach(([control]) => { control.disabled = true; });
+  modal.setAttribute('aria-busy', 'true');
+  button.innerHTML = '<span class="admin-loading-spinner" aria-hidden="true"></span><span>Сохраняем…</span>';
+  setCatalogSaveStatus(prefix, 'Сохраняем изменения…');
+  const slow = setTimeout(() => {
+    if (document.getElementById(`${prefix}SaveStatus`)?.textContent === 'Сохраняем изменения…') setCatalogSaveStatus(prefix, 'Сохранение занимает больше времени. Дождитесь ответа сервера.');
+  }, 8000);
+  try {
+    await new Promise(resolve => setTimeout(resolve, 0));
+    await save();
+  } catch (error) {
+    console.error('Catalog form processing failed', error);
+    const confirmed = document.getElementById(`${prefix}SaveStatus`)?.textContent.startsWith('Сохранено.');
+    const message = confirmed ? 'Изменения сохранены. Обновите страницу, чтобы обновить список.' : 'Не удалось обработать форму. Обновите страницу и проверьте сохранённую техкарту.';
+    setCatalogSaveStatus(prefix, message);
+    showToast(message);
+  } finally {
+    clearTimeout(slow);
+    catalogSavesInProgress.delete(prefix);
+    modal.removeAttribute('aria-busy');
+    button.innerHTML = label;
+    controls.forEach(([control, disabled]) => { control.disabled = disabled; });
+    if (!modal.classList.contains('hidden') && document.getElementById(`${prefix}SaveStatus`)?.textContent === 'Сохраняем изменения…') setCatalogSaveStatus(prefix, 'Проверьте поля формы и повторите сохранение.');
   }
 }
 
 let workspaceRefreshInFlight = false;
 async function refreshServerWorkspace({ silent = true } = {}) {
-  if (workspaceRefreshInFlight || !serverMode || document.querySelector(".modal-backdrop:not(.hidden), .side-drawer-backdrop:not(.hidden)")) return;
+  if (workspaceRefreshInFlight || catalogSavesInProgress.size || !serverMode || document.querySelector(".modal-backdrop:not(.hidden), .side-drawer-backdrop:not(.hidden)")) return;
   workspaceRefreshInFlight = true;
   try {
     const response = await window.AshkanaApi.workspace(workspaceVersion);
-    if (!response.unchanged && Number(response.version) !== workspaceVersion) {
+    if (!response.unchanged && Number(response.version) > workspaceVersion) {
       hydrateServerWorkspace(response);
       renderAll();
       if (!silent) showToast("Данные обновлены с сервера");
@@ -4871,6 +4947,8 @@ function updateRecipeLiveCalculation(event) {
 }
 
 function openRecipeForm(recipeId = null) {
+  if (catalogSavesInProgress.has('recipe')) return;
+  setCatalogSaveStatus('recipe', '');
   let recipe = recipes.find((entry) => entry.id === recipeId);
   if (recipe?.parentId) recipe = recipes.find(entry => String(entry.id) === String(recipe.parentId)) || recipe;
   editingRecipeId = recipe?.id || null;
@@ -4904,6 +4982,10 @@ function openRecipeForm(recipeId = null) {
 }
 
 async function saveRecipeForm() {
+  return withCatalogSave('recipe', saveRecipeFormContent);
+}
+
+async function saveRecipeFormContent() {
   if (!CatalogCover.ready("recipe")) return;
   if (await window.RecipeVariants.save()) return;
   const modifierData = window.CatalogModifiers.read();
@@ -4939,7 +5021,7 @@ async function saveRecipeForm() {
     if (!response) return;
     $("#recipeModal").classList.add("hidden");
     switchMenuPage("recipes");
-    showToast(existing ? "Техкарта обновлена, себестоимость пересчитана" : "Новая техкарта создана");
+    if (!response.refreshFailed) showToast(existing ? "Техкарта обновлена, себестоимость пересчитана" : "Новая техкарта создана");
     return;
   }
   const { modifierSets: ignoredModifierSets, ...localUpdated } = updated;
@@ -5009,6 +5091,8 @@ function updatePreparationCalculation(event) {
 }
 
 function openPreparationForm(preparationId = null) {
+  if (catalogSavesInProgress.has('preparation')) return;
+  setCatalogSaveStatus('preparation', '');
   $('#preparationCompositionDrawer').classList.add('hidden');
   if (!ingredients.length) {
     showToast("Сначала добавьте хотя бы один ингредиент");
@@ -5039,6 +5123,10 @@ function openPreparationForm(preparationId = null) {
 }
 
 async function savePreparationForm() {
+  return withCatalogSave('preparation', savePreparationFormContent);
+}
+
+async function savePreparationFormContent() {
   if (!CatalogCover.ready("preparation")) return;
   syncPreparationDraftFromEditor();
   const name = $("#preparationNameInput").value.trim();
@@ -5075,7 +5163,7 @@ async function savePreparationForm() {
     if (!response) return;
     $("#preparationModal").classList.add("hidden");
     switchMenuPage("preparations");
-    showToast(existing ? "Полуфабрикат обновлён" : "Полуфабрикат создан и сохранён в техкартах");
+    if (!response.refreshFailed) showToast(existing ? "Полуфабрикат обновлён" : "Полуфабрикат создан и сохранён в техкартах");
     return;
   }
   if (existing) Object.assign(existing, updated);
@@ -7393,8 +7481,8 @@ function openSupplyForm() {
 }
 document.querySelectorAll("[data-open-supply]").forEach((button) => button.addEventListener("click", openSupplyForm));
 document.querySelectorAll("[data-open-inventory]").forEach((button) => button.addEventListener("click", openInventoryForm));
-document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => $(`#${button.dataset.close}`).classList.add("hidden")));
-document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.addEventListener("click", (event) => { if (event.target === modal) modal.classList.add("hidden"); }));
+document.querySelectorAll("[data-close]").forEach((button) => button.addEventListener("click", () => { const modal = $(`#${button.dataset.close}`); if (modal.getAttribute("aria-busy") !== "true") modal.classList.add("hidden"); }));
+document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.addEventListener("click", (event) => { if (event.target === modal && modal.getAttribute("aria-busy") !== "true") modal.classList.add("hidden"); }));
 $("#addSupplyItemButton").addEventListener("click", () => {
   syncSupplyDraft();
   const usedIds = new Set(supplyDraftItems.map((item) => String(item.itemId)));
@@ -7558,7 +7646,7 @@ document.addEventListener("keydown", (event) => {
     closeNotifications();
     $("#recipeDrawer").classList.add("hidden");
     if (!$('#preparationCompositionDrawer').classList.contains('hidden')) closePreparationComposition();
-    document.querySelectorAll(".modal-backdrop").forEach((modal) => modal.classList.add("hidden"));
+    document.querySelectorAll(".modal-backdrop").forEach((modal) => { if (modal.getAttribute("aria-busy") !== "true") modal.classList.add("hidden"); });
   }
 });
 
