@@ -4773,13 +4773,13 @@ function openRecipe(recipeId) {
   $("#drawerSalePrice").textContent = money(recipe.price);
   $("#drawerCost").textContent = money(cost);
   $("#drawerFoodCost").textContent = `${decimal(foodCost(recipe))}%`;
-  $("#drawerYield").textContent = `${recipe.yield} г`;
+  $("#drawerYield").textContent = `${decimal(recipe.yield, 2)} г`;
   $("#drawerTotalCost").textContent = money(cost);
   $("#compositionTable").innerHTML = recipe.components.map((component) => {
     const ingredient = ingredientById(component.ingredientId);
     const scale = ingredient?.unit === "шт" ? 1000 : 1;
     const measure = ingredient?.unit === "шт" ? "шт" : ingredient?.unit === "л" ? "мл" : "г";
-    return `<tr><td><strong>${ingredient?.name || "Не найден"}</strong><small>${money(ingredient?.averageCost || 0)} / ${ingredient?.unit || "кг"}</small></td><td>${decimal(component.gross / scale)} ${measure}</td><td>${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),3)} г`}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
+    return `<tr><td><strong>${ingredient?.name || "Не найден"}</strong><small>${money(ingredient?.averageCost || 0)} / ${ingredient?.unit || "кг"}</small></td><td>${decimal(component.gross / scale, 2)} ${measure}</td><td>${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),2)} г`}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
   }).join("");
   $("#recipeDrawer").classList.remove("hidden");
 }
@@ -4796,26 +4796,40 @@ function ingredientOptions(selectedId) {
 }
 
 const cookingMethods = {none:'Без обработки',clean:'Очистка',boil:'Варка',fry:'Жарка',bake:'Запекание'};
+// Keep the original precision until the displayed quantity is edited.
+function compositionQuantityAttributes(value) {
+  const displayed = value == null ? '' : Number(Number(value).toFixed(2));
+  return `value="${displayed}" data-quantity-display="${displayed}" data-quantity-raw="${value ?? ''}"`;
+}
+function compositionQuantityValue(input) {
+  return input.value === input.dataset.quantityDisplay ? input.dataset.quantityRaw : input.value;
+}
+function setCompositionQuantity(input, value) {
+  input.value = value == null ? '' : Number(Number(value).toFixed(2));
+  input.dataset.quantityDisplay = input.value;
+  input.dataset.quantityRaw = value ?? '';
+}
 function compositionRows(components, preparation = false) {
   const prefix = preparation ? 'preparation-component' : 'component';
-  return `<div class="component-editor-head"><span>Ингредиент</span><span>Обработка</span><span>Брутто</span><span>Нетто, г</span><span>Себестоимость</span><span></span></div>` + components.map((component,index) => {
+  return `<div class="component-editor-head"><span>Ингредиент</span>${preparation ? '<span>Обработка</span>' : ''}<span>Брутто</span><span>Нетто, г</span><span>Себестоимость</span><span></span></div>` + components.map((component,index) => {
     const item = ingredientById(component.ingredientId);
     const measure = CatalogUnits.label(item?.unit || 'кг');
     const scale = item?.unit === 'шт' ? 1000 : 1;
     const net = CatalogUnits.netWeight(component,item);
-    return `<div class="component-editor-row ${preparation ? 'preparation-component-row' : ''}" data-component-index="${index}" data-preparation-component-index="${index}" data-scale="${scale}" data-piece-weight="${component.pieceWeightGrams || item?.pieceWeightGrams || 0}"><select class="${prefix}-ingredient">${ingredientOptions(component.ingredientId)}</select><select class="component-method" aria-label="Метод обработки">${Object.entries(cookingMethods).map(([key,label])=>`<option value="${key}" ${key === (component.method || 'none') ? 'selected' : ''}>${label}</option>`).join('')}</select><div class="composition-quantity"><input class="${prefix}-gross" aria-label="Брутто" type="number" min="0" step="any" value="${Number(component.gross || 0)/scale}"><span>${measure}</span></div><div class="composition-quantity"><input class="${prefix}-net" aria-label="Нетто в граммах" type="number" min="0" step="any" value="${net ?? ''}" placeholder="Всего, г"><span>г</span></div><span class="component-cost">${money(componentCost(component))}</span><button class="remove-component icon-button danger-button" data-remove-preparation-component="${index}" type="button" aria-label="Удалить ингредиент">${uiIcon('close')}</button></div>`;
+    return `<div class="component-editor-row ${preparation ? 'preparation-component-row' : ''}" data-method="${escapeHtml(component.method || 'none')}" data-component-index="${index}" data-preparation-component-index="${index}" data-scale="${scale}" data-piece-weight="${component.pieceWeightGrams || item?.pieceWeightGrams || 0}"><select class="${prefix}-ingredient">${ingredientOptions(component.ingredientId)}</select>${preparation ? `<select class="component-method" aria-label="Метод обработки">${Object.entries(cookingMethods).map(([key,label])=>`<option value="${key}" ${key === (component.method || 'none') ? 'selected' : ''}>${label}</option>`).join('')}</select>` : ''}<div class="composition-quantity"><input class="${prefix}-gross" aria-label="Брутто" type="number" min="0" step="any" ${compositionQuantityAttributes(Number(component.gross || 0)/scale)}><span>${measure}</span></div><div class="composition-quantity"><input class="${prefix}-net" aria-label="Нетто в граммах" type="number" min="0" step="any" ${compositionQuantityAttributes(net)} placeholder="Всего, г"><span>г</span></div><span class="component-cost">${money(componentCost(component))}</span><button class="remove-component icon-button danger-button" data-remove-preparation-component="${index}" type="button" aria-label="Удалить ингредиент">${uiIcon('close')}</button></div>`;
   }).join('');
 }
 function readComposition(editor, preparation = false) {
   const prefix = preparation ? 'preparation-component' : 'component';
   return [...document.querySelectorAll(`${editor} .component-editor-row`)].map(row => {
     const item = ingredientById(row.querySelector(`.${prefix}-ingredient`).value);
-    const gross = Number(row.querySelector(`.${prefix}-gross`).value || 0) * (item?.unit === 'шт' ? 1000 : 1);
+    const gross = Number(compositionQuantityValue(row.querySelector(`.${prefix}-gross`)) || 0) * (item?.unit === 'шт' ? 1000 : 1);
     const massInput = row.querySelector(`.${prefix}-net`);
-    const netWeightGrams = massInput.value === '' ? CatalogUnits.netWeight({gross,net:gross},item) : Number(massInput.value);
+    const rawMass = compositionQuantityValue(massInput);
+    const netWeightGrams = rawMass === '' ? CatalogUnits.netWeight({gross,net:gross},item) : Number(rawMass);
     const weight = Number(row.dataset.pieceWeight || CatalogUnits.pieceWeight(item));
     const net = item?.unit === 'шт' ? weight > 0 && netWeightGrams != null ? netWeightGrams/weight*1000 : gross : netWeightGrams ?? gross;
-    return {ingredientId:item?.id, gross, net, ...(netWeightGrams != null ? {netWeightGrams} : {}), ...(weight > 0 ? {pieceWeightGrams:weight} : {}), method:row.querySelector('.component-method').value};
+    return {ingredientId:item?.id, gross, net, ...(netWeightGrams != null ? {netWeightGrams} : {}), ...(weight > 0 ? {pieceWeightGrams:weight} : {}), method:row.querySelector('.component-method')?.value || row.dataset.method || 'none'};
   });
 }
 function updateCompositionInput(event, preparation = false) {
@@ -4825,15 +4839,15 @@ function updateCompositionInput(event, preparation = false) {
   const item = ingredientById(row.querySelector(`.${prefix}-ingredient`).value);
   const grossInput = row.querySelector(`.${prefix}-gross`), netInput = row.querySelector(`.${prefix}-net`);
   if (event.target.matches(`.${prefix}-ingredient`)) row.dataset.pieceWeight = CatalogUnits.pieceWeight(item);
-  const method = row.querySelector('.component-method').value;
+  const method = row.querySelector('.component-method')?.value || row.dataset.method || 'none';
   const loss = Number(item?.losses?.[method] || 0)/100;
   if (event.target === grossInput || event.target.matches('.component-method') || event.target.matches(`.${prefix}-ingredient`)) {
-    const gross = Number(grossInput.value || 0)*(item?.unit === 'шт' ? 1000 : 1);
+    const gross = Number(compositionQuantityValue(grossInput) || 0)*(item?.unit === 'шт' ? 1000 : 1);
     const mass = CatalogUnits.netWeight({gross,net:gross,pieceWeightGrams:Number(row.dataset.pieceWeight)},item);
-    netInput.value = mass == null ? '' : Number((mass*(1-loss)).toFixed(6));
+    setCompositionQuantity(netInput, mass == null ? null : mass*(1-loss));
   } else if (event.target === netInput && loss > 0) {
-    const mass = Number(netInput.value || 0)/(1-loss);
-    grossInput.value = item?.unit === 'шт' ? mass/(Number(row.dataset.pieceWeight) || CatalogUnits.pieceWeight(item) || 1) : Number(mass.toFixed(6));
+    const mass = Number(compositionQuantityValue(netInput) || 0)/(1-loss);
+    setCompositionQuantity(grossInput, item?.unit === 'шт' ? mass/(Number(row.dataset.pieceWeight) || CatalogUnits.pieceWeight(item) || 1) : mass);
   }
 }
 function renderRecipeComponentsEditor() {
@@ -4953,7 +4967,7 @@ function openPreparationComposition(preparationId) {
     const unit = ingredient?.unit || 'кг';
     const scale = unit === 'шт' ? 1000 : 1;
     const measure = unit === 'шт' ? 'шт' : unit === 'л' ? 'мл' : 'г';
-    return `<tr><td><strong>${escapeHtml(ingredient?.name || 'Ингредиент удалён')}</strong></td><td data-label="Брутто">${decimal(Number(component.gross || 0) / scale, 3)} ${measure}</td><td data-label="Нетто">${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),3)} г`}</td><td data-label="Стоимость"><strong>${money(preparationIngredientCost(component))}</strong></td></tr>`;
+    return `<tr><td><strong>${escapeHtml(ingredient?.name || 'Ингредиент удалён')}</strong></td><td data-label="Брутто">${decimal(Number(component.gross || 0) / scale, 2)} ${measure}</td><td data-label="Нетто">${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),2)} г`}</td><td data-label="Стоимость"><strong>${money(preparationIngredientCost(component))}</strong></td></tr>`;
   }).join('') : '<tr class="table-empty"><td colspan="4">Состав пока не заполнен</td></tr>';
   $('#preparationCompositionProcess').textContent = preparation.process || '';
   $('#preparationCompositionProcessSection').hidden = !preparation.process;
