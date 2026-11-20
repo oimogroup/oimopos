@@ -1,0 +1,115 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre><iframe id="app"></iframe>
+<script>
+const checks=[];
+const check=(name,value)=>checks.push(`${value?'PASS':'FAIL'}:${name}`);
+app.onload=async()=>{
+ const w=app.contentWindow,d=w.document;
+ const change=(id,value)=>{const input=d.getElementById(id);if(!input)throw new Error('Missing '+id);input.value=value;input.dispatchEvent(new w.Event(input.tagName==='SELECT'?'change':'input',{bubbles:true}));};
+ const extra=(scope,key,value)=>change(`list-filter-${scope}-${key}`,value);
+ const recipeRows=()=>[...d.querySelectorAll('#recipesTable tr[data-recipe-id]')];
+ try {
+  check('all-primary-lists-have-filter-tools',d.querySelectorAll('[data-filter-scope]').length===18);
+  check('no-decorative-product-warehouse',d.querySelectorAll('#menu-pane-products .table-toolbar > select').length===1);
+  w.eval(`
+   recipes.push(...[100,200].map((price,index)=>({...structuredClone(recipes[0]),id:91001+index,name:'Фильтр блюдо '+index,price,is_active:index===0,category:'Фильтры',station:'Кухня',image:''})));
+   recipes.push(...[100,300].map((price,index)=>({...structuredClone(recipes[0]),id:91003+index,name:'Фильтр группа '+index,price,is_active:true,category:'Фильтры',station:'Кухня',image:'',groupName:'Фильтр группа',variantName:index?'Большая':'Малая',parentId:index?91003:null})));
+   products.push({...structuredClone(products[0]),id:'filter-product',name:'Фильтр товар',price:150,category:'Фильтры',is_active:false,image:''});
+   ingredients.push({id:'filter-stock',name:'Фильтр склад',unit:'кг',category:'Фильтры',limit:10,averageCost:10,losses:{}});
+   preparations.push({id:'filter-prep',name:'Фильтр заготовка',category:'Особая категория заготовок',station:'Кухня',is_active:false,yield:100,cost:10,components:[]});
+   branches.push({...structuredClone(branches[0]),id:'filter-branch',name:'Фильтр другой склад',short:'Фильтр',status:'active'});
+   logisticsState.branchStocks.b1['filter-stock']=5;logisticsState.branchCosts.b1['filter-stock']=10;
+   logisticsState.branchStocks['filter-branch']={'filter-stock':50};logisticsState.branchCosts['filter-branch']={'filter-stock':100};
+   suppliers.push({id:'filter-debt',name:'Фильтр поставщик с долгом',status:'active',locations:['b1']},{id:'filter-no-debt',name:'Фильтр поставщик без долга',status:'active',locations:['b1']});
+   logisticsState.supplies.push({id:'filter-supply',number:'ФИЛЬТР-1',supplierId:'filter-debt',supplier:'Фильтр поставщик с долгом',branchId:'b1',total:150,debt:50,paidTotal:100,paymentStatus:'partial',receivedBy:'Иван',createdAt:new Date().toISOString(),receivedAt:new Date().toISOString(),items:[{itemId:'filter-stock',quantity:1,price:150}]});
+  `);
+  w.renderAll();
+  check('preparation-categories-come-from-current-data',[...d.getElementById('preparationCategoryFilter').options].some(option=>option.value==='Особая категория заготовок'));
+  change('preparationCategoryFilter','Особая категория заготовок');extra('preparation-list','status','active');
+  check('preparation-category-and-status-combine',!d.querySelector('#preparationsTable [data-preparation-id="filter-prep"]'));w.AdminFilters.reset('preparation-list');
+  change('recipeSearch','Фильтр блюдо');extra('recipe-list','priceMin','150');extra('recipe-list','status','stopped');
+  check('recipe-range-and-status-combine',recipeRows().length===1&&recipeRows()[0].textContent.includes('блюдо 1'));
+  w.renderAll();check('filters-survive-rerender',recipeRows().length===1&&d.getElementById('list-filter-recipe-list-priceMin').value==='150');
+  extra('recipe-list','priceMax','120');check('empty-result-explains-filters',recipeRows().length===0&&d.querySelector('#recipesTable').textContent.includes('Ничего не найдено'));
+  w.AdminFilters.reset('recipe-list');check('reset-clears-primary-and-extra',d.querySelector('#recipeSearch').value===''&&d.getElementById('list-filter-recipe-list-priceMin').value===''&&!w.AdminFilters.active('recipe-list'));
+  change('recipeSearch','Фильтр группа');extra('recipe-list','priceMin','200');extra('recipe-list','priceMax','250');
+  check('range-conditions-apply-to-same-variant',recipeRows().length===0);
+  extra('recipe-list','priceMax','350');check('group-shows-matching-variant-price',recipeRows().length===1&&recipeRows()[0].cells[4].textContent.includes('300'));
+  w.AdminFilters.reset('recipe-list');
+  change('productSearch','Фильтр товар');extra('product-list','status','active');check('product-status-filters',!d.querySelector('#productsTable').textContent.includes('Фильтр товар'));
+  extra('product-list','status','stopped');check('product-stopped-is-visible',d.querySelector('#productsTable').textContent.includes('Фильтр товар'));
+  change('stockSearch','Фильтр склад');change('stockWarehouseFilter','b1');
+  const stockQty=()=>Number(d.querySelector('#stockTable tr td:nth-child(3)')?.textContent.replace(',','.').replace(/[^0-9.-]/g,''));
+  check('warehouse-selection-uses-own-quantity',stockQty()===5);
+  change('stockWarehouseFilter','filter-branch');check('warehouse-selection-changes-quantity',stockQty()===50);
+  extra('stock-list','costMin','50');check('stock-cost-filter-matches-warehouse',stockQty()===50);
+  change('stockWarehouseFilter','b1');check('stock-cost-filter-excludes-other-warehouse',d.querySelector('#stockTable').textContent.includes('Ничего не найдено'));
+  w.AdminFilters.reset('stock-list');check('stock-reset-restores-network',d.querySelector('#stockWarehouseFilter').value==='all');
+  change('supplierSearch','Фильтр поставщик');extra('suppliers','debt','yes');check('supplier-debt-filter',d.querySelector('#suppliersTable').textContent.includes('с долгом')&&!d.querySelector('#suppliersTable').textContent.includes('без долга'));
+  w.renderDocuments('supplies');extra('documents','amountMin','100');extra('documents','employee','Иван');change('documentSearch','ФИЛЬТР-1');
+  check('supply-amount-and-employee',d.querySelector('#documentsTableBody').textContent.includes('ФИЛЬТР-1'));
+  w.renderDocuments('writeoff');check('document-tabs-have-independent-filters',d.getElementById('list-filter-documents-amountMin').value==='');
+  extra('documents','comment','порча');w.renderDocuments('supplies');check('document-tab-restores-own-filter',d.getElementById('list-filter-documents-amountMin').value==='100'&&d.getElementById('list-filter-documents-comment').value===''&&d.getElementById('documentSearch').value==='ФИЛЬТР-1');
+  w.renderDocuments('inventories');check('irrelevant-amount-filter-hidden',d.getElementById('list-filter-documents-amountMin').disabled&&d.getElementById('list-filter-documents-amountMin').parentElement.hidden);
+  change('ingredientSearch','Фильтр склад');extra('ingredient-list','costMax','5');
+  check('ingredient-cost-affects-list-and-csv',!w.IngredientsList.csvText().includes('Фильтр склад')&&d.querySelector('#ingredientsTable').textContent.includes('не найдены'));
+  check('ingredient-filters-in-one-panel',d.getElementById('ingredientStockFilter').closest('.list-filter-panel')!==null);
+  w.AdminFilters.reset('ingredient-list');
+  extra('receipts','amountMin','100');
+  check('receipt-amount-shared-with-export-model',w.visibleReceipts({allSales:[{id:'s1',number:1,total:50,createdAt:new Date().toISOString(),paymentMethod:'cash'},{id:'s2',number:2,total:150,createdAt:new Date().toISOString(),paymentMethod:'cash'}]}).map(row=>row.id).join(',')==='s2');
+  extra('abc','profitMin','10');
+  check('abc-profit-filter',w.filteredAbcRows([{item:{name:'A',category:'Фильтры',itemType:'recipe'},profit:5,revenue:100},{item:{name:'B',category:'Фильтры',itemType:'recipe'},profit:20,revenue:100}]).length===1);
+  extra('finance-operations','amountMin','100');
+  check('finance-filtered-model',w.filteredFinanceTransactions({sales:[],transactions:[{id:'f1',type:'expense',amount:50,occurredAt:new Date().toISOString()},{id:'f2',type:'expense',amount:150,occurredAt:new Date().toISOString()}]}).map(row=>row.id).join(',')==='f2');
+  extra('stations','search','невозможное название');check('station-search',d.querySelectorAll('#stationsTable [data-station-edit]').length===0);w.AdminFilters.reset('stations');
+  extra('ingredient-categories','search','невозможное название');check('ingredient-category-search',d.querySelectorAll('#ingredientCategoriesTable [data-ingredient-category-edit]').length===0);w.AdminFilters.reset('ingredient-categories');
+  extra('finance-accounts','search','невозможное название');check('finance-account-search',d.querySelectorAll('#financeAccountsTable [data-edit-finance-account]').length===0);w.AdminFilters.reset('finance-accounts');
+  w.eval(`posRegisters.push({id:91001,name:'Фильтр касса',account_login:'filter-register',branch_id:'b1',is_active:true,online:false});`);w.renderRegisters();
+  extra('registers','search','Фильтр касса');extra('registers','status','online');check('register-online-filter',d.querySelectorAll('#registersTable [data-edit-register]').length===0);
+  extra('registers','status','offline');check('register-offline-filter',d.querySelectorAll('#registersTable [data-edit-register]').length===1);w.AdminFilters.reset('registers');
+  w.AdminFilters.reset('recipe-list');change('recipeSearch','Фильтр блюдо');extra('recipe-list','status','stopped');
+  let selection;w.AshkanaApi.exportTechnicalCards=async selected=>{selection=selected;return{xlsx:w.btoa('test'),filename:'test.xlsx'}};
+  const originalClick=w.HTMLAnchorElement.prototype.click;w.HTMLAnchorElement.prototype.click=function(){};
+  w.eval('serverMode=true');await w.exportTechnicalCards({currentTarget:d.getElementById('exportTechnicalCardsButton')});w.eval('serverMode=false');
+  check('catalog-export-uses-visible-ids',selection?.kind==='recipes'&&selection.ids.length===1&&String(selection.ids[0])==='91002');
+  w.AdminFilters.reset('recipe-list');change('recipeSearch','Фильтр группа');extra('recipe-list','priceMin','200');
+  w.eval('serverMode=true');await w.exportTechnicalCards({currentTarget:d.getElementById('exportTechnicalCardsButton')});w.eval('serverMode=false');
+  check('catalog-export-excludes-unmatched-variants',selection.ids.length===1&&String(selection.ids[0])==='91004');
+  w.AdminFilters.reset('recipe-list');change('recipeSearch','Фильтр блюдо');extra('recipe-list','status','stopped');
+  let exportedBlob;const createObjectURL=w.URL.createObjectURL;
+  w.URL.createObjectURL=blob=>{exportedBlob=blob;return createObjectURL.call(w.URL,blob)};
+  w.eval(`activeFinanceTab='transactions';financeState.transactions.push(...[50,150].map((amount,index)=>({id:'filter-finance-'+index,number:'ФИЛЬТР-Ф-'+index,type:'expense',amount,occurredAt:new Date().toISOString(),branchId:'b1',accountId:financeState.accounts[0].id,counterparty:'Фильтр сумма '+amount})));`);
+  w.exportFinanceCsv();const csv=await exportedBlob.text();
+  check('finance-csv-matches-filters',csv.includes('Фильтр сумма 150')&&!csv.includes('Фильтр сумма 50'));
+  w.URL.createObjectURL=createObjectURL;
+  w.HTMLAnchorElement.prototype.click=originalClick;
+  extra('stock-list','costMin','123');
+  const branchFrame=d.createElement('iframe');d.body.append(branchFrame);
+  await new Promise(resolve=>{branchFrame.onload=()=>{
+   try{
+    const b=branchFrame.contentWindow,bd=b.document;
+    b.eval(`branches.push({...structuredClone(branches[0]),id:'forbidden-branch',name:'Чужое заведение'});`);b.renderStock();
+    const warehouse=bd.getElementById('stockWarehouseFilter');
+    check('branch-scope-cannot-expand',warehouse.options.length===1&&warehouse.value==='b1');
+    check('filters-isolated-between-accounts',bd.getElementById('list-filter-stock-list-costMin').value==='');
+    warehouse.add(new b.Option('Чужое','forbidden-branch'));warehouse.value='forbidden-branch';b.renderStock();
+    check('forged-warehouse-selection-is-rejected',warehouse.options.length===1&&warehouse.value==='b1');
+   }catch(error){checks.push('FAIL:branch:'+error.stack)}resolve();};branchFrame.src='../admin.html?test=1&role=branch';});
+  branchFrame.style.display='none';
+  const reloadFrame=d.createElement('iframe');reloadFrame.style.display='none';d.body.append(reloadFrame);
+  await new Promise(resolve=>{reloadFrame.onload=()=>{
+   const rd=reloadFrame.contentDocument;
+   check('filter-fields-restored-after-reload',rd.getElementById('list-filter-recipe-list-status').value==='stopped');
+   check('primary-search-restored-after-reload',rd.getElementById('recipeSearch').value==='Фильтр блюдо');
+   resolve();};reloadFrame.src='../admin.html?test=1';});
+  if(new URLSearchParams(location.search).has('preview')) {
+   app.style.cssText='position:fixed;inset:0;width:100%;height:100%;border:0';w.switchMenuPage('recipes');d.querySelector('[data-filter-scope="recipe-list"] details').open=true;
+   const width=Number(new URLSearchParams(location.search).get('width'));
+   if(width>=320&&width<=2000)app.style.width=width+'px';
+   const panel=d.querySelector('[data-filter-scope="recipe-list"] .list-filter-panel');
+   check('filter-panel-fits-viewport',panel.getBoundingClientRect().right<=d.documentElement.clientWidth+1);
+  }
+ }catch(error){checks.push('FAIL:runtime:'+error.stack)}
+ results.textContent=checks.join('|');
+};
+app.src='../admin.html?test=1#menu/recipes';
+</script>

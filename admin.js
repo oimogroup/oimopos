@@ -763,11 +763,21 @@ function getSales() {
 
 function ingredientById(id) { return ingredients.find((ingredient) => ingredient.id === id); }
 function componentGross(component) { return Math.max(0, Number(component.gross ?? component.net ?? 0)); }
-function componentCost(component) {
-  const ingredient = ingredientById(component.ingredientId);
-  return ingredient ? ingredient.averageCost * componentGross(component) / 1000 : 0;
+function compositionState() { return {ingredients, preparations}; }
+function rawRecipeComponents(recipe) { return CatalogComposition.flatten(recipe, compositionState()); }
+function componentSource(component) {
+  if (component.preparationId != null) {
+    const preparation = preparationById(component.preparationId);
+    return preparation ? {...preparation, id:'preparation:'+preparation.id, unit:'кг', preparationId:preparation.id, averageCost:Number(preparation.yield)>0 ? CatalogComposition.cost(preparation,compositionState(),id=>ingredientById(id)?.averageCost)*1000/Number(preparation.yield) : 0} : null;
+  }
+  return ingredientById(component.ingredientId);
 }
-function recipeCost(recipe) { return recipe.components.reduce((sum, component) => sum + componentCost(component), 0); }
+function componentSourceByValue(value) {
+  return String(value).startsWith('preparation:') ? componentSource({preparationId:String(value).slice(12)}) : ingredientById(value);
+}
+function componentSelectionValue(component) { return component.preparationId != null ? 'preparation:'+component.preparationId : component.ingredientId; }
+function componentCost(component) { return CatalogComposition.cost({components:[component]},compositionState(),id=>ingredientById(id)?.averageCost); }
+function recipeCost(recipe) { return CatalogComposition.cost(recipe,compositionState(),id=>ingredientById(id)?.averageCost); }
 function foodCost(recipe) { return recipe.price ? recipeCost(recipe) / recipe.price * 100 : 0; }
 function markup(recipe) { const cost = recipeCost(recipe); return cost ? (recipe.price - cost) / cost * 100 : 0; }
 function recipeStation(recipe) { return recipe.station || (recipe.category === "Салаты" ? "Холодный цех" : recipe.category === "Напитки" ? "Бар" : "Кухня"); }
@@ -790,7 +800,7 @@ function finishedStock(productId) {
 
 function consumedQuantity(ingredientId) {
   return recipes.reduce((sum, recipe) => {
-    const component = recipe.components.find((entry) => entry.ingredientId === ingredientId);
+    const component = rawRecipeComponents(recipe).find((entry) => entry.ingredientId === ingredientId);
     const salesWithoutProduction = Math.max(0, soldQuantity(recipe.id) - producedQuantity(recipe.id));
     return sum + (component ? componentGross(component) / 1000 * salesWithoutProduction : 0);
   }, 0);
@@ -849,7 +859,7 @@ function inventoryById(id) { return logisticsState.inventories.find((inventory) 
 function logisticsItem(itemId) { return stockEntityById(itemId); }
 function branchStock(branchId, itemId) { return Number(logisticsState.branchStocks[branchId]?.[itemId] || 0); }
 function branchUnitCost(branchId, itemId) { return Number(logisticsState.branchCosts?.[branchId]?.[itemId] ?? stockEntityById(itemId)?.averageCost ?? 0); }
-function recipeCostForBranch(recipe, branchId) { return recipe.components.reduce((sum, component) => sum + branchUnitCost(branchId, component.ingredientId) * componentGross(component) / 1000, 0); }
+function recipeCostForBranch(recipe, branchId) { return CatalogComposition.cost(recipe,compositionState(),id=>branchUnitCost(branchId,id)); }
 function requestItemQuantity(item, field = "requested") { return Number(item[field] ?? item.requested ?? 0); }
 function requestTotalQuantity(request, field = "requested") { return request.items.reduce((sum, item) => sum + requestItemQuantity(item, field), 0); }
 function requestStatusLabel(status) { return ({ submitted: "Подана", approved: "К комплектации", shipped: "В пути", received: "Принята" })[status] || status; }
@@ -1062,12 +1072,13 @@ function renderProductionJournal() {
     $("#productionJournalTable").innerHTML = '<tr class="table-empty"><td colspan="7">Сначала создайте точку</td></tr>';
     return;
   }
-  const batches = logisticsState.batches.filter((batch) => batch.branchId === branchId);
+  const batches = logisticsState.batches.filter((batch) => batch.branchId === branchId && listMatches("production-journal",batch));
   $("#productionJournalTable").innerHTML = batches.length ? batches.map((batch) => {
     const recipe = recipes.find((entry) => Number(entry.id) === Number(batch.recipeId));
     const status = batch.status === "closed" ? "Закрыт" : batch.transferredWeight ? "На раздаче" : "На кухне";
     return `<tr><td><span class="document-number">${batch.number}</span><small>акт приготовления</small></td><td>${new Date(batch.createdAt).toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</td><td><strong>${escapeHtml(recipe?.name || "Блюдо")}</strong><small>${recipeStation(recipe || {})}</small></td><td>${decimal(batch.actualWeight, 3)} кг</td><td>${decimal(batch.transferredWeight || 0, 3)} кг</td><td>${batch.servingTemperature != null ? `${decimal(batch.servingTemperature, 1)} °C` : "—"}</td><td><span class="operation-status ${batch.status === "closed" ? "received" : batch.transferredWeight ? "serving" : "approved"}">${status}</span></td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="7">На выбранную дату выпусков пока нет</td></tr>';
+  listResult("production-journal",batches.length,logisticsState.batches.filter(row=>row.branchId===branchId).length);
 }
 
 function renderLogistics() {
@@ -1932,7 +1943,7 @@ function updateBatchCalculation() {
   const equivalent = weight * 1000 / recipe.yield;
   $("#batchPortions").textContent = `${decimal(equivalent, 1)} порций`;
   $("#batchCost").textContent = money(recipeCostForBranch(recipe, branchId) * equivalent);
-  $("#batchRequirements").innerHTML = recipe.components.map((component) => {
+  $("#batchRequirements").innerHTML = rawRecipeComponents(recipe).map((component) => {
     const entity = logisticsItem(component.ingredientId);
     const required = componentGross(component) / 1000 * equivalent;
     const available = branchStock(branchId, component.ingredientId);
@@ -1949,7 +1960,7 @@ async function saveBatch() {
   if (!recipe || !weight) return;
   if (!ensureBranchStockUnlocked(branchId)) return;
   const equivalent = weight * 1000 / recipe.yield;
-  const shortage = recipe.components.find((component) => componentGross(component) / 1000 * equivalent > branchStock(branchId, component.ingredientId) + .0001);
+  const shortage = rawRecipeComponents(recipe).find((component) => componentGross(component) / 1000 * equivalent > branchStock(branchId, component.ingredientId) + .0001);
   if (shortage) { showToast(`На точке недостаточно «${logisticsItem(shortage.ingredientId)?.name || "сырья"}»`); return; }
   if (serverMode) {
     $("#saveBatchButton").disabled = true;
@@ -1963,7 +1974,7 @@ async function saveBatch() {
     showToast(`Выпущено ${decimal(weight, 3)} кг «${recipe.name}»`);
     return;
   }
-  recipe.components.forEach((component) => {
+  rawRecipeComponents(recipe).forEach((component) => {
     const required = componentGross(component) / 1000 * equivalent;
     logisticsState.branchStocks[branchId][component.ingredientId] = Math.max(0, branchStock(branchId, component.ingredientId) - required);
   });
@@ -2585,7 +2596,8 @@ function renderRegisters() {
       workspaceLink.textContent = "Настройте в разделе «Настройки компании»";
     }
   }
-  $("#registersTable").innerHTML = pointRegisters.map((register) => {
+  const visibleRegisters = pointRegisters.filter(row=>listMatches("registers",row));
+  $("#registersTable").innerHTML = visibleRegisters.map((register) => {
     const registerBranch = branchById(register.branch_id);
     const lastSeen = register.last_seen_at
       ? new Date(register.last_seen_at).toLocaleString("ru-RU", { day: "2-digit", month: "2-digit", year: "numeric", hour: "2-digit", minute: "2-digit" })
@@ -2597,8 +2609,11 @@ function renderRegisters() {
         : '<span class="status-badge">Не в сети</span>';
     return `<tr><td><div class="register-name"><span>${uiIcon("cashier")}</span><div><strong>${escapeHtml(register.name)}</strong><small>Логин: ${escapeHtml(register.account_login)}</small></div></div></td><td><strong>${escapeHtml(registerBranch?.name || "Заведение удалено")}</strong><small>${escapeHtml(registerBranch?.address || "")}</small></td><td><strong>${escapeHtml(registerDeviceLabel(register.device_label))}</strong><small>${register.remote_address ? `IP: ${escapeHtml(register.remote_address)}` : ""}</small></td><td>${escapeHtml(lastSeen)}</td><td>${status}</td><td><div class="register-actions"><button class="register-open-action primary-action" data-open-register="${register.id}" type="button" ${register.is_active ? "" : "disabled"}>Открыть кассу</button>${register.online ? `<button class="danger-button" data-logout-register="${register.id}" type="button">Завершить сеанс</button>` : ""}<button class="secondary-action" data-edit-register="${register.id}" type="button">Настроить</button></div></td></tr>`;
   }).join("");
-  $("#registersEmpty").classList.toggle("hidden", Boolean(pointRegisters.length));
-  $("#registersTable").closest(".table-scroll").classList.toggle("hidden", !pointRegisters.length);
+  $("#registersEmpty strong").textContent = pointRegisters.length ? 'Кассы не найдены' : 'Касс пока нет';
+  $("#registersEmpty p").textContent = pointRegisters.length ? 'Измените условия или сбросьте фильтры.' : 'Добавьте кассу и выберите заведение, в котором она будет работать.';
+  $("#registersEmpty").classList.toggle("hidden", Boolean(visibleRegisters.length));
+  $("#registersTable").closest(".table-scroll").classList.toggle("hidden", !visibleRegisters.length);
+  listResult("registers",visibleRegisters.length,pointRegisters.length);
 }
 
 function openRegisterForm(registerId = null) {
@@ -2858,8 +2873,9 @@ function renderEmployees() {
     const haystack = [employee.display_name, employee.phone, employee.login].join(" ").toLowerCase();
     return (!query || haystack.includes(query))
       && (role === "all" || employee.staff_role === role)
-      && (status === "all" || (status === "active") === Boolean(employee.is_active));
+      && (status === "all" || (status === "active") === Boolean(employee.is_active)) && listMatches("employees",employee);
   });
+  listResult("employees", visible.length, pointEmployees.length);
   const activeEmployees = pointEmployees.filter((employee) => employee.is_active);
   $("#employeeTotalLabel").textContent = ownerMode ? "Всего сотрудников" : "Сотрудников заведения";
   $("#employeeTotalCaption").textContent = "включая отключённые учётные записи";
@@ -3176,37 +3192,46 @@ document.addEventListener('click', event => {
   requestCatalogDelete(remove.dataset.catalogDeleteKind, remove.dataset.catalogDeleteId, remove.dataset.catalogDeleteName);
 }, true);
 
-function renderRecipes() {
+function listMatches(scope, row, context) { return window.AdminFilters?.matches(scope, row, context) ?? true; }
+function listResult(scope, count, total) { window.AdminFilters?.result(scope, count, total); }
+
+function filteredRecipes() {
   const query = $("#recipeSearch").value.trim().toLowerCase();
   const category = $("#recipeCategory").value;
   const station = $("#recipeStationFilter").value;
-  const visible = recipes.filter((recipe) => !recipe.parentId && (!query || [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].some(item=>item.name.toLowerCase().includes(query))) && (category === "Все категории" || recipe.category === category) && (station === "Все цеха" || recipeStation(recipe) === station));
+  return recipes.filter(recipe => !recipe.parentId && (category === "Все категории" || recipe.category === category) && (station === "Все цеха" || recipeStation(recipe) === station) && [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].some(item=>(!query || item.name.toLowerCase().includes(query)) && listMatches("recipe-list",{...item,_groupActive:recipe.is_active!==false})));
+}
+
+function renderRecipes() {
+  const visible = filteredRecipes();
   visible.sort((a,b)=>(catalogSortDescending.recipes ? -1 : 1)*a.name.localeCompare(b.name,'ru',{numeric:true}));
   syncCatalogSortHeading('recipes');
   $("#recipeCount").textContent = recipes.filter(recipe=>!recipe.parentId).length;
   $("#ingredientCount").textContent = ingredients.length;
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
-    const variants=recipe.variantName ? [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))] : [];
+    const variants=recipe.variantName ? [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].filter(item=>listMatches('recipe-list',{...item,_groupActive:recipe.is_active!==false})) : [];
     return `<tr data-recipe-id="${recipe.id}" class="${recipe.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.groupName || recipe.name)}</strong>${stoppedBadge(recipe.is_active)}${variants.length ? `<small>${variants.length} модификаций · ${variants.map(item=>escapeHtml(item.variantName)).join(', ')}</small>` : ''}</div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${variants.length ? 'По модификациям' : `${decimal(recipe.yield,3)} <span class="catalog-unit">г</span>`}</td><td class="catalog-number"><strong>${variants.length ? 'По модификациям' : money(cost)}</strong></td><td class="catalog-number"><strong>${variants.length ? `от ${money(Math.min(...variants.map(item=>item.price)))}` : inlineCatalogPrice("recipe", recipe)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" ${variants.length ? 'data-recipe-edit' : 'data-recipe-compose'}="${recipe.id}" type="button">${variants.length ? 'Составы' : 'Состав'}</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button>${catalogRowMenu('recipe', recipe.id, recipe.groupName || recipe.name, 'Удалить техкарту', recipe.is_active)}</div></td></tr>`;
   }).join("") || '<tr class="table-empty"><td colspan="6">Техкарты не найдены. Измените поиск или категорию.</td></tr>';
+  listResult("recipe-list", visible.length, recipes.filter(row=>!row.parentId).length);
 }
 
 function renderProducts() {
   const query = $("#productSearch").value.trim().toLowerCase();
   const category = $("#productCategoryFilter").value;
-  const visible = products.filter((product) => !product.parentId && (category === "Все категории" || product.category === category) && (!query || [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].some(item => item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query))));
+  const visible = products.filter((product) => !product.parentId && (category === "Все категории" || product.category === category) && [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].some(item => (!query || item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query)) && listMatches("product-list", {...item,_groupActive:product.is_active!==false})));
   $("#productsCount").textContent = products.filter(product => !product.parentId).length;
   $("#productsTable").innerHTML = visible.map((product) => {
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
     const unitCost = branchUnitCost(branchId, product.id);
     const productMarkup = unitCost ? (product.price - unitCost) / unitCost * 100 : 0;
-    const variants = product.variantName ? [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)] : [];
+    const variants = product.variantName ? [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].filter(item=>listMatches("product-list",{...item,_groupActive:product.is_active!==false})) : [];
     const priceLabel = variants.length ? `от ${money(Math.min(...variants.map(item => item.price)))}` : inlineCatalogPrice("product", product);
     const stockTotal = variants.length ? variants.reduce((sum,item) => sum + branchStock(branchId, item.id), 0) : branchStock(branchId, product.id);
     const variantCount = variants.length;
     return `<tr class="${product.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong>${stoppedBadge(product.is_active)}<small>${product.variantName ? `${variantCount} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogRowMenu('product', product.id, product.groupName || product.name, 'Удалить товар', product.is_active)}</div></td></tr>`;
   }).join("");
+  listResult("product-list", visible.length, products.filter(row=>!row.parentId).length);
 }
 
 function preparationById(id) {
@@ -3214,19 +3239,19 @@ function preparationById(id) {
 }
 
 function preparationCost(preparation) {
-  if (!Array.isArray(preparation?.components) || !preparation.components.length) return Number(preparation?.cost || 0);
-  const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
-  return preparation.components.reduce((total, component) => {
-    const ingredient = ingredientById(component.ingredientId);
-    const unitCost = ingredient ? branchUnitCost(branchId, ingredient.id) || Number(ingredient.averageCost || 0) : 0;
-    return total + unitCost * componentGross(component) / 1000;
-  }, 0);
+  if (!preparation?.components?.length) return Number(preparation?.cost || 0);
+  const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || '';
+  return CatalogComposition.cost(preparation,compositionState(),id=>branchUnitCost(branchId,id)||ingredientById(id)?.averageCost);
+}
+
+function filteredPreparations() {
+  const query = $("#preparationSearch").value.trim().toLowerCase();
+  const category = $("#preparationCategoryFilter").value;
+  return preparations.filter((preparation) => (!query || preparation.name.toLowerCase().includes(query) || String(preparation.usedIn || "").toLowerCase().includes(query)) && (category === "Все категории" || preparation.category === category)).filter(item => listMatches("preparation-list", item));
 }
 
 function renderPreparations() {
-  const query = $("#preparationSearch").value.trim().toLowerCase();
-  const category = $("#preparationCategoryFilter").value;
-  const visible = preparations.filter((preparation) => (!query || preparation.name.toLowerCase().includes(query) || String(preparation.usedIn || "").toLowerCase().includes(query)) && (category === "Все категории" || preparation.category === category));
+  const visible = filteredPreparations();
   visible.sort((a,b)=>(catalogSortDescending.preparations ? -1 : 1)*a.name.localeCompare(b.name,'ru',{numeric:true}));
   syncCatalogSortHeading('preparations');
   $("#preparationsCount").textContent = preparations.length;
@@ -3236,6 +3261,7 @@ function renderPreparations() {
     const id = escapeHtml(String(preparation.id));
     return `<tr data-preparation-id="${id}" class="${preparation.is_active === false ? 'catalog-stopped' : ''}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong>${stoppedBadge(preparation.is_active)}</span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button>${catalogRowMenu('preparation', preparation.id, preparation.name, 'Удалить полуфабрикат', preparation.is_active)}</div></td></tr>`;
   }).join("") : `<tr class="table-empty"><td colspan="5">${preparations.length ? "По заданным условиям полуфабрикаты не найдены" : "Полуфабрикаты ещё не настроены"}</td></tr>`;
+  listResult("preparation-list", visible.length, preparations.length);
 }
 
 function renderIngredientsMenu() { window.IngredientsList.render(); }
@@ -3243,25 +3269,34 @@ function renderIngredientsMenu() { window.IngredientsList.render(); }
 function renderMenuCategories() {
   syncMenuCategoryRegistries();
   ingredientCategories = normalizeIngredientCategories(ingredientCategories);
-  $("#menuCategoriesTable").innerHTML = menuCategories.length ? menuCategories.map((category, index) => {
+  const visibleCategories = menuCategories.filter(row => listMatches("category-list",row));
+  $("#menuCategoriesTable").innerHTML = visibleCategories.length ? visibleCategories.map((category) => {
+    const index = menuCategories.indexOf(category);
     const recipeCount = recipes.filter(item => item.category === category.name).length;
     const productCount = products.filter(item => item.category === category.name).length;
     return `<tr class="${category.is_active === false ? 'catalog-stopped' : ''}"><td><div class="menu-category-cell">${CatalogCover.thumb(category)}<strong>${escapeHtml(category.name)}</strong>${stoppedBadge(category.is_active)}</div></td><td>${productCount}</td><td>${recipeCount}</td><td>${category.color.toUpperCase()}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-menu-category-edit="${index}" type="button">Изменить</button>${catalogRowMenu('menu-category', category.name, category.name, 'Удалить категорию меню', category.is_active)}</div></td></tr>`;
   }).join('') : '<tr class="table-empty"><td colspan="5">Категории ещё не созданы.</td></tr>';
 
-  $("#ingredientCategoriesTable").innerHTML = ingredientCategories.map((category, index) => {
+  const visibleIngredientCategories = ingredientCategories.filter(row=>listMatches("ingredient-categories",row));
+  $("#ingredientCategoriesTable").innerHTML = visibleIngredientCategories.map(category => {
+    const index = ingredientCategories.indexOf(category);
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
     const group = ingredients.filter((ingredient) => ingredient.category === category);
     const value = group.reduce((sum, ingredient) => sum + branchStock(branchId, ingredient.id) * branchUnitCost(branchId, ingredient.id), 0);
     return `<tr><td><div class="dish-cell">${CatalogCover.thumb(ingredientCategoryCovers[category], category)}<strong>${escapeHtml(category)}</strong></div></td><td>${group.length}</td><td>${money(value)}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-ingredient-category-edit="${index}" type="button">Изменить</button>${catalogRowDeleteMenu('ingredient-category', category, category, 'Удалить категорию')}</div></td></tr>`;
   }).join("");
 
-  $("#stationsTable").innerHTML = stations.length ? stations.map((station) => {
+  const visibleStations = stations.filter(row=>listMatches("stations",row));
+  $("#stationsTable").innerHTML = visibleStations.length ? visibleStations.map((station) => {
     const linkedRecipes = recipes.filter((recipe) => recipeStation(recipe) === station.name).length;
     const linkedPreparations = preparations.filter((preparation) => preparation.station === station.name).length;
     return `<tr><td><strong>${escapeHtml(station.name)}</strong>${linkedPreparations ? `<small>${linkedPreparations} ${pluralRu(linkedPreparations, "полуфабрикат", "полуфабриката", "полуфабрикатов")}</small>` : ""}</td><td>${escapeHtml(stationWarehouseLabel(station))}</td><td>${linkedRecipes}</td><td>${escapeHtml(station.destination || "Без печати")}</td><td><button class="poster-action secondary-action" data-station-edit="${escapeHtml(station.name)}" type="button">Изменить</button></td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="5">Цеха ещё не настроены. Добавьте первый цех.</td></tr>';
+  listResult("ingredient-categories",visibleIngredientCategories.length,ingredientCategories.length);
+  listResult("stations",visibleStations.length,stations.length);
+  listResult("category-list", visibleCategories.length, menuCategories.length);
   refreshCategoryControls();
+  ["recipe-list","product-list","preparation-list"].forEach(scope=>window.AdminFilters?.sync(scope));
 }
 
 function refreshCategoryControls() {
@@ -3271,6 +3306,10 @@ function refreshCategoryControls() {
   const selectedProductCategory = $("#productCategoryFilter").value;
   $("#productCategoryFilter").innerHTML = `<option>Все категории</option>${productCategories.map((category) => `<option value="${escapeHtml(category.name)}">${escapeHtml(category.name)}</option>`).join("")}`;
   $("#productCategoryFilter").value = [...$("#productCategoryFilter").options].some((option) => option.value === selectedProductCategory) ? selectedProductCategory : "Все категории";
+  const previousPreparation = $("#preparationCategoryFilter").value;
+  const preparationCategories = [...new Set(preparations.map(row=>row.category||'Без категории'))].sort((a,b)=>a.localeCompare(b,'ru'));
+  $("#preparationCategoryFilter").innerHTML = '<option>Все категории</option>' + preparationCategories.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
+  $("#preparationCategoryFilter").value = preparationCategories.includes(previousPreparation) ? previousPreparation : 'Все категории';
   const selectedStockCategory = $("#stockCategoryFilter").value;
   const stockCategories = [...new Set([...ingredientCategories, ...menuCategories.map((category) => category.name)])];
   $("#stockCategoryFilter").innerHTML = `<option>Все категории</option>${stockCategories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}`;
@@ -3447,33 +3486,27 @@ async function saveStationForm() {
 }
 
 function renderStock(scope = stockDisplayScope) {
-  stockDisplayScope = currentRole === "owner" ? "network" : "branch";
+  const select = $("#stockWarehouseFilter");
+  const previous = select.value;
+  const allowed = branches.filter(row=>currentRole==='owner'||row.id===currentSession.branchId);
+  select.innerHTML = (currentRole==='owner'?'<option value="all">Вся сеть</option>':'') + allowed.map(row=>`<option value="${escapeHtml(row.id)}">${escapeHtml(row.name)}</option>`).join('');
+  select.value = [...select.options].some(option=>option.value===previous) ? previous : currentRole==='owner'?'all':String(currentSession.branchId||'');
+  window.AdminFilters?.sync('stock-list');
   const query = $("#stockSearch").value.trim().toLowerCase();
   const category = $("#stockCategoryFilter").value;
-  const branchId = currentSession.branchId;
+  const branchId = select.value === 'all' ? null : select.value;
   const branch = branchById(branchId);
-  const networkMode = currentRole === "owner";
-  $("#stockWarehouseFilter").innerHTML = `<option>${networkMode ? "Вся сеть" : escapeHtml(branch?.name || "Точка")}</option>`;
+  const networkMode = currentRole==='owner' && select.value==='all';
+  stockDisplayScope = networkMode ? 'network' : 'branch';
   const stockEntities = [...ingredients, ...products];
-  const visible = stockEntities.filter((entity) => (!query || entity.name.toLowerCase().includes(query)) && (category === "Все категории" || entity.category === category));
-  const quantityFor = (entity) => networkMode
-    ? branches.reduce((sum, entry) => sum + branchStock(entry.id, entity.id), 0)
-    : branchStock(branchId, entity.id);
-  const costFor = (entity) => {
-    if (!networkMode) return branchUnitCost(branchId, entity.id);
-    const totals = branches.reduce((result, entry) => {
-      const quantity = branchStock(entry.id, entity.id);
-      result.quantity += quantity;
-      result.value += quantity * branchUnitCost(entry.id, entity.id);
-      return result;
-    }, { quantity: 0, value: 0 });
-    return totals.quantity ? totals.value / totals.quantity : 0;
-  };
-  const stockValue = stockEntities.reduce((sum, entity) => sum + quantityFor(entity) * costFor(entity), 0);
-  const lowCount = stockEntities.filter((entity) => quantityFor(entity) <= Number(entity.limit || 0)).length;
+  const quantityFor = entity => stockFilterMetrics(entity).quantity;
+  const costFor = entity => stockFilterMetrics(entity).cost;
+  const visible = stockEntities.filter(entity=>(!query || [entity.name,entity.id,entity.barcode].some(value=>String(value||'').toLowerCase().includes(query))) && (category==='Все категории'||entity.category===category) && listMatches('stock-list',entity));
+  const stockValue = visible.reduce((sum, entity) => sum + quantityFor(entity) * costFor(entity), 0);
+  const lowCount = visible.filter((entity) => quantityFor(entity) <= Number(entity.limit || 0)).length;
   $("#stockValue").textContent = money(stockValue);
   $("#stockValueCaption").textContent = networkMode ? "суммарно по всем точкам" : `на складе ${branch?.short || "точки"}`;
-  $("#stockPositions").textContent = stockEntities.filter((entity) => quantityFor(entity) > 0).length;
+  $("#stockPositions").textContent = visible.filter((entity) => quantityFor(entity) > 0).length;
   $("#stockPositionsCaption").textContent = networkMode ? "есть хотя бы на одной точке" : "фактически есть на точке";
   $("#lowStockCount").textContent = lowCount;
   $("#lowStockLabel").textContent = "Ниже лимита";
@@ -3493,6 +3526,7 @@ function renderStock(scope = stockDisplayScope) {
     const unitCost = costFor(entity);
     return `<tr><td><span class="stock-name">${escapeHtml(entity.name)}</span><small>${movement}</small></td><td>${escapeHtml(entity.category)}</td><td><span class="stock-value ${low ? "low" : ""}">${decimal(available, 3)} ${entity.unit}</span></td><td>${money(unitCost)} / ${entity.unit}</td><td><strong>${money(available * unitCost)}</strong></td><td>${decimal(limit, 3)} ${entity.unit}</td><td><span class="status-badge ${critical ? "bad" : low ? "warn" : "good"}">${status}</span></td></tr>`;
   }).join("");
+  listResult("stock-list", visible.length, stockEntities.length);
 }
 
 function supplierDocuments(supplier) {
@@ -3508,7 +3542,7 @@ function renderSuppliers() {
   const status = $("#supplierStatusFilter").value;
   const visible = suppliers.filter((supplier) => {
     const haystack = `${supplier.name} ${supplier.inn} ${supplier.phone} ${supplier.email || ""} ${supplier.contact}`.toLowerCase();
-    return (!query || haystack.includes(query)) && (status === "all" || supplier.status === status);
+    return (!query || haystack.includes(query)) && (status === "all" || supplier.status === status) && listMatches("suppliers",supplier);
   });
   $("#supplierCount").textContent = visible.length;
   $("#suppliersTable").innerHTML = visible.map((supplier) => {
@@ -3522,6 +3556,7 @@ function renderSuppliers() {
   }).join("");
   $("#suppliersEmpty").classList.toggle("hidden", visible.length > 0);
   $("#suppliersTable").parentElement.classList.toggle("hidden", visible.length === 0);
+  listResult("suppliers", visible.length, suppliers.length);
 }
 
 const stockTabConfig = {
@@ -3624,6 +3659,7 @@ function configureDocumentFilters(tab) {
   statusSelect.innerHTML = `<option value="all">Все статусы</option>${statusOptions.map((option) => `<option value="${escapeHtml(option.value)}">${escapeHtml(option.label)}</option>`).join("")}`;
   if ([...partySelect.options].some((option) => option.value === previousParty)) partySelect.value = previousParty;
   if ([...statusSelect.options].some((option) => option.value === previousStatus)) statusSelect.value = previousStatus;
+  window.AdminFilters?.sync("documents",tab);
   $("#documentSearch").placeholder = tab === "supplies" ? "Накладная, продукт или поставщик" : tab === "requests" ? "Заявка, точка или продукт" : tab === "point-transfers" ? "Перемещение, точка или продукт" : tab === "inventories" ? "Документ, сотрудник или продукт" : tab === "transfer" ? "Накладная, получатель или товар" : "Документ, товар или описание";
 }
 
@@ -3657,12 +3693,14 @@ function filterWarehouseDocuments(tab, collection) {
       && (fromTime === null || eventTime >= fromTime)
       && (toTime === null || eventTime <= toTime)
       && matchesParty
-      && (status === "all" || (tab === "supplies" ? entry.paymentStatus === status : entry.status === status));
+      && (status === "all" || (tab === "supplies" ? entry.paymentStatus === status : entry.status === status))
+      && listMatches("documents",entry,tab);
   });
 }
 
 function updateDocumentFilterResult(tab, allItems, visibleItems) {
-  const hasActiveFilters = Boolean($("#documentSearch").value.trim() || $("#documentDateFrom").value || $("#documentDateTo").value || $("#documentPartyFilter").value !== "all" || $("#documentStatusFilter").value !== "all");
+  listResult("documents", visibleItems.length, allItems.length);
+  const hasActiveFilters = Boolean(window.AdminFilters?.active("documents") || $("#documentSearch").value.trim() || $("#documentDateFrom").value || $("#documentDateTo").value || $("#documentPartyFilter").value !== "all" || $("#documentStatusFilter").value !== "all");
   const quantityTab = ["requests", "transfer", "point-transfers"].includes(tab);
   const inventoryTab = tab === "inventories";
   const amount = inventoryTab
@@ -4004,7 +4042,15 @@ function abcRecommendation(row, code) {
   return "Стабильная позиция — контролировать";
 }
 
+function filteredAbcRows(rows = itemAnalyticsRows(reportContext().sales, true)) {
+  const search = $("#abcSearch").value.trim().toLowerCase();
+  const type = $("#abcTypeFilter").value;
+  const category = $("#abcCategoryFilter").value;
+  return rows.filter(row=>(type==='all'||row.item.itemType===type) && (category==='all'||row.item.category===category) && listMatches('abc',row) && (!search||[row.item.name,row.item.category].some(value=>String(value||'').toLowerCase().includes(search))));
+}
+
 function renderABC() {
+  window.AdminFilters?.sync("abc");
   if (!document.querySelector("#abcTable")) return;
   const context = reportContext();
   const search = $("#abcSearch").value.trim().toLowerCase();
@@ -4015,6 +4061,7 @@ function renderABC() {
   const currentCategory = selectedCategory || "all";
   $("#abcCategoryFilter").innerHTML = `<option value="all">Все категории</option>${categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}`;
   $("#abcCategoryFilter").value = categories.includes(currentCategory) ? currentCategory : "all";
+  window.AdminFilters?.sync("abc");
   const rows = allRows.filter((row) => (type === "all" || row.item.itemType === type) && ($("#abcCategoryFilter").value === "all" || row.item.category === $("#abcCategoryFilter").value));
   const units = [...new Set(rows.map((row) => row.unit))];
   const quantityGroups = new Map(units.flatMap((unit) => [...assignAbcGroups(rows.filter((row) => row.unit === unit), "quantity")]));
@@ -4023,7 +4070,7 @@ function renderABC() {
   const quantitiesByUnit = new Map(units.map((unit) => [unit, rows.filter((row) => row.unit === unit).reduce((sum, row) => sum + row.quantity, 0)]));
   const totalRevenue = rows.reduce((sum, row) => sum + row.revenue, 0);
   const totalProfit = rows.reduce((sum, row) => sum + Math.max(0, row.profit), 0);
-  const visible = rows.filter((row) => !search || row.item.name.toLowerCase().includes(search) || String(row.item.category).toLowerCase().includes(search)).sort((left, right) => right.profit - left.profit);
+  const visible = filteredAbcRows(rows).sort((left,right)=>right.profit-left.profit);
   $("#abcResultCount").textContent = `${visible.length} ${pluralRu(visible.length, "позиция", "позиции", "позиций")}`;
   $("#abcTable").innerHTML = visible.length ? visible.map((row) => {
     const code = `${quantityGroups.get(row.item.catalogKey)}${revenueGroups.get(row.item.catalogKey)}${profitGroups.get(row.item.catalogKey)}`;
@@ -4033,6 +4080,7 @@ function renderABC() {
     const profitShare = totalProfit ? Math.max(0, row.profit) / totalProfit * 100 : 0;
     return `<tr><td><span class="abc-badge abc-code" data-code="${code}">${code}</span></td><td><strong>${escapeHtml(row.item.name)}</strong><small>${row.item.itemType === "recipe" ? "Блюдо" : "Товар"} · ${escapeHtml(row.item.category)}</small></td><td>${decimal(row.quantity, 3)} ${escapeHtml(row.unit)}</td><td title="Доля среди позиций в ${escapeHtml(row.unit)}">${decimal(quantityShare)}%</td><td>${money(row.revenue)}</td><td>${decimal(revenueShare)}%</td><td><strong class="${row.profit < 0 ? "negative" : ""}">${money(row.profit)}</strong></td><td>${decimal(profitShare)}%</td><td><span class="abc-advice">${abcRecommendation(row, code)}</span></td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="9">По выбранным условиям позиции не найдены</td></tr>';
+  listResult("abc",visible.length,allRows.length);
 }
 
 function visibleReceipts(context = reportContext()) {
@@ -4044,6 +4092,7 @@ function visibleReceipts(context = reportContext()) {
     const status = $("#receiptStatusFilter").value;
     if (cashier !== "all" && (sale.cashier || "Не указан") !== cashier) return false;
     if (status === "paid" && sale.refundedAt || status === "refunded" && !sale.refundedAt) return false;
+    if (!listMatches("receipts",sale)) return false;
     if (!search) return true;
     const searchable = [
       sale.number,
@@ -4101,12 +4150,14 @@ function receiptInlineDetails(sale) {
   return `<tr class="receipt-expanded"><td colspan="9"><div class="receipt-inline-tabs" role="tablist" aria-label="Детали чека"><button type="button" role="tab" data-receipt-tab="bill" aria-selected="${expandedReceiptTab==='bill'}">Счёт</button><button type="button" role="tab" data-receipt-tab="history" aria-selected="${expandedReceiptTab==='history'}">История</button><button type="button" role="tab" data-receipt-tab="consumption" aria-selected="${expandedReceiptTab==='consumption'}">Списания</button></div><div class="receipt-inline-content">${expandedReceiptTab==='consumption' ? receiptConsumption(sale) : expandedReceiptTab==='history' ? history : bill}</div></td></tr>`;
 }
 function renderReceipts() {
+  window.AdminFilters?.sync("receipts");
   if (!document.querySelector("#receiptsTable")) return;
   const context = reportContext();
   const cashierFilter = $("#receiptCashierFilter"), selectedCashier = cashierFilter.value;
   const cashiers = [...new Set(context.allSales.map(sale=>sale.cashier || "Не указан"))].sort((a,b)=>a.localeCompare(b,"ru"));
   cashierFilter.innerHTML = '<option value="all">Все кассиры</option>' + cashiers.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join("");
   cashierFilter.value = cashiers.includes(selectedCashier) ? selectedCashier : "all";
+  window.AdminFilters?.sync("receipts");
   const sales = visibleReceipts(context);
   const paidSales = sales.filter(sale=>!sale.refundedAt);
   const metrics = salesMetrics(paidSales);
@@ -4188,7 +4239,7 @@ function exportAnalyticsCsv() {
     }));
     filePrefix = "ashkana-receipts";
   } else {
-    const rows = itemAnalyticsRows(context.sales, true);
+    const rows = activeAnalyticsTab === "abc" ? filteredAbcRows(itemAnalyticsRows(context.sales,true)) : itemAnalyticsRows(context.sales,true);
     header = ["Тип", "Позиция", "Категория", "Продано", "Единица", "Выручка", "Себестоимость", "Прибыль"];
     csvRows = rows.map((row) => [row.item.itemType === "recipe" ? "Блюдо" : "Товар", row.item.name, row.item.category, row.quantity, row.unit, row.revenue, row.cost, row.profit]);
   }
@@ -4304,19 +4355,24 @@ function financeTransactionRows(context = financeContext()) {
   return [...sales, ...context.transactions].sort((left, right) => financeDate(right) - financeDate(left));
 }
 
-function renderFinanceTransactions(context) {
+function filteredFinanceTransactions(context = financeContext()) {
   const search = $("#financeTransactionSearch").value.trim().toLowerCase();
   const type = $("#financeTransactionTypeFilter").value;
   const accountId = $("#financeTransactionAccountFilter").value;
   const currentAccount = accountId || "all";
   $("#financeTransactionAccountFilter").innerHTML = `<option value="all">Все счета</option>${financeState.accounts.map((account) => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)}</option>`).join("")}`;
   $("#financeTransactionAccountFilter").value = financeAccount(currentAccount) ? currentAccount : "all";
-  const rows = financeTransactionRows(context).filter((row) => {
+  window.AdminFilters?.sync("finance-operations");
+  return financeTransactionRows(context).filter((row) => {
     if (type !== "all" && row.type !== type) return false;
     if ($("#financeTransactionAccountFilter").value !== "all" && ![row.accountId, row.destinationAccountId].map(String).includes($("#financeTransactionAccountFilter").value)) return false;
     const category = row.categoryName || financeCategory(row.categoryId)?.name || "Перевод между счетами";
-    return !search || [row.number, row.counterparty, row.comment, category].filter(Boolean).join(" ").toLowerCase().includes(search);
+    return listMatches("finance-operations",row) && (!search || [row.number, row.counterparty, row.comment, category].filter(Boolean).join(" ").toLowerCase().includes(search));
   });
+}
+
+function renderFinanceTransactions(context) {
+  const rows = filteredFinanceTransactions(context);
   $("#financeTransactionCount").textContent = `${rows.length} ${pluralRu(rows.length, "операция", "операции", "операций")}`;
   $("#financeTransactionsTable").innerHTML = rows.length ? rows.map((row) => {
     const source = financeAccount(row.accountId);
@@ -4327,13 +4383,15 @@ function renderFinanceTransactions(context) {
     const amountClass = row.type === "expense" ? "negative" : row.type === "transfer" ? "" : "positive";
     return `<tr><td><span class="document-number">${escapeHtml(row.number || "Операция")}</span><small><span class="finance-type-badge ${escapeHtml(row.type)}">${escapeHtml(financeTypeLabel(row.type))}</span></small></td><td>${date.toLocaleDateString("ru-RU")}<small>${date.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</small></td><td>${escapeHtml(branchById(row.branchId)?.name || "Вся компания")}</td><td>${escapeHtml(category)}</td><td><strong>${escapeHtml(source?.name || "Счёт не найден")}</strong>${destination ? `<small>→ ${escapeHtml(destination.name)}</small>` : ""}</td><td>${escapeHtml(row.counterparty || "—")}<small>${escapeHtml(row.comment || "")}</small></td><td><strong class="${amountClass}">${sign}${money(row.amount)}</strong></td><td>${row.automatic ? '<span title="Создано из чека">Авто</span>' : `<button class="finance-delete-action danger-button" data-delete-finance-transaction="${escapeHtml(row.id)}" type="button">Удалить</button>`}</td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="8">По выбранным условиям операций нет</td></tr>';
+  listResult("finance-operations",rows.length,financeTransactionRows(context).length);
 }
 
 function renderFinanceShifts(context) {
-  const shifts = posShifts.filter((shift) => {
+  const allShifts = posShifts.filter((shift) => {
     const opened = new Date(shift.openedAt);
     return opened >= context.from && opened <= context.to && (context.branchId === "all" || String(shift.branchId) === String(context.branchId));
   });
+  const shifts = allShifts.filter(row=>listMatches("finance-shifts",row));
   $("#financeShiftsTable").innerHTML = shifts.length ? shifts.map((shift) => {
     const cashSales = getSales().filter((sale) => String(sale.shiftId) === String(shift.id)).reduce((sum, sale) => sum + salePaymentAmount(sale,"cash"), 0);
     const cashRefunds = getSales().filter((sale) => String(sale.refundShiftId) === String(shift.id)).reduce((sum, sale) => sum + salePaymentAmount(sale,"cash"), 0);
@@ -4342,10 +4400,13 @@ function renderFinanceShifts(context) {
     const opened = new Date(shift.openedAt);
     return `<tr><td><span class="document-number">№ ${escapeHtml(shift.id)}</span><small>${opened.toLocaleDateString("ru-RU")} ${opened.toLocaleTimeString("ru-RU", { hour: "2-digit", minute: "2-digit" })}</small></td><td><strong>${escapeHtml(shift.registerName || "Касса")}</strong><small>${escapeHtml(branchById(shift.branchId)?.name || "Точка")}</small></td><td>${escapeHtml(shift.openedBy || "—")}</td><td>${money(shift.openingCash)}</td><td>${money(cashSales)}</td><td><strong>${money(expected)}</strong></td><td>${shift.closedAt ? money(shift.closingCash) : "—"}</td><td><strong class="${variance == null || variance === 0 ? "" : variance < 0 ? "negative" : "positive"}">${variance == null ? "—" : `${variance > 0 ? "+" : ""}${money(variance)}`}</strong></td><td><span class="status-badge ${shift.closedAt ? "good" : "pending"}">${shift.closedAt ? "Закрыта" : "Открыта"}</span>${shift.closedBy ? `<small>${escapeHtml(shift.closedBy)}</small>` : ""}</td></tr>`;
   }).join("") : '<tr class="table-empty"><td colspan="9">За выбранный период кассовых смен нет</td></tr>';
+  listResult("finance-shifts",shifts.length,allShifts.length);
 }
 
 function renderFinanceAccounts() {
-  $("#financeAccountsTable").innerHTML = financeState.accounts.length ? financeState.accounts.map((account) => `<tr><td><strong>${escapeHtml(account.name)}</strong></td><td>${escapeHtml(financeAccountTypeLabel(account.type))}</td><td>${escapeHtml(branchById(account.branchId)?.name || "Вся компания")}</td><td>${money(account.openingBalance)}</td><td><strong class="${financeAccountBalance(account.id) < 0 ? "negative" : ""}">${money(financeAccountBalance(account.id))}</strong></td><td><span class="status-badge ${account.status === "active" ? "good" : "neutral"}">${account.status === "active" ? "Активный" : "Архивный"}</span></td><td><button class="finance-edit-action secondary-action" data-edit-finance-account="${escapeHtml(account.id)}" type="button">Изменить</button></td></tr>`).join("") : '<tr class="table-empty"><td colspan="7">Счетов пока нет</td></tr>';
+  const visibleAccounts = financeState.accounts.filter(row=>listMatches("finance-accounts",row));
+  $("#financeAccountsTable").innerHTML = visibleAccounts.length ? visibleAccounts.map((account) => `<tr><td><strong>${escapeHtml(account.name)}</strong></td><td>${escapeHtml(financeAccountTypeLabel(account.type))}</td><td>${escapeHtml(branchById(account.branchId)?.name || "Вся компания")}</td><td>${money(account.openingBalance)}</td><td><strong class="${financeAccountBalance(account.id) < 0 ? "negative" : ""}">${money(financeAccountBalance(account.id))}</strong></td><td><span class="status-badge ${account.status === "active" ? "good" : "neutral"}">${account.status === "active" ? "Активный" : "Архивный"}</span></td><td><button class="finance-edit-action secondary-action" data-edit-finance-account="${escapeHtml(account.id)}" type="button">Изменить</button></td></tr>`).join("") : '<tr class="table-empty"><td colspan="7">Счетов пока нет</td></tr>';
+  listResult("finance-accounts",visibleAccounts.length,financeState.accounts.length);
 }
 
 function renderFinanceCategories() {
@@ -4516,7 +4577,7 @@ async function deleteFinanceTransaction(transactionId) {
 function exportFinanceCsv() {
   if (typeof activeFinanceTab !== "undefined" && activeFinanceTab === "pnl" && window.OimoPnl?.enabled()) { window.OimoPnl.exportXlsx(); return; }
   const context = financeContext();
-  const rows = financeTransactionRows(context);
+  const rows = filteredFinanceTransactions(context);
   const csvRows = [["Номер", "Дата", "Тип", "Точка", "Категория", "Счёт", "Контрагент", "Комментарий", "Сумма"], ...rows.map((row) => [row.number, financeDate(row).toLocaleString("ru-RU"), financeTypeLabel(row.type), branchById(row.branchId)?.name || "Вся компания", row.categoryName || financeCategory(row.categoryId)?.name || "Перевод", financeAccount(row.accountId)?.name || "", row.counterparty || "", row.comment || "", row.type === "expense" ? -Number(row.amount || 0) : Number(row.amount || 0)])];
   const csv = csvRows.map((row) => row.map((value) => `"${String(value ?? "").replaceAll('"', '""')}"`).join(";")).join("\n");
   const link = document.createElement("a");
@@ -4525,12 +4586,21 @@ function exportFinanceCsv() {
   link.click(); URL.revokeObjectURL(link.href);
 }
 
-async function exportTechnicalCards() {
-  const button = $("#exportTechnicalCardsButton");
+async function exportTechnicalCards(event) {
+  const kind = event?.currentTarget?.id === 'exportPreparationsButton' || document.querySelector('#menu-pane-preparations.active') ? 'preparations' : 'recipes';
+  const button = document.getElementById(kind === 'preparations' ? 'exportPreparationsButton' : 'exportTechnicalCardsButton');
+  const roots = kind === 'recipes' ? filteredRecipes() : filteredPreparations();
+  const selected = new Map(roots.map(row=>[String(row.id),row]));
+  const query = $("#recipeSearch").value.trim().toLowerCase();
+  const ids = kind === 'recipes' ? recipes.filter(row=>{
+    const root = selected.get(String(row.id)) || selected.get(String(row.parentId));
+    return root && (!query || row.name.toLowerCase().includes(query)) && listMatches('recipe-list',{...row,_groupActive:root.is_active!==false});
+  }).map(row=>row.id) : roots.map(row=>row.id);
+  if (!ids.length) { showToast('По выбранным фильтрам нет позиций для экспорта'); return; }
   if (!serverMode) { showToast("Экспорт техкарт доступен на сервере"); return; }
   button.disabled = true;
   try {
-    const {xlsx, filename} = await AshkanaApi.exportTechnicalCards();
+    const {xlsx, filename} = await AshkanaApi.exportTechnicalCards({kind, ids});
     const bytes = Uint8Array.from(atob(xlsx), character => character.charCodeAt(0));
     const url = URL.createObjectURL(new Blob([bytes], { type: "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" }));
     const link = document.createElement("a");
@@ -4585,7 +4655,7 @@ function calculateImportYields() {
     for (const row of rows) {
       if (row.netWeightGrams != null) {output += Number(row.netWeightGrams); continue;}
       const net = row.net === null || row.net === undefined || row.net === '' ? Number(row.gross) : Number(row.net);
-      const ingredient = ingredientById(row.ingredientId);
+      const ingredient = componentSourceByValue(row.ingredientId);
       const unit = row.unit || (ingredient?.unit === 'шт' ? 'legacy-count' : 'г');
       if (unit === 'шт' || unit === 'legacy-count') {
         const weight = Number(row.pieceWeightGrams || ingredient?.pieceWeightGrams);
@@ -4604,8 +4674,8 @@ function technicalImportIssues() {
   calculateImportYields();
   const issues = new Set();
   for (const row of technicalCardsPreviewRows) {
-    const ingredient = ingredientById(row.ingredientId);
-    if (!ingredient) issues.add("Сопоставьте все ингредиенты со справочником.");
+    const ingredient = componentSourceByValue(row.ingredientId);
+    if (!ingredient) issues.add("Сопоставьте все ингредиенты и полуфабрикаты со справочником.");
     else if (row.unit && (!importUnitFamily(row.unit) || importUnitFamily(row.unit) !== importUnitFamily(ingredient.unit))) issues.add(`«${row.ingredient}»: в файле ${row.unit}, в справочнике ${ingredient.unit}. Исправьте единицу и количество.`);
     if (!Number.isFinite(Number(row.gross)) || (row.net !== null && row.net !== undefined && row.net !== '' && (!Number.isFinite(Number(row.net)) || Number(row.net) <= 0 || Number(row.gross) < Number(row.net))) || Number(row.gross) <= 0) issues.add("Проверьте брутто и нетто: оба больше нуля, нетто не больше брутто.");
     if (row.netWeightGrams != null && (!Number.isFinite(Number(row.netWeightGrams)) || Number(row.netWeightGrams) <= 0)) issues.add("Нетто в граммах должно быть больше нуля.");
@@ -4626,7 +4696,7 @@ function technicalImportIssues() {
 function renderTechnicalCardsImportPreview(rows) {
   rows.forEach(row => {
     row.autoYield = row.yield === null || row.yield === undefined || row.yield === "";
-    const item = ingredientById(row.ingredientId);
+    const item = componentSourceByValue(row.ingredientId);
     if (['кг','л'].includes(row.unit)) {
       row.gross *= 1000;
       if (row.net != null) row.net *= 1000;
@@ -4649,7 +4719,7 @@ function renderTechnicalCardsImportPreview(rows) {
     if (!groups.has(key)) groups.set(key, []);
     groups.get(key).push({row, index});
   });
-  const options = selected => '<option value="">Выберите ингредиент</option>' + ingredients.map(item => `<option value="${escapeHtml(item.id)}" ${String(item.id) === String(selected) ? "selected" : ""}>${escapeHtml(item.name)} · ${escapeHtml(CatalogUnits.label(item.unit))}</option>`).join("");
+  const options = selected => '<option value="">Выберите ингредиент или п/ф</option>' + ingredientOptions(selected);
   let html = `<p>${rows.length} строк состава · ${groups.size} карт. Повторы ингредиентов объединяются.</p><details class="catalog-disclosure"><summary>Как считаются нетто и выход</summary><p>Пустое нетто равно брутто. Выход — сумма нетто в граммах. Для жидкостей по умолчанию 1 мл = 1 г; для штук нужна масса одной штуки. Выход можно скорректировать.</p></details>`;
   for (const entries of groups.values()) {
     const {row: first, index: firstIndex} = entries[0];
@@ -4859,10 +4929,10 @@ function openRecipe(recipeId) {
   $("#drawerYield").textContent = `${decimal(recipe.yield, 2)} г`;
   $("#drawerTotalCost").textContent = money(cost);
   $("#compositionTable").innerHTML = recipe.components.map((component) => {
-    const ingredient = ingredientById(component.ingredientId);
+    const ingredient = componentSource(component);
     const scale = ingredient?.unit === "шт" ? 1000 : 1;
     const measure = ingredient?.unit === "шт" ? "шт" : ingredient?.unit === "л" ? "мл" : "г";
-    return `<tr><td><strong>${ingredient?.name || "Не найден"}</strong><small>${money(ingredient?.averageCost || 0)} / ${ingredient?.unit || "кг"}</small></td><td>${decimal(component.gross / scale, 2)} ${measure}</td><td>${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),2)} г`}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
+    return `<tr><td><strong>${escapeHtml(ingredient?.name || "Не найден")}</strong><small>${component.preparationId != null ? "П/Ф · " : ""}${money(ingredient?.averageCost || 0)} / ${ingredient?.unit || "кг"}</small></td><td>${decimal(component.gross / scale, 2)} ${measure}</td><td>${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),2)} г`}</td><td><strong>${money(componentCost(component))}</strong></td></tr>`;
   }).join("");
   $("#recipeDrawer").classList.remove("hidden");
 }
@@ -4874,8 +4944,9 @@ function renderRecipeImportNotes(selector, recipe) {
   target.innerHTML = notes.length ? `<details class="catalog-form-section"><summary>Временная техкарта · проверить ${notes.length} замечаний</summary><ul>${notes.map((note) => `<li>${escapeHtml(String(note))}</li>`).join("")}</ul></details>` : "";
 }
 
-function ingredientOptions(selectedId) {
-  return ingredients.map((ingredient) => `<option value="${ingredient.id}" ${ingredient.id === selectedId ? "selected" : ""}>${escapeHtml(ingredient.name)}</option>`).join("");
+function ingredientOptions(selectedId, excludePreparationId = null) {
+  return '<optgroup label="Ингредиенты">' + ingredients.map(ingredient=>`<option value="${escapeHtml(ingredient.id)}" ${String(ingredient.id)===String(selectedId)?'selected':''}>${escapeHtml(ingredient.name)}</option>`).join('') + '</optgroup>' +
+    '<optgroup label="Полуфабрикаты">' + preparations.filter(row=>String(row.id)!==String(excludePreparationId)).map(row=>`<option value="${escapeHtml('preparation:'+row.id)}" ${'preparation:'+row.id===String(selectedId)?'selected':''}>П/Ф · ${escapeHtml(row.name)}</option>`).join('') + '</optgroup>';
 }
 
 const cookingMethods = {none:'Без обработки',clean:'Очистка',boil:'Варка',fry:'Жарка',bake:'Запекание'};
@@ -4894,34 +4965,37 @@ function setCompositionQuantity(input, value) {
 }
 function compositionRows(components, preparation = false) {
   const prefix = preparation ? 'preparation-component' : 'component';
-  return `<div class="component-editor-head"><span>Ингредиент</span>${preparation ? '<span>Обработка</span>' : ''}<span>Брутто</span><span>Нетто, г</span><span>Себестоимость</span><span></span></div>` + components.map((component,index) => {
-    const item = ingredientById(component.ingredientId);
+  return `<div class="component-editor-head"><span>Ингредиент / п/ф</span>${preparation ? '<span>Обработка</span>' : ''}<span>Брутто</span><span>Нетто, г</span><span>Себестоимость</span><span></span></div>` + components.map((component,index) => {
+    const item = componentSource(component);
     const measure = CatalogUnits.label(item?.unit || 'кг');
     const scale = item?.unit === 'шт' ? 1000 : 1;
     const net = CatalogUnits.netWeight(component,item);
-    return `<div class="component-editor-row ${preparation ? 'preparation-component-row' : ''}" data-method="${escapeHtml(component.method || 'none')}" data-component-index="${index}" data-preparation-component-index="${index}" data-scale="${scale}" data-piece-weight="${component.pieceWeightGrams || item?.pieceWeightGrams || 0}"><select class="${prefix}-ingredient">${ingredientOptions(component.ingredientId)}</select>${preparation ? `<select class="component-method" aria-label="Метод обработки">${Object.entries(cookingMethods).map(([key,label])=>`<option value="${key}" ${key === (component.method || 'none') ? 'selected' : ''}>${label}</option>`).join('')}</select>` : ''}<div class="composition-quantity"><input class="${prefix}-gross" aria-label="Брутто" type="number" min="0" step="any" ${compositionQuantityAttributes(Number(component.gross || 0)/scale)}><span>${measure}</span></div><div class="composition-quantity"><input class="${prefix}-net" aria-label="Нетто в граммах" type="number" min="0" step="any" ${compositionQuantityAttributes(net)} placeholder="Всего, г"><span>г</span></div><span class="component-cost">${money(componentCost(component))}</span><button class="remove-component icon-button danger-button" data-remove-preparation-component="${index}" type="button" aria-label="Удалить ингредиент">${uiIcon('close')}</button></div>`;
+    return `<div class="component-editor-row ${preparation ? 'preparation-component-row' : ''}" data-method="${escapeHtml(component.method || 'none')}" data-component-index="${index}" data-preparation-component-index="${index}" data-scale="${scale}" data-piece-weight="${component.pieceWeightGrams || item?.pieceWeightGrams || 0}"><select class="${prefix}-ingredient">${ingredientOptions(componentSelectionValue(component), preparation ? editingPreparationId : null)}</select>${preparation ? `<select class="component-method" aria-label="Метод обработки">${Object.entries(cookingMethods).map(([key,label])=>`<option value="${key}" ${key === (component.method || 'none') ? 'selected' : ''}>${label}</option>`).join('')}</select>` : ''}<div class="composition-quantity"><input class="${prefix}-gross" aria-label="Брутто" type="number" min="0" step="any" ${compositionQuantityAttributes(Number(component.gross || 0)/scale)}><span>${measure}</span></div><div class="composition-quantity"><input class="${prefix}-net" aria-label="Нетто в граммах" type="number" min="0" step="any" ${compositionQuantityAttributes(net)} placeholder="Всего, г"><span>г</span></div><span class="component-cost">${money(componentCost(component))}</span><button class="remove-component icon-button danger-button" data-remove-preparation-component="${index}" type="button" aria-label="Удалить ингредиент">${uiIcon('close')}</button></div>`;
   }).join('');
 }
 function readComposition(editor, preparation = false) {
   const prefix = preparation ? 'preparation-component' : 'component';
   return [...document.querySelectorAll(`${editor} .component-editor-row`)].map(row => {
-    const item = ingredientById(row.querySelector(`.${prefix}-ingredient`).value);
+    const item = componentSourceByValue(row.querySelector(`.${prefix}-ingredient`).value);
     const gross = Number(compositionQuantityValue(row.querySelector(`.${prefix}-gross`)) || 0) * (item?.unit === 'шт' ? 1000 : 1);
     const massInput = row.querySelector(`.${prefix}-net`);
     const rawMass = compositionQuantityValue(massInput);
     const netWeightGrams = rawMass === '' ? CatalogUnits.netWeight({gross,net:gross},item) : Number(rawMass);
     const weight = Number(row.dataset.pieceWeight || CatalogUnits.pieceWeight(item));
     const net = item?.unit === 'шт' ? weight > 0 && netWeightGrams != null ? netWeightGrams/weight*1000 : gross : netWeightGrams ?? gross;
-    return {ingredientId:item?.id, gross, net, ...(netWeightGrams != null ? {netWeightGrams} : {}), ...(weight > 0 ? {pieceWeightGrams:weight} : {}), method:row.querySelector('.component-method')?.value || row.dataset.method || 'none'};
+    return {...(item?.preparationId != null ? {preparationId:item.preparationId} : {ingredientId:item?.id}), gross, net, ...(netWeightGrams != null ? {netWeightGrams} : {}), ...(weight > 0 ? {pieceWeightGrams:weight} : {}), method:row.querySelector('.component-method')?.value || row.dataset.method || 'none'};
   });
 }
 function updateCompositionInput(event, preparation = false) {
   const prefix = preparation ? 'preparation-component' : 'component';
   const row = event.target.closest('.component-editor-row');
   if (!row) return;
-  const item = ingredientById(row.querySelector(`.${prefix}-ingredient`).value);
+  const item = componentSourceByValue(row.querySelector(`.${prefix}-ingredient`).value);
   const grossInput = row.querySelector(`.${prefix}-gross`), netInput = row.querySelector(`.${prefix}-net`);
-  if (event.target.matches(`.${prefix}-ingredient`)) row.dataset.pieceWeight = CatalogUnits.pieceWeight(item);
+  if (event.target.matches(`.${prefix}-ingredient`)) {
+    row.dataset.pieceWeight = CatalogUnits.pieceWeight(item);
+    row.querySelector('.composition-quantity > span').textContent = CatalogUnits.label(item?.unit || 'кг');
+  }
   const method = row.querySelector('.component-method')?.value || row.dataset.method || 'none';
   const loss = Number(item?.losses?.[method] || 0)/100;
   if (event.target === grossInput || event.target.matches('.component-method') || event.target.matches(`.${prefix}-ingredient`)) {
@@ -4939,7 +5013,7 @@ function renderRecipeComponentsEditor() {
   updateRecipeLiveCalculation();
 }
 function syncRecipeDraftFromEditor() { recipeDraftComponents = readComposition('#recipeComponentsEditor'); }
-function calculateRecipeYield(components = recipeDraftComponents) {return CatalogUnits.output(components,ingredientById);}
+function calculateRecipeYield(components = recipeDraftComponents) {return CatalogUnits.output(components,(_,component)=>componentSource(component));}
 function updateRecipeLiveCalculation(event) {
   if (event?.target) updateCompositionInput(event);
   if (document.querySelector('#recipeComponentsEditor .component-editor-row')) syncRecipeDraftFromEditor();
@@ -5023,6 +5097,7 @@ async function saveRecipeFormContent() {
     components: recipeDraftComponents,
     ...modifierData
   };
+  try { rawRecipeComponents(updated); } catch(error) { showToast(error.message); return; }
   if (serverMode) {
     const response = await runServerAction("recipe.upsert", updated);
     if (!response) return;
@@ -5052,12 +5127,14 @@ function openPreparationComposition(preparationId) {
   $('#preparationCompositionUnitCost').textContent = money(Number(preparation.yield) > 0 ? cost / Number(preparation.yield) * 1000 : 0);
   const components = Array.isArray(preparation.components) ? preparation.components : [];
   $('#preparationCompositionTable').innerHTML = components.length ? components.map(component => {
-    const ingredient = ingredientById(component.ingredientId);
+    const ingredient = componentSource(component);
     const unit = ingredient?.unit || 'кг';
     const scale = unit === 'шт' ? 1000 : 1;
     const measure = unit === 'шт' ? 'шт' : unit === 'л' ? 'мл' : 'г';
     return `<tr><td><strong>${escapeHtml(ingredient?.name || 'Ингредиент удалён')}</strong></td><td data-label="Брутто">${decimal(Number(component.gross || 0) / scale, 2)} ${measure}</td><td data-label="Нетто">${CatalogUnits.netWeight(component,ingredient) == null ? "Не задано" : `${decimal(CatalogUnits.netWeight(component,ingredient),2)} г`}</td><td data-label="Стоимость"><strong>${money(preparationIngredientCost(component))}</strong></td></tr>`;
   }).join('') : '<tr class="table-empty"><td colspan="4">Состав пока не заполнен</td></tr>';
+  const usedBy = [...recipes,...preparations].filter(row=>(row.components||[]).some(component=>String(component.preparationId)===String(preparation.id)));
+  $('#preparationCompositionUsedBy').textContent = usedBy.length ? usedBy.map(row=>row.name).join(', ') : 'Пока не входит в другие составы';
   $('#preparationCompositionProcess').textContent = preparation.process || '';
   $('#preparationCompositionProcessSection').hidden = !preparation.process;
   $('#preparationCompositionDrawer').classList.remove('hidden');
@@ -5071,11 +5148,8 @@ function closePreparationComposition() {
 }
 
 function preparationIngredientCost(component) {
-  const ingredient = ingredientById(component.ingredientId);
-  if (!ingredient) return 0;
-  const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
-  const unitCost = branchUnitCost(branchId, ingredient.id) || Number(ingredient.averageCost || 0);
-  return unitCost * componentGross(component) / 1000;
+  const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || '';
+  return CatalogComposition.cost({components:[component]},compositionState(),id=>branchUnitCost(branchId,id)||ingredientById(id)?.averageCost);
 }
 
 function renderPreparationComponentsEditor() {
@@ -5087,7 +5161,7 @@ function syncPreparationDraftFromEditor() { preparationDraftComponents = readCom
 function updatePreparationCalculation(event) {
   if (event?.target) updateCompositionInput(event,true);
   if (document.querySelector('.preparation-component-row')) syncPreparationDraftFromEditor();
-  const output = CatalogUnits.output(preparationDraftComponents,ingredientById);
+  const output = CatalogUnits.output(preparationDraftComponents,(_,component)=>componentSource(component));
   $('#preparationYieldInput').value=output ?? '';
   const outputWeight = Number($('#preparationYieldInput').value || 0);
   const cost=preparationDraftComponents.reduce((sum,c)=>sum+preparationIngredientCost(c),0);
@@ -5121,7 +5195,7 @@ function openPreparationForm(preparationId = null) {
   $("#preparationUsedInInput").value = preparation?.usedIn || "";
   preparationDraftComponents = preparation?.components?.length
     ? structuredClone(preparation.components)
-    : [{ ingredientId: ingredients[0].id, gross: 1000, net: 1000 }];
+    : [{ ingredientId: ingredients[0]?.id, gross: 1000, net: 1000 }];
   $("#deletePreparationButton").classList.toggle("hidden", !preparation);
   $("#savePreparationButton").textContent = "Сохранить";
   renderPreparationComponentsEditor();
@@ -5138,7 +5212,7 @@ async function savePreparationFormContent() {
   syncPreparationDraftFromEditor();
   const name = $("#preparationNameInput").value.trim();
   const station = $("#preparationStationInput").value;
-  const outputYield = CatalogUnits.output(preparationDraftComponents,ingredientById);
+  const outputYield = CatalogUnits.output(preparationDraftComponents,(_,component)=>componentSource(component));
   if (!name || !station || outputYield == null || outputYield <= 0 || !preparationDraftComponents.length) {
     showToast("Заполните название и цех; проверьте нетто и массу ингредиентов в штуках");
     return;
@@ -5147,7 +5221,7 @@ async function savePreparationFormContent() {
     showToast("Проверьте брутто и нетто: значения должны быть больше нуля, нетто не больше брутто");
     return;
   }
-  const ingredientIds = preparationDraftComponents.map((component) => component.ingredientId);
+  const ingredientIds = preparationDraftComponents.map(componentSelectionValue);
   if (new Set(ingredientIds).size !== ingredientIds.length) {
     showToast("Один ингредиент нельзя добавлять в состав дважды");
     return;
@@ -5165,6 +5239,9 @@ async function savePreparationFormContent() {
     components: preparationDraftComponents,
     cost: preparationDraftComponents.reduce((total, component) => total + preparationIngredientCost(component), 0)
   };
+  try {
+    CatalogComposition.flatten(updated,{ingredients,preparations:[...preparations.filter(row=>String(row.id)!==String(updated.id)),updated]},[String(updated.id)]);
+  } catch(error) { showToast(error.message); return; }
   if (serverMode) {
     const response = await runServerAction("preparation.upsert", updated);
     if (!response) return;
@@ -5177,7 +5254,7 @@ async function savePreparationFormContent() {
   else preparations.push(updated);
   savePreparations();
   $("#preparationModal").classList.add("hidden");
-  renderPreparations();
+  renderAll();
   switchMenuPage("preparations");
   showToast(existing ? "Полуфабрикат обновлён" : "Полуфабрикат создан и сохранён в техкартах");
 }
@@ -5512,10 +5589,18 @@ function catalogDeleteConstraint(kind, id) {
       if (reason) return `${child.name}: ${reason}`;
     }
   }
+  if (kind === 'preparation') {
+    const linked = [...recipes,...preparations].filter(row=>(row.components||[]).some(component=>String(component.preparationId)===String(id)));
+    if(linked.length)return 'Полуфабрикат используется в составе: '+linked.map(row=>row.name).slice(0,5).join(', ')+'. Сначала измените связанные составы.';
+  }
   if (kind === "recipe") {
     const hasProduction = logisticsState.batches.some((batch) => String(batch.recipeId) === key) || stockDocuments.some((document) => document.type === "production" && String(document.recipeId) === key);
     if (hasProduction) return "По этой техкарте уже есть производство. Историю производства удалять нельзя.";
     if (getSales().some((sale) => (sale.items || []).some((item) => String(item.id) === key))) return "По этой техкарте уже есть продажи. История чеков должна сохраниться.";
+  }
+  if (kind === 'ingredient') {
+    const linked=preparations.filter(row=>(row.components||[]).some(component=>String(component.ingredientId)===String(id)) && [...recipes,...preparations].some(parent=>(parent.components||[]).some(component=>String(component.preparationId)===String(row.id))));
+    if(linked.length)return 'Ингредиент входит в используемый полуфабрикат. Сначала измените его состав.';
   }
   if (["ingredient", "product"].includes(kind)) {
     if (!serverMode && window.CatalogModifiers?.usesSource(kind, id)) return "Позицию нельзя удалить: она используется как источник списания в модификаторе.";
@@ -5994,8 +6079,8 @@ function updateProductionPreview() {
   const quantity = Math.max(1, Number($("#productionQuantity").value || 1));
   if (!recipe) return;
   $("#productionCost").textContent = money(recipeCost(recipe) * quantity);
-  $("#productionPreview").innerHTML = recipe.components.map((component) => {
-    const ingredient = ingredientById(component.ingredientId);
+  $("#productionPreview").innerHTML = rawRecipeComponents(recipe).map((component) => {
+    const ingredient = componentSource(component);
     const required = componentGross(component) / 1000 * quantity;
     const available = ingredient ? availableStock(ingredient) : 0;
     return `<div><span>${ingredient?.name || "Не найден"}</span><b class="${required > available ? "low" : ""}">${decimal(required, 3)} ${ingredient?.unit || "ед."} <small>из ${decimal(available, 3)}</small></b></div>`;
@@ -6007,8 +6092,8 @@ function saveProduction() {
   const recipe = recipes.find((entry) => entry.id === Number($("#productionRecipe").value));
   const quantity = Math.max(1, Math.round(Number($("#productionQuantity").value || 1)));
   if (!recipe) return;
-  const shortage = recipe.components.find((component) => {
-    const ingredient = ingredientById(component.ingredientId);
+  const shortage = rawRecipeComponents(recipe).find((component) => {
+    const ingredient = componentSource(component);
     return !ingredient || componentGross(component) / 1000 * quantity > availableStock(ingredient);
   });
   if (shortage) {
@@ -6016,8 +6101,8 @@ function saveProduction() {
     return;
   }
   const total = recipeCost(recipe) * quantity;
-  recipe.components.forEach((component) => {
-    const ingredient = ingredientById(component.ingredientId);
+  rawRecipeComponents(recipe).forEach((component) => {
+    const ingredient = componentSource(component);
     ingredient.stock -= componentGross(component) / 1000 * quantity;
   });
   saveIngredients();
@@ -6028,7 +6113,7 @@ function saveProduction() {
     quantity,
     total,
     description: `${recipe.name} · ${quantity} порц. · готово ${finishedStock(recipe.id) + quantity} порц.`,
-    items: recipe.components.map((component) => ({ ingredientId: component.ingredientId, quantity: componentGross(component) / 1000 * quantity }))
+    items: rawRecipeComponents(recipe).map((component) => ({ ingredientId: component.ingredientId, quantity: componentGross(component) / 1000 * quantity }))
   });
   $("#productionModal").classList.add("hidden");
   renderAll();
@@ -6722,15 +6807,16 @@ function showToast(message) {
 }
 
 function renderAll() {
+  mountAdminFilters();
   renderNotifications();
   if (currentRole === "branch") {
     if (canAccessView("reports")) renderReports();
     if (canAccessView("recipes")) {
+      renderMenuCategories();
       renderRecipes();
       renderProducts();
       renderPreparations();
       renderIngredientsMenu();
-      renderMenuCategories();
     }
     if (canAccessView("inventory")) {
       renderStock("branch");
@@ -6747,11 +6833,11 @@ function renderAll() {
   renderBranches();
   renderRegisters();
   renderEmployees();
+  renderMenuCategories();
   renderRecipes();
   renderProducts();
   renderPreparations();
   renderIngredientsMenu();
-  renderMenuCategories();
   renderStock("branch");
   renderFinance();
   renderReports();
@@ -7014,6 +7100,7 @@ $("#stockCategoryFilter").addEventListener("change", renderStock);
 $("#documentSearch").addEventListener("input", () => renderDocuments(activeDocumentFilterTab || "supplies"));
 [$("#documentDateFrom"), $("#documentDateTo"), $("#documentPartyFilter"), $("#documentStatusFilter")].forEach((control) => control.addEventListener("change", () => renderDocuments(activeDocumentFilterTab || "supplies")));
 $("#resetDocumentFilters").addEventListener("click", () => {
+  if (window.AdminFilters) { window.AdminFilters.reset("documents"); return; }
   $("#documentSearch").value = "";
   $("#documentDateFrom").value = "";
   $("#documentDateTo").value = "";
@@ -8137,3 +8224,5 @@ for (const id of ['employeeModal', 'registerModal']) {
   [...editor.children].filter(child => child.tagName !== 'HEADER' && child !== footer).forEach(child => body.append(child));
   editor.insertBefore(body, footer);
 }
+
+$("#stockWarehouseFilter").addEventListener("change",()=>renderStock());

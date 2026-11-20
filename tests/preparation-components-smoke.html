@@ -1,0 +1,54 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<iframe id="app" src="../admin.html?test=1#menu/preparations"></iframe>
+<script>
+app.onload=async()=>{
+ const w=app.contentWindow,d=w.document,checks=[];
+ const check=(name,value)=>checks.push(`${value?'PASS':'FAIL'}:${name}`);
+ const change=(input,value)=>{input.value=value;input.dispatchEvent(new w.Event(input.tagName==='SELECT'?'change':'input',{bubbles:true}));};
+ const setRow=(index,value,gross,net,preparation=false)=>{
+  const container=preparation?'#preparationComponentsEditor':'#recipeComponentsEditor',prefix=preparation?'preparation-component':'component';
+  let row=d.querySelectorAll(container+' .component-editor-row')[index];change(row.querySelector('select.'+prefix+'-ingredient'),value);
+  row=d.querySelectorAll(container+' .component-editor-row')[index];change(row.querySelector('input.'+prefix+'-gross'),gross);change(row.querySelector('input.'+prefix+'-net'),net);
+ };
+ try{
+  w.eval(`
+   for(const [id,name,unit,cost] of [['manty-flour','Мука для теста','кг',100],['manty-water','Вода для теста','л',0],['manty-meat','Мясо для мантов','кг',500]]){
+    ingredients.push({id,name,unit,averageCost:cost,stock:10,limit:0,losses:{}});logisticsState.branchStocks.b1[id]=10;logisticsState.branchCosts.b1[id]=cost;
+   }
+  `);w.renderAll();
+  w.openPreparationForm();d.getElementById('preparationNameInput').value='Тесто для мантов';
+  setRow(0,'manty-flour',600,600,true);d.getElementById('addPreparationComponentButton').click();setRow(1,'manty-water',400,400,true);
+  check('dough-output-is-1000g',Number(d.getElementById('preparationYieldInput').value)===1000);
+  await w.savePreparationForm();
+  const dough=w.eval(`preparations.find(row=>row.name==='Тесто для мантов')`);
+  check('dough-created',!!dough&&dough.cost===60);
+  w.openRecipeForm();d.getElementById('recipeNameInput').value='Манты с тестом п/ф';d.getElementById('recipePriceInput').value=200;
+  check('preparation-is-in-recipe-picker',[...d.querySelector('.component-ingredient').options].some(option=>option.value==='preparation:'+dough.id&&option.textContent.includes('П/Ф')));
+  setRow(0,'preparation:'+dough.id,200,200);d.getElementById('addComponentButton').click();setRow(1,'manty-meat',100,100);
+  check('preparation-mass-unit-is-grams',d.querySelector('#recipeComponentsEditor .composition-quantity > span').textContent==='г');
+  check('manty-output-is-300g',Number(d.getElementById('recipeYieldInput').value)===300);
+  await w.saveRecipeForm();
+  const manty=w.eval(`recipes.find(row=>row.name==='Манты с тестом п/ф')`);
+  check('recipe-keeps-preparation-reference',manty.components[0].preparationId===dough.id&&!manty.components[0].ingredientId);
+  check('recipe-cost-is-proportional',Math.abs(w.recipeCost(manty)-62)<1e-8);
+  check('raw-requirements-expand',Math.abs(w.rawRecipeComponents(manty).find(row=>row.ingredientId==='manty-flour').gross-120)<1e-8);
+  w.openRecipe(manty.id);check('composition-displays-dough',d.getElementById('compositionTable').textContent.includes('Тесто для мантов'));
+  d.getElementById('recipeDrawer').classList.add('hidden');w.openPreparationComposition(dough.id);
+  check('preparation-shows-using-recipe',d.getElementById('preparationCompositionUsedBy').textContent.includes('Манты с тестом п/ф'));
+  w.openPreparationForm(dough.id);
+  check('self-reference-is-not-offered',![...d.querySelector('.preparation-component-ingredient').options].some(option=>option.value==='preparation:'+dough.id));
+  setRow(0,'manty-flour',800,800,true);setRow(1,'manty-water',200,200,true);await w.savePreparationForm();
+  check('preparation-edit-recalculates-recipe',Math.abs(w.recipeCost(manty)-66)<1e-8);
+  w.requestCatalogDelete('preparation',dough.id,dough.name);check('used-preparation-delete-blocked',d.getElementById('confirmCatalogDeleteButton').disabled&&d.getElementById('catalogDeleteStatus').textContent.includes('Манты'));
+  d.getElementById('catalogDeleteModal').classList.add('hidden');
+  w.openBatchForm(manty.id,'b1');change(d.getElementById('batchWeight'),.6);
+  check('production-preview-shows-raw-ingredients',d.getElementById('batchRequirements').textContent.includes('Мука для теста')&&!d.getElementById('batchRequirements').textContent.includes('Тесто для мантов'));
+  await w.saveBatch();
+  check('production-deducts-proportional-flour',Math.abs(w.branchStock('b1','manty-flour')-9.68)<1e-8);
+  check('preparation-not-deducted-a-second-time',w.eval(`!Object.hasOwn(logisticsState.branchStocks.b1,${JSON.stringify(dough.id)})`));
+  check('production-cost-is-correct',Math.abs(w.eval('logisticsState.batches[0].cost')-132)<1e-8);
+  if(new URLSearchParams(location.search).has('preview')){app.style.cssText='position:fixed;inset:0;width:100%;height:100%;border:0';w.openRecipeForm(manty.id);}
+ }catch(error){checks.push('FAIL:runtime:'+error.stack)}
+ results.textContent=checks.join('|');
+};
+</script>

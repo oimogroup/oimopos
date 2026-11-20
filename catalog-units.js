@@ -13,7 +13,7 @@
   function output(components, find) {
     let total = 0;
     for (const component of components) {
-      const weight = netWeight(component, find(component.ingredientId));
+      const weight = netWeight(component, find(component.ingredientId, component));
       if (weight == null) return null;
       total += weight;
     }

@@ -2,6 +2,7 @@
 (function(global){
  'use strict';
  const copy=value=>JSON.parse(JSON.stringify(value));
+ const rawComponents=(recipe,state)=>global.CatalogComposition ? global.CatalogComposition.flatten(recipe,state) : recipe.rawComponents || recipe.components || [];
  const round=value=>Math.round((value+Number.EPSILON)*100)/100;
  const require=(ok,message)=>{if(!ok){const error=new Error(message);error.status=422;throw error;}};
  function pending(device){return (device.receipts||[]).filter(r=>r.status!=='synced');}
@@ -22,7 +23,7 @@
    }
   }
   if(state.serviceMode==='restaurant')for(const recipe of state.recipes){
-   const capacities=(recipe.components||[]).map(c=>({amount:Number(c.gross??c.net)/1000,id:c.ingredientId})).filter(c=>c.amount>0).map(c=>Number(stocks[c.id]||0)/c.amount);
+   const capacities=rawComponents(recipe,state).map(c=>({amount:Number(c.gross??c.net)/1000,id:c.ingredientId})).filter(c=>c.amount>0).map(c=>Number(stocks[c.id]||0)/c.amount);
    const fractional=global.CompanySettings.normalize(state.companySettings).general.fractional;
    const scale=fractional?100:1;recipe.availableToOrder=Math.max(0,Math.floor((Math.min(...capacities,Number(recipe.availableToOrder||0))+1e-9)*scale)/scale);
   }
@@ -52,7 +53,7 @@
    if(product){require(!raw.lotId,'Для товара не выбирается партия.');stocks[id]=Number(stocks[id]||0)-qty;require(stocks[id]>=-1e-6,'Недостаточно товара: '+item.name);deductions.push({kind:'stock',id,quantity:qty});}
    else if(state.serviceMode==='restaurant'){
     require(!raw.lotId&&recipe.components?.length,'Проверьте техкарту блюда.');unitCost=0;
-    for(const c of recipe.components){const required=Number(c.gross??c.net)/1000*qty,ingredient=String(c.ingredientId);stocks[ingredient]=Number(stocks[ingredient]||0)-required;require(stocks[ingredient]>=-1e-6,'Недостаточно сырья: '+item.name);deductions.push({kind:'stock',id:ingredient,quantity:required});unitCost+=required*Number(costs[ingredient]||0)/qty;}
+    for(const c of rawComponents(recipe,state)){const required=Number(c.gross??c.net)/1000*qty,ingredient=String(c.ingredientId);stocks[ingredient]=Number(stocks[ingredient]||0)-required;require(stocks[ingredient]>=-1e-6,'Недостаточно сырья: '+item.name);deductions.push({kind:'stock',id:ingredient,quantity:required});unitCost+=required*Number(costs[ingredient]||0)/qty;}
    }else{
     const lot=recipe.availableLots?.find(l=>l.id===raw.lotId);require(lot&&Number(lot.available)>=qty,'Недостаточно принятых порций: '+item.name);lot.available-=qty;deductions.push({kind:'lot',id,lotId:raw.lotId,quantity:qty});
    }

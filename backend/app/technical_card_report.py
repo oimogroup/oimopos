@@ -94,7 +94,8 @@ def workbook(recipes, preparations, ingredients_by_id):
         card_name = item.get('name', '')
         kind = item.get('kind', '')
         for component in item.get('components', []) or []:
-            ingredient = ingredients_by_id.get(str(component.get('ingredientId')), {})
+            source_id = 'preparation:' + str(component['preparationId']) if component.get('preparationId') is not None else str(component.get('ingredientId'))
+            ingredient = ingredients_by_id.get(source_id, {})
             unit = ingredient.get('unit', '')
             unit_cost = _number(ingredient.get('averageCost'))
             line_cost = (unit_cost or Decimal(0)) * _number(component.get('gross') or 0) / 1000

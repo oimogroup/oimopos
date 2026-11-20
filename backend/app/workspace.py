@@ -1,5 +1,6 @@
 from __future__ import annotations
 from . import custody
+from .composition import CompositionError, flatten as flatten_composition, preparation_users
 
 import re
 from copy import deepcopy
@@ -538,9 +539,14 @@ def _ensure_stations(state: dict[str, Any]) -> None:
     ]
 
 
-def recipe_requirements(recipe, quantity=1):
+def recipe_requirements(recipe, quantity=1, state=None, strict=False):
     requirements = {}
-    for component in recipe.get("components", []):
+    try:
+        nested = any(component.get("preparationId") is not None for component in recipe.get("components", []))
+        components = flatten_composition(state, recipe, strict=strict) if state is not None and (nested or strict) else recipe.get("components", [])
+    except CompositionError as error:
+        raise WorkspaceError(str(error)) from error
+    for component in components:
         item_id = str(component["ingredientId"])
         amount = _number(component.get("gross", component.get("net"))) / 1000 * quantity
         requirements[item_id] = requirements.get(item_id, 0) + amount
@@ -548,7 +554,10 @@ def recipe_requirements(recipe, quantity=1):
 
 
 def restaurant_availability(state, recipe, branch_id):
-    requirements = recipe_requirements(recipe)
+    try:
+        requirements = recipe_requirements(recipe, state=state)
+    except WorkspaceError:
+        return 0
     capacity = min((_stock(state, branch_id, key) / amount for key, amount in requirements.items() if amount > 0), default=0)
     scale = 100 if company_settings(state)["general"]["fractional"] else 1
     return max(0, floor(capacity * scale + 1e-9) / scale)
@@ -557,7 +566,10 @@ def restaurant_availability(state, recipe, branch_id):
 def production_context(state, branch_id):
     recipes = []
     for recipe in state.get("recipes", []):
-        requirements = recipe_requirements(recipe)
+        try:
+            requirements = recipe_requirements(recipe, state=state)
+        except WorkspaceError:
+            requirements = {}
         portions = min((_stock(state, branch_id, key) / amount for key, amount in requirements.items() if amount > 0), default=0)
         recipes.append({"id": recipe["id"], "name": recipe["name"], "yield": recipe.get("yield", 0),
                         "maxWeight": max(0, floor(portions * _number(recipe.get("yield")) + 1e-8) / 1000)})
@@ -578,6 +590,13 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     _sync_menu_categories(output)
     output["recipeCategories"] = output["menuCategories"]
     output["productCategories"] = output["menuCategories"]
+    for recipe in output.get("recipes", []):
+        if any(component.get("preparationId") is not None for component in recipe.get("components", [])):
+            try:
+                recipe["rawComponents"] = flatten_composition(state, recipe)
+            except CompositionError as error:
+                recipe["rawComponents"] = []
+                recipe["compositionError"] = str(error)
     freeze_batch_portions(output)
     output["serviceMode"] = "restaurant" if user.get("plan_code") == "restaurant" else "canteen"
     if output["serviceMode"] == "restaurant" and user.get("branch_id"):
@@ -1245,23 +1264,36 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         seen: set[tuple[str, str]] = set()
         calculated_cost = 0.0
         for raw in payload.get("components", []):
+            _require(isinstance(raw, dict), "Проверьте состав полуфабриката")
+            preparation_id = raw.get("preparationId")
             ingredient_id = str(raw.get("ingredientId", ""))
-            ingredient = _find(state["ingredients"], ingredient_id)
+            source = _find(state.get("preparations", []), preparation_id) if preparation_id is not None else _find(state["ingredients"], ingredient_id)
             gross = _number(raw.get("gross"))
             net = _number(raw.get("net"))
-            _require(ingredient is not None and gross > 0 and net > 0 and net <= gross and ingredient_id not in seen, "Проверьте состав полуфабриката")
-            seen.add(ingredient_id)
-            components.append({**{key: raw[key] for key in ("netWeightGrams", "pieceWeightGrams", "method") if key in raw}, "ingredientId": ingredient_id, "gross": gross, "net": net})
-            branch_costs = [
-                _number(costs.get(ingredient_id))
-                for costs in state["logisticsState"].get("branchCosts", {}).values()
-                if _number(costs.get(ingredient_id)) > 0
-            ]
-            unit_cost = sum(branch_costs) / len(branch_costs) if branch_costs else _number(ingredient.get("averageCost"))
-            calculated_cost += unit_cost * gross / 1000
+            if net > gross and isclose(net, gross, rel_tol=1e-9, abs_tol=1e-6):
+                net = gross
+            key = ("preparation", str(preparation_id)) if preparation_id is not None else ("ingredient", ingredient_id)
+            _require(source is not None and gross > 0 and net > 0 and net <= gross and key not in seen, "Проверьте состав полуфабриката: компонент должен существовать, брутто и нетто — больше нуля, нетто не больше брутто; без повторов")
+            _require(preparation_id is None or not ingredient_id, "Укажите либо ингредиент, либо полуфабрикат в строке состава")
+            seen.add(key)
+            identity = {"preparationId": str(preparation_id)} if preparation_id is not None else {"ingredientId": ingredient_id}
+            components.append({**{key: raw[key] for key in ("netWeightGrams", "pieceWeightGrams", "method") if key in raw}, **identity, "gross": gross, "net": net})
         _require(components, "Добавьте хотя бы один ингредиент")
+        candidate_id = str(preparation["id"] if preparation else payload.get("id") or f"pf-{uuid4().hex[:10]}")
+        candidate = {"id": candidate_id, "name": name, "yield": output_yield, "components": components}
+        candidate_state = {**state, "preparations": [row for row in preparations if str(row["id"]) != candidate_id] + [candidate]}
+        try:
+            leaves = flatten_composition(candidate_state, candidate, (candidate_id,), strict=True)
+        except CompositionError as error:
+            raise WorkspaceError(str(error)) from error
+        for leaf in leaves:
+            ingredient_id = leaf["ingredientId"]
+            ingredient = _find(state["ingredients"], ingredient_id)
+            branch_costs = [_number(costs.get(ingredient_id)) for costs in state["logisticsState"].get("branchCosts", {}).values() if _number(costs.get(ingredient_id)) > 0]
+            unit_cost = sum(branch_costs) / len(branch_costs) if branch_costs else _number(ingredient.get("averageCost"))
+            calculated_cost += unit_cost * leaf["gross"] / 1000
         if preparation is None:
-            preparation = {"id": str(payload.get("id") or f"pf-{uuid4().hex[:10]}")}
+            preparation = {"id": candidate_id}
             preparations.append(preparation)
         preparation.update({
             **_appearance(payload, preparation),
@@ -1423,8 +1455,11 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             for index, raw in enumerate(raw_components if isinstance(raw_components, list) else [], start=1):
                 _require(isinstance(raw, dict), f"Строка {index}: некорректный состав ингредиента")
                 ingredient_id = str(raw.get("ingredientId", ""))
-                ingredient = _find(state["ingredients"], ingredient_id)
-                _require(ingredient is not None, f"Строка {index}: ингредиент не найден. Выберите его из списка")
+                preparation_id = raw.get("preparationId")
+                ingredient = _find(state.get("preparations", []), preparation_id) if preparation_id is not None else _find(state["ingredients"], ingredient_id)
+                source_label = "полуфабрикат" if preparation_id is not None else "ингредиент"
+                _require(ingredient is not None, f"Строка {index}: {source_label} не найден. Выберите его из списка")
+                _require(preparation_id is None or not ingredient_id, f"Строка {index}: укажите либо ингредиент, либо полуфабрикат")
                 label = f"Строка {index}, «{ingredient.get('name', ingredient_id)}»"
                 gross = _number(raw.get("gross"))
                 net = _number(raw.get("net"))
@@ -1436,9 +1471,11 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 unit = "шт" if ingredient.get("unit") == "шт" else "мл" if ingredient.get("unit") == "л" else "г"
                 scale = 1000 if unit == "шт" else 1
                 _require(net <= gross, f"{label}: нетто ({net / scale:g} {unit}) больше брутто ({gross / scale:g} {unit})")
-                components.append({**raw, "ingredientId": ingredient_id, "gross": gross, "net": net})
+                identity = {"preparationId": str(preparation_id)} if preparation_id is not None else {"ingredientId": ingredient_id}
+                components.append({**raw, **identity, "gross": gross, "net": net})
                 calculated_yield += net
             _require(components and calculated_yield > 0, "Добавьте хотя бы один ингредиент с положительным брутто и нетто")
+            recipe_requirements({"components": components}, state=state, strict=True)
             output_yield = _number(payload.get("yield")) if "yield" in payload else calculated_yield
             _require(output_yield > 0, "Укажите выход готового блюда")
             station = str(payload.get("station", "")).strip()
@@ -1493,6 +1530,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         elif kind == "preparation":
             entry = _find(state.setdefault("preparations", []), entry_id)
             _require(entry is not None, "Полуфабрикат не найден", 404)
+            users = preparation_users(state, entry_id)
+            _require(not users, "Полуфабрикат используется в составе: " + ", ".join(row.get("name", str(row["id"])) for row in users[:5]) + ". Сначала измените связанные составы", 409)
             state["preparations"].remove(entry)
         elif kind in {"ingredient", "product"}:
             collection = state["ingredients"] if kind == "ingredient" else state["products"]
@@ -1509,6 +1548,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _require(not document_uses_item(entry_id), "Позицию нельзя удалить: она есть в складских документах", 409)
             _require(not sale_uses_item(entry_id), "Позицию нельзя удалить: по ней уже есть продажи", 409)
             if kind == "ingredient":
+                linked_preparations = [row for row in state.get("preparations", []) if any(str(component.get("ingredientId", "")) == entry_id for component in row.get("components", [])) and preparation_users(state, row["id"])]
+                _require(not linked_preparations, "Ингредиент входит в используемый полуфабрикат. Сначала измените его состав", 409)
                 for item in [*state["recipes"], *state.get("preparations", [])]:
                     item["components"] = [row for row in item.get("components", []) if str(row.get("ingredientId")) != entry_id]
             collection.remove(entry)
@@ -2070,7 +2111,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         weight = _number(payload.get("weight"))
         _require(recipe and weight > 0, "Укажите блюдо и фактический вес")
         equivalent = weight * 1000 / _number(recipe["yield"], minimum=0.001)
-        requirements = [( {"ingredientId": key}, amount) for key, amount in recipe_requirements(recipe, equivalent).items()]
+        requirements = [( {"ingredientId": key}, amount) for key, amount in recipe_requirements(recipe, equivalent, state).items()]
         _require(requirements and any(required > 0 for _, required in requirements), "Заполните состав техкарты")
         shortages = []
         for component, required in requirements:
@@ -2354,7 +2395,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 _require(not raw.get("lotId"), "Партия указывается только для блюда с витрины")
             if recipe and user.get("plan_code") == "restaurant":
                 _require(settings["general"]["fractional"] or quantity.is_integer(), "Блюда по заказу продаются целыми порциями")
-                requirements = recipe_requirements(recipe, quantity)
+                requirements = recipe_requirements(recipe, quantity, state)
                 _require(requirements and any(requirements.values()), f"Заполните состав техкарты: {recipe['name']}")
                 for ingredient_id, required in requirements.items():
                     ingredient_deductions[ingredient_id] = ingredient_deductions.get(ingredient_id, 0) + required

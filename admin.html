@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=catalog-save-feedback-1" />
+    <link rel="stylesheet" href="admin.css?v=list-filters-1" />
     <link rel="stylesheet" href="minimal.css?v=modifiers-1" />
       <link rel="stylesheet" href="oimo.css?v=photo-upload-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
@@ -222,7 +222,7 @@
             <div class="menu-pane" id="menu-pane-products">
               <article class="panel table-panel">
                 <div class="poster-list-meta"><strong><span id="productsCount">0</span> товаров</strong></div>
-                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="productSearch" type="search" placeholder="Быстрый поиск" /></label><select id="productCategoryFilter"><option>Все категории</option></select><select><option>Столовая №1 — Манаса</option></select></div>
+                <div class="table-toolbar poster-toolbar"><label class="admin-search"><svg class="ui-icon" aria-hidden="true"><use href="#ui-search"/></svg><input id="productSearch" type="search" placeholder="Быстрый поиск" /></label><select id="productCategoryFilter"><option>Все категории</option></select></div>
                 <table class="data-table poster-menu-table"><thead><tr><th>Название</th><th>Категория</th><th>Штрихкод</th><th>Себестоимость</th><th>Цена</th><th>Наценка</th><th>Остаток</th><th class="catalog-actions-heading">Действия</th></tr></thead><tbody id="productsTable"></tbody></table>
               </article>
             </div>
@@ -490,6 +490,7 @@
         <div class="recipe-overview"><div><span>Выход партии</span><strong id="preparationCompositionYield"></strong></div><div><span>Себестоимость партии</span><strong id="preparationCompositionCost"></strong></div><div><span>Себестоимость 1 кг</span><strong id="preparationCompositionUnitCost"></strong></div></div>
         <div class="drawer-section-title"><h3>Состав на партию</h3><button class="secondary-action" id="editPreparationComposition" type="button">Изменить</button></div>
         <table class="composition-table"><thead><tr><th>Ингредиент</th><th>Брутто</th><th>Нетто</th><th>Стоимость</th></tr></thead><tbody id="preparationCompositionTable"></tbody></table>
+        <section><h3>Используется в составе</h3><p id="preparationCompositionUsedBy"></p></section>
         <section id="preparationCompositionProcessSection" hidden><h3>Приготовление</h3><p id="preparationCompositionProcess"></p></section>
         <button class="primary-button preparation-composition-done" id="preparationCompositionDone" type="button">Закрыть</button>
       </aside>
@@ -813,7 +814,7 @@
             </div>
           </section>
           <section class="catalog-form-section">
-            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Расход продуктов на одну порцию: брутто и нетто</p></div><button class="catalog-add-row secondary-action" id="addComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
+            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Расход продуктов на одну порцию: брутто и нетто</p></div><button class="catalog-add-row secondary-action" id="addComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент или п/ф</button></div>
             <div class="recipe-components-editor" id="recipeComponentsEditor"></div><div class="composition-output"><label class="catalog-calculated-field"><span>Выход по нетто ингредиентов</span><div class="unit-input"><input id="recipeYieldInput" type="number" min="0.001" step="0.001" value="0" readonly aria-readonly="true" /><b>г</b></div><small>Сумма нетто компонентов. Для ингредиентов в штуках укажите массу одной штуки.</small></label></div>
           </section>
           <section class="catalog-form-section modifier-form-section"><div class="catalog-section-heading"><span>3</span><div><h3>Модификаторы для кассы</h3><p>Варианты выбора, доплата и списание ингредиентов или товаров</p></div></div><div id="recipeModifierEditor"></div></section>
@@ -883,7 +884,7 @@
             </div>
           <details class="catalog-disclosure"><summary>Категория и цех</summary><div class="catalog-form-grid catalog-disclosure-body"><label><span>Категория</span><select id="preparationCategoryInput"><option>Заготовки кухни</option><option>Холодный цех</option><option>Соусы и заправки</option><option>Выпечка</option><option>Без категории</option></select></label><label><span>Цех приготовления</span><select id="preparationStationInput"></select></label></div></details></section>
           <section class="catalog-form-section">
-            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Укажите брутто и нетто сырья на одну производственную партию</p></div><button class="catalog-add-row secondary-action" id="addPreparationComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент</button></div>
+            <div class="catalog-section-heading catalog-section-heading-action"><span>2</span><div><h3>Состав</h3><p>Укажите брутто и нетто сырья на одну производственную партию</p></div><button class="catalog-add-row secondary-action" id="addPreparationComponentButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Добавить ингредиент или п/ф</button></div>
             <div class="recipe-components-editor" id="preparationComponentsEditor"></div><div class="composition-output"><label class="catalog-calculated-field"><span>Выход партии по нетто ингредиентов</span><div class="unit-input"><input id="preparationYieldInput" type="number" min="0.001" step="any" readonly aria-readonly="true" /><b>г</b></div><small>Сумма нетто компонентов. Для ингредиентов в штуках укажите массу одной штуки.</small></label></div>
             <details class="catalog-disclosure"><summary>Комментарий</summary>              <label class="catalog-field-full"><span>Комментарий</span><input id="preparationUsedInInput" type="text" placeholder="Например, используется для лагмана и супов" /></label></details>
           </section>
@@ -1135,17 +1136,20 @@
     <dialog id="payrollDialog" class="payroll-dialog"><form id="payrollForm"><header><div><p id="payrollDialogEyebrow">Зарплата</p><h2 id="payrollDialogTitle"></h2></div><button type="button" id="payrollDialogClose" class="icon-button" aria-label="Закрыть">×</button></header><div id="payrollFormFields"></div><p id="payrollFormError" role="alert"></p><footer><button type="button" class="secondary-action" id="payrollDialogCancel">Отмена</button><button type="submit" class="primary-button" id="payrollDialogSubmit">Сохранить</button></footer></form></dialog>
     <div class="admin-toast hidden" id="adminToast"></div>
     <script src="numeric-inputs.js?v=1"></script>
-    <script src="api-client.js?v=compact-catalog-1"></script>
+    <script src="api-client.js?v=filtered-export-1"></script>
     <script src="catalog-cover.js?v=photo-upload-2"></script>
     <script src="company-settings.js?v=modifiers-1"></script>
-    <script src="catalog-units.js?v=1"></script>
+    <script src="catalog-units.js?v=preparation-components-1"></script>
+    <script src="composition-core.js?v=1"></script>
     <script src="catalog-modifiers.js?v=modifiers-2"></script>
-    <script src="ingredients-list.js?v=prices-per-kg-9"></script>
-    <script src="ingredient-picker.js?v=1"></script>
+    <script src="ingredients-list.js?v=list-filters-1"></script>
+    <script src="ingredient-picker.js?v=preparation-components-1"></script>
     <script src="product-variants.js?v=variant-removal-1"></script>
     <script src="recipe-variants.js?v=save-feedback-1"></script>
     <script src="custody.js?v=actions-15"></script>
-    <script src="admin.js?v=shared-menu-categories-1"></script>
+    <script src="admin-filters.js?v=1"></script>
+    <script src="admin-list-filters.js?v=1"></script>
+    <script src="admin.js?v=preparation-components-1"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

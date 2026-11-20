@@ -8,6 +8,7 @@ from decimal import Decimal
 import re
 from uuid import uuid4
 from urllib.parse import quote, urlsplit
+from typing import Annotated, Literal
 
 from fastapi import Cookie, Depends, FastAPI, Header, HTTPException, Query, Request, Response, status
 from fastapi.middleware.cors import CORSMiddleware
@@ -2732,14 +2733,36 @@ def list_technical_cards(user: dict = Depends(current_user), connection: Connect
 
 
 @app.get("/api/v1/technical-cards/export", tags=["technical-cards"])
-def export_technical_cards(user: dict = Depends(current_user), connection: Connection = Depends(get_connection)) -> dict:
+def export_technical_cards(
+    user: dict = Depends(current_user), connection: Connection = Depends(get_connection),
+    kind: Literal["recipes", "preparations"] | None = None,
+    item_id: Annotated[list[str] | None, Query()] = None,
+) -> dict:
     _protect_cost_data(user)
     tenant_id = _tenant_user(user)
     from .technical_card_report import workbook, filename
     state = _workspace_row(connection, tenant_id)["payload"]
     recipes = state.get("recipes", [])
     preparations = state.get("preparations", [])
+    if kind is not None:
+        selected = set(item_id) if item_id is not None else None
+        recipes = [row for row in recipes if selected is None or str(row["id"]) in selected] if kind == "recipes" else []
+        preparations = [row for row in preparations if selected is None or str(row["id"]) in selected] if kind == "preparations" else []
     ingredients_by_id = {str(item["id"]): item for item in state.get("ingredients", [])}
+    from .composition import CompositionError, catalog_sources, flatten
+    referenced_preparations = {str(component["preparationId"]) for row in [*recipes, *preparations]
+                               for component in row.get("components", []) if component.get("preparationId") is not None}
+    try:
+        for source in catalog_sources(state):
+            if source.get("preparationId") in referenced_preparations:
+                raw = next(row for row in state["preparations"] if str(row["id"]) == source["preparationId"])
+                output = float(raw.get("yield") or 0)
+                if output <= 0:
+                    raise CompositionError(f'Проверьте выход полуфабриката «{raw.get("name", "")}»')
+                cost = sum(float(ingredients_by_id[leaf["ingredientId"]].get("averageCost") or 0) * leaf["gross"] / 1000 for leaf in flatten(state, raw))
+                ingredients_by_id[source["id"]] = {**source, "averageCost": cost * 1000 / output}
+    except CompositionError as error:
+        raise HTTPException(status_code=422, detail=str(error)) from error
     return {"xlsx": workbook(recipes, preparations, ingredients_by_id), "filename": filename(len(recipes) + len(preparations))}
 
 

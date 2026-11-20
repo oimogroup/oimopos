@@ -361,7 +361,8 @@ def preview(state, encoded, file_name):
         raise ValueError("Файл пуст или его размер больше 2 МБ")
     rows = _xlsx(raw) if suffix == "xlsx" else _csv(raw)
     catalog = {}
-    for item in state.get("ingredients", []):
+    from .composition import catalog_sources
+    for item in catalog_sources(state):
         key = normalize(item.get("name", ""))
         catalog[key] = "" if key in catalog else str(item["id"])
     for row in rows:
@@ -373,7 +374,8 @@ def prepare_import(state, items):
     """Validate every card before writes; convert to workspace milli stock units."""
     if not isinstance(items, list) or not 0 < len(items) <= MAX_ROWS:
         raise ValueError("Импортируйте от 1 до 1000 строк состава")
-    catalog = {str(item["id"]): item for item in state.get("ingredients", [])}
+    from .composition import catalog_sources
+    catalog = {str(item["id"]): item for item in catalog_sources(state)}
     units = {"кг": ("mass", Decimal(1000)), "г": ("mass", Decimal(1)),
              "л": ("volume", Decimal(1000)), "мл": ("volume", Decimal(1)),
              "шт": ("count", Decimal(1000))}
@@ -431,7 +433,8 @@ def prepare_import(state, items):
         else:
             # Default calculation: 1 ml = 1 g until an explicit yield is supplied.
             group["calculatedYield"] += net
-        component = group["components"].setdefault(ingredient_id, {"ingredientId": ingredient_id, "gross": Decimal(0), "net": Decimal(0)})
+        identity = {"preparationId": ingredient["preparationId"]} if ingredient.get("preparationId") is not None else {"ingredientId": ingredient_id}
+        component = group["components"].setdefault(ingredient_id, {**identity, "gross": Decimal(0), "net": Decimal(0)})
         component["gross"] += gross
         component["net"] += net
         if explicit_mass is not None:

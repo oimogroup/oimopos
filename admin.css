@@ -1750,3 +1750,22 @@ body[data-ui=admin] .recipe-variant-toolbar :is(button,select) { min-height:40px
 
 .catalog-save-status {flex:1;min-width:0;color:var(--muted);font-size:12px;}
 :is(#saveRecipeButton,#savePreparationButton) {display:inline-flex;align-items:center;justify-content:center;gap:8px;}
+
+/* List filters expand in the document flow, including inside scrollable tables. */
+.list-filter-tools {display:flex;align-items:center;flex-wrap:wrap;gap:8px;margin-left:auto;max-width:100%;}
+.list-filter-disclosure > summary {list-style:none;cursor:pointer;min-height:38px;display:flex;align-items:center;padding:0 12px;border:1px solid var(--line);border-radius:7px;background:#fff;font-size:13px;color:var(--ink);}
+.list-filter-disclosure > summary::-webkit-details-marker {display:none;}
+.list-filter-tools:has(.list-filter-disclosure[open]) {flex-basis:100%;width:100%;}
+.list-filter-disclosure[open] {flex:1 1 100%;}
+.list-filter-disclosure[open] > summary {width:max-content;margin-bottom:10px;background:#f4f0f7;}
+.list-filter-panel {display:grid;grid-template-columns:repeat(auto-fit,minmax(170px,1fr));gap:12px;padding:14px;border:1px solid var(--line);border-radius:8px;background:#faf9fc;}
+.list-filter-panel > label {display:grid;gap:6px;font-size:12px;color:var(--muted);min-width:0;}
+.list-filter-panel :is(input,select) {height:38px;min-width:0;width:100%;box-sizing:border-box;padding:0 10px;border:1px solid var(--line);border-radius:7px;background:white;color:var(--ink);font:inherit;}
+.list-filter-panel .ux-filter-fields {grid-column:1/-1;display:flex;flex-wrap:wrap;gap:10px;}
+.list-filter-panel .ux-filter-fields select {flex:1 1 160px;}
+.list-filter-result {font-size:12px;color:var(--muted);white-space:nowrap;}
+.list-filter-tools [hidden] {display:none!important;}
+#documentFilters .list-filter-tools {grid-column:1/-1;}
+@media(max-width:700px) {.list-filter-tools{width:100%;margin:0;}.list-filter-panel{grid-template-columns:1fr 1fr;padding:10px;gap:10px;}.list-filter-panel input{font-size:16px;}.list-filter-result{margin-left:auto;}}
+@media(max-width:380px) {.list-filter-panel{grid-template-columns:1fr;}}
+@media print {.list-filter-tools{display:none!important;}}

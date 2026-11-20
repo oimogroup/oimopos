@@ -3,8 +3,8 @@
   const columns = { category: "Категория", unit: "Ед. измерения", cost: "Себестоимость", stock: "Остаток", value: "Сумма остатков", losses: "Потери", usage: "В составе" };
   const el = id => document.getElementById(id);
   const links = item => [
-    ...recipes.filter(row => (row.components || []).some(c => String(c.ingredientId) === String(item.id))).map(row => ({ ...row, kind: "recipe", label: "Техкарта" })),
-    ...preparations.filter(row => (row.components || []).some(c => String(c.ingredientId) === String(item.id))).map(row => ({ ...row, kind: "preparation", label: "Полуфабрикат" }))
+    ...recipes.filter(row => CatalogComposition.flatten(row,{ingredients,preparations}).some(c => String(c.ingredientId) === String(item.id))).map(row => ({ ...row, kind: "recipe", label: "Техкарта" })),
+    ...preparations.filter(row => CatalogComposition.flatten(row,{ingredients,preparations}).some(c => String(c.ingredientId) === String(item.id))).map(row => ({ ...row, kind: "preparation", label: "Полуфабрикат" }))
   ];
   function choices(select, entries, first = "") {
     const previous = select.value;
@@ -23,7 +23,7 @@
       return (!query || [item.name, item.id, item.barcode].some(value => String(value || "").toLocaleLowerCase("ru").includes(query))) && (!category || (item.category || "Без категории") === category) && (!unit || item.unit === unit) && (!stock || (stock === "positive" ? row.stock > 0 : stock === "zero" ? row.stock === 0 : row.stock < Number(item.limit || 0))) && (!usage || (usage === "used" ? row.links.length > 0 : !row.links.length));
     });
     const sort = el("ingredientSort").value, key = sort.split("-")[0], direction = sort.endsWith("-desc") ? -1 : 1;
-    return result.sort((a, b) => direction * (key === "name" ? a.item.name.localeCompare(b.item.name, "ru", { numeric: true }) : a[key] - b[key]) || String(a.item.id).localeCompare(String(b.item.id)));
+    return result.filter(row => window.AdminFilters?.matches("ingredient-list",row) ?? true).sort((a, b) => direction * (key === "name" ? a.item.name.localeCompare(b.item.name, "ru", { numeric: true }) : a[key] - b[key]) || String(a.item.id).localeCompare(String(b.item.id)));
   }
   function applyColumns() {
     document.querySelectorAll("[data-ingredient-column]").forEach(cell => cell.classList.toggle("hidden", hiddenColumns.has(cell.dataset.ingredientColumn)));
@@ -33,6 +33,7 @@
     choices(branchSelect, branches.filter(b => currentRole === "owner" || b.id === currentSession.branchId).map(b => [b.id, `Склад · ${b.name}`]));
     if (!hadBranch && [...branchSelect.options].some(o => o.value === currentSession.branchId)) branchSelect.value = currentSession.branchId;
     choices(el("ingredientCategoryFilter"), [...new Set(ingredients.map(i => i.category || "Без категории"))].sort((a,b) => a.localeCompare(b,"ru")).map(c => [c,c]), '<option value="">Все категории</option>');
+    window.AdminFilters?.sync("ingredient-list");
     const visible = rows();
     el("ingredientCount").textContent = ingredients.length;
     el("ingredientFilteredCount").textContent = `· показано ${visible.length}`;
@@ -100,7 +101,7 @@
     el("ingredientColumnOptions").innerHTML = Object.entries(columns).map(([key,label]) => `<label><input type="checkbox" data-ingredient-column-toggle="${key}" ${hiddenColumns.has(key) ? "" : "checked"}>${label}</label>`).join("");
     el("ingredientColumnOptions").addEventListener("change", event => { const key = event.target.dataset.ingredientColumnToggle; if (!key) return; if (event.target.checked) hiddenColumns.delete(key); else hiddenColumns.add(key); try { sessionStorage.setItem("ashkana-ingredient-columns-v3", JSON.stringify([...hiddenColumns])); } catch {} applyColumns(); });
     for (const id of ["ingredientCategoryFilter", "ingredientUnitFilter", "ingredientBranchFilter", "ingredientStockFilter", "ingredientUsageFilter", "ingredientSort"]) el(id).addEventListener("change", render);
-    el("resetIngredientFilters").addEventListener("click", () => { ["ingredientSearch", "ingredientCategoryFilter", "ingredientUnitFilter", "ingredientStockFilter", "ingredientUsageFilter"].forEach(id => { el(id).value = ""; }); el("ingredientSort").value = "name"; expanded = null; render(); });
+    el("resetIngredientFilters").addEventListener("click", () => { if (window.AdminFilters) { window.AdminFilters.reset("ingredient-list"); return; } ["ingredientSearch", "ingredientCategoryFilter", "ingredientUnitFilter", "ingredientStockFilter", "ingredientUsageFilter"].forEach(id => { el(id).value = ""; }); el("ingredientSort").value = "name"; expanded = null; render(); });
     el('ingredientNameSort').addEventListener('click',()=>{el('ingredientSort').value = el('ingredientSort').value === 'name' ? 'name-desc' : 'name';render();});
     el("ingredientsTable").addEventListener("click", event => {
       const more = event.target.closest('[data-ingredient-more]');

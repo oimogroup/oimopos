@@ -180,7 +180,11 @@
     lockPos: () => request("/pos/lock", { method: "POST", body: "{}" }),
     previewSalesImport: (payload) => request("/pos/sales-import/preview", {method: "POST", body: JSON.stringify(payload)}),
     salesReport: (params) => request(`/pos/sales-report?${new URLSearchParams(params)}`),
-    exportTechnicalCards: () => request("/technical-cards/export"),
+    exportTechnicalCards: selection => {
+      const params = new URLSearchParams();
+      if (selection) { params.set('kind', selection.kind); selection.ids.forEach(id => params.append('item_id', String(id))); }
+      return request(`/technical-cards/export${params.size ? `?${params}` : ''}`);
+    },
     importTechnicalCardsPreview: payload => request("/technical-cards/import/preview", { method: "POST", body: JSON.stringify(payload) }),
     importTechnicalCardsApply: payload => request("/technical-cards/import/apply", { method: "POST", body: JSON.stringify(payload) }),
     posShifts: (limit = 200) => request(`/pos/shifts?limit=${encodeURIComponent(limit)}`),

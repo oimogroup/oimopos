@@ -7,7 +7,7 @@
       select.before(wrap); wrap.append(select); select.hidden = true;
       const input = document.createElement('input'), list = document.createElement('div');
       list.id = `ingredient-options-${++serial}`; list.className = 'ingredient-picker-options'; list.hidden = true; list.setAttribute('role', 'listbox');
-      input.type = 'text'; input.autocomplete = 'off'; input.placeholder = 'Поиск ингредиента'; input.setAttribute('aria-label', 'Поиск ингредиента'); input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-controls', list.id); input.setAttribute('aria-expanded', 'false');
+      input.type = 'text'; input.autocomplete = 'off'; input.placeholder = 'Поиск ингредиента или полуфабриката'; input.setAttribute('aria-label', 'Поиск ингредиента или полуфабриката'); input.setAttribute('role', 'combobox'); input.setAttribute('aria-autocomplete', 'list'); input.setAttribute('aria-controls', list.id); input.setAttribute('aria-expanded', 'false');
       wrap.append(input, list);
       let options = [], active = -1;
       const restore = () => { input.value = select.selectedOptions[0]?.textContent || ''; };
@@ -17,7 +17,7 @@
       const show = query => {
         options = [...select.options].filter(o => o.textContent.toLocaleLowerCase('ru').includes(query.trim().toLocaleLowerCase('ru'))); active = -1; list.replaceChildren();
         options.forEach((option,i) => { const row = document.createElement('div'); row.id = `${list.id}-${i}`; row.setAttribute('role','option'); row.textContent = option.textContent; row.addEventListener('mousedown', e => e.preventDefault()); row.addEventListener('click', () => choose(option)); list.append(row); });
-        if (!options.length) { const empty = document.createElement('p'); empty.textContent = 'Ингредиенты не найдены'; list.append(empty); }
+        if (!options.length) { const empty = document.createElement('p'); empty.textContent = 'Компоненты не найдены'; list.append(empty); }
         list.hidden = false; input.setAttribute('aria-expanded','true'); input.removeAttribute('aria-activedescendant');
       };
       input.addEventListener('focus', () => { input.select(); });
