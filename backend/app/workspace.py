@@ -1,6 +1,6 @@
 from __future__ import annotations
 from . import custody
-from .composition import CompositionError, flatten as flatten_composition, preparation_users
+from .composition import stock_sources, produced_sources, CompositionError, flatten as flatten_composition, preparation_users
 
 import re
 from copy import deepcopy
@@ -165,7 +165,7 @@ def _next_number(prefix: str, collection: list[dict[str, Any]]) -> str:
 
 
 def _entity(state: dict[str, Any], item_id: Any) -> dict[str, Any] | None:
-    return _find(state["ingredients"], item_id) or _find(state["products"], item_id)
+    return _find(state["ingredients"], item_id) or _find(state["products"], item_id) or _find(produced_sources(state), item_id)
 
 
 def _recipe(state: dict[str, Any], recipe_id: Any) -> dict[str, Any] | None:
@@ -543,7 +543,7 @@ def recipe_requirements(recipe, quantity=1, state=None, strict=False):
     requirements = {}
     try:
         nested = any(component.get("preparationId") is not None for component in recipe.get("components", []))
-        components = flatten_composition(state, recipe, strict=strict) if state is not None and (nested or strict) else recipe.get("components", [])
+        components = flatten_composition(state, recipe, strict=strict, stock=not strict) if state is not None and (nested or strict) else recipe.get("components", [])
     except CompositionError as error:
         raise WorkspaceError(str(error)) from error
     for component in components:
@@ -593,10 +593,13 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     for recipe in output.get("recipes", []):
         if any(component.get("preparationId") is not None for component in recipe.get("components", [])):
             try:
-                recipe["rawComponents"] = flatten_composition(state, recipe)
+                recipe["rawComponents"] = flatten_composition(state, recipe, stock=True)
             except CompositionError as error:
                 recipe["rawComponents"] = []
                 recipe["compositionError"] = str(error)
+    from .catalog_saves import decorate
+    decorate(state, output)
+    output['producedStockItems'] = [{key: row.get(key) for key in ('id', 'preparationId', 'name', 'category', 'unit', 'image', 'itemType')} for row in produced_sources(state)]
     freeze_batch_portions(output)
     output["serviceMode"] = "restaurant" if user.get("plan_code") == "restaurant" else "canteen"
     if output["serviceMode"] == "restaurant" and user.get("branch_id"):
@@ -626,11 +629,12 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     _ensure_finance(output)
     _ensure_supplies(output)
     pos = _ensure_pos(output)
-    for records in (output["logisticsState"].get("batches", []), output["logisticsState"].get("supplies", []), pos["cashMovements"]):
+    for records in (output["logisticsState"].get("batches", []), output["logisticsState"].get("supplies", []), output["logisticsState"].get("preparationProductions", []), output["logisticsState"].get("writeoffs", []), pos["cashMovements"]):
         for record in records:
             for key in ("requestId", "requestPayload", "requestActorId", "requestRegisterId"):
                 record.pop(key, None)
     output.pop("offlinePos", None)
+    output["suppliers"] = [row for row in output.get("suppliers", []) if not row.get("deletedAt")]
     if user["role"] == "owner":
         return output
     output.pop("payrollState", None)
@@ -686,6 +690,8 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     logistics["productionShifts"] = [shift for shift in logistics.get("productionShifts", []) if shift.get("branchId") == branch_id]
     logistics["cashShiftCounts"] = [count for count in logistics.get("cashShiftCounts", []) if count.get("branchId") == branch_id]
     logistics["servingRequests"] = [entry for entry in logistics.get("servingRequests", []) if entry.get("branchId") == branch_id]
+    logistics['writeoffs'] = [row for row in logistics.get('writeoffs', []) if str(row.get('branchId')) == str(branch_id)]
+    logistics['preparationProductions'] = [row for row in logistics.get('preparationProductions', []) if str(row.get('branchId')) == str(branch_id)]
     logistics["branchStocks"] = {branch_id: logistics["branchStocks"].get(branch_id, {})}
     logistics["branchCosts"] = {branch_id: logistics["branchCosts"].get(branch_id, {})}
     logistics["stockLedger"] = [entry for entry in logistics.get("stockLedger", []) if entry.get("branchId") == branch_id]
@@ -704,6 +710,8 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     }
     staff_role = user.get("staff_role") or "branch_manager"
     permissions = user.get("access_permissions")
+    if not (isinstance(permissions, dict) and permissions.get('menu')) and staff_role != 'marketer':
+        output.pop('categoryRevisions', None)
     if isinstance(permissions, dict) and permissions and staff_role != "pos_terminal" and not user.get("register_id"):
         can_inventory = bool(permissions.get("inventory"))
         can_production = bool(permissions.get("production"))
@@ -729,13 +737,16 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
             logistics["pointTransfers"] = []
             logistics["inventories"] = []
             logistics["stockLedger"] = []
+            logistics["writeoffs"] = []
         if not can_production:
             logistics["batches"] = []
+            logistics["preparationProductions"] = []
         if not can_menu and not can_production:
             output["recipes"] = []
             output["preparations"] = []
             output["stations"] = []
         if not (can_menu or can_inventory or can_production):
+            output["producedStockItems"] = []
             output["ingredients"] = []
             output["products"] = []
             output["ingredientCategories"] = []
@@ -755,6 +766,7 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
                             ingredient.pop("unitCost", None)
         return output
     if staff_role in {"cashier", "waiter", "hall_admin", "pos_terminal"}:
+        output["producedStockItems"] = []
         output.pop("financeState", None)
         output["suppliers"] = []
         output["ingredients"] = []
@@ -818,6 +830,7 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
         output["stations"] = []
         output["sales"] = []
     elif staff_role == "marketer":
+        output["producedStockItems"] = []
         output.pop("financeState", None)
         output["suppliers"] = []
         output["ingredients"] = []
@@ -830,6 +843,9 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
         logistics["stockLedger"] = []
         logistics["batches"] = []
         logistics["batches"] = []
+    if staff_role in {'cashier', 'waiter', 'hall_admin', 'pos_terminal', 'marketer'} or (isinstance(permissions, dict) and permissions and not permissions.get('production')):
+        logistics['preparationProductions'] = []
+        logistics['writeoffs'] = []
     return output
 
 
@@ -876,6 +892,8 @@ def operation_replay(state, user, action, payload):
     request_id = request_id.strip()
     collections = {
         "batch.create": (state.get("logisticsState", {}).get("batches", []), "production_batch"),
+        "preparation.produce": (state.get("logisticsState", {}).get("preparationProductions", []), "preparation_production"),
+        "stock.writeoff": (state.get("logisticsState", {}).get("writeoffs", []), "stock_writeoff"),
         "supply.create": (state.get("logisticsState", {}).get("supplies", []), "supplier_receipt"),
         "pos.cash.movement": (state.get("posState", {}).get("cashMovements", []), "pos_cash_movement"),
     }
@@ -885,7 +903,7 @@ def operation_replay(state, user, action, payload):
     previous = next((entry for entry in entries if entry.get("requestId") == request_id), None)
     if previous is None:
         return None
-    branch_id = str(payload.get("branchId") or "") if action == "supply.create" and user.get("role") == "owner" else _branch_user(user)
+    branch_id = str(payload.get("branchId") or "") if action in {"supply.create", "preparation.produce", "stock.writeoff"} and user.get("role") == "owner" else _branch_user(user)
     _require(previous.get("branchId") == branch_id
              and str(previous.get("requestActorId")) == str(user.get("id"))
              and previous.get("requestRegisterId") == user.get("register_id"),
@@ -918,7 +936,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
     if action.startswith("payroll.") or action.startswith("work.shift."):
         from .payroll import apply as apply_payroll
         return apply_payroll(state, user, action, payload)
-    if action in {"batch.create", "supply.create", "pos.cash.movement"}:
+    if action in {"batch.create", "preparation.produce", "stock.writeoff", "supply.create", "pos.cash.movement"}:
         previous = operation_replay(state, user, action, payload)
         if previous:
             return previous
@@ -1129,7 +1147,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             locations = [_branch_user(user)]
         _require(name, "Укажите название поставщика")
         supplier = _find(state["suppliers"], payload.get("id"))
-        _require(not any(entry is not supplier and entry["name"].lower() == name.lower() for entry in state["suppliers"]), "Поставщик с таким названием уже существует", 409)
+        _require(not supplier or not supplier.get("deletedAt"), "Поставщик удалён. Создайте новую карточку", 409)
+        _require(not any(not entry.get("deletedAt") and entry is not supplier and entry["name"].lower() == name.lower() for entry in state["suppliers"]), "Поставщик с таким названием уже существует", 409)
         if supplier is None:
             supplier = {"id": f"supplier-{uuid4()}", "prices": {}}
             state["suppliers"].insert(0, supplier)
@@ -1185,14 +1204,15 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 previous_name = normalized_registry[entry_index]
                 normalized_registry[entry_index] = name
                 for ingredient in state["ingredients"]:
-                    if ingredient.get("category") == previous_name:
+                    if str(ingredient.get("category", "")).strip().casefold() == previous_name.casefold():
                         ingredient["category"] = name
         if kind == "ingredient":
             covers = state.setdefault("ingredientCategoryCovers", {})
-            previous = covers.get(original_name, {})
+            cover_key = next((key for key in covers if key.casefold() == original_name.casefold()), original_name)
+            previous = covers.get(cover_key, {})
             appearance = _appearance(payload, previous)
             if original_name and original_name != name:
-                covers.pop(original_name, None)
+                covers.pop(cover_key, None)
             covers[name] = appearance
         return "category", f"{kind}:{name}"
 
@@ -1245,6 +1265,74 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                     if key in component:
                         value = component[key]
                         _require(isinstance(value, (int, float)) and isfinite(value) and value > 0, "Нетто и масса штуки должны быть положительными числами в граммах")
+
+    if action == "stock.writeoff":
+        branch_id = str(payload.get('branchId') or '') if user['role'] == 'owner' else _branch_user(user)
+        _require(_find(state['branches'], branch_id), 'Выберите заведение')
+        _require_unlocked(state, branch_id)
+        item = _entity(state, payload.get('itemId'))
+        quantity = _number(payload.get('quantity'))
+        reason = str(payload.get('reason') or '').strip()
+        _require(item and quantity > 0 and 0 < len(reason) <= 500, 'Выберите позицию, количество и причину списания')
+        identity = str(item['id'])
+        _require(quantity <= _stock(state, branch_id, identity) + .000001, 'Недостаточно остатка для списания', 409)
+        cost = _cost(state, branch_id, identity)
+        documents = logistics.setdefault('writeoffs', [])
+        document = {'id': 'writeoff-' + uuid4().hex, 'type': 'writeoff', 'number': _next_number('СПС', documents),
+                    'branchId': branch_id, 'warehouse': _find(state['branches'], branch_id)['name'],
+                    'reason': reason, 'description': item['name'], 'total': quantity * cost, 'status': 'Проведён',
+                    'createdAt': _now(), 'actorName': actor, 'actor': user.get('login'),
+                    'items': [{'itemId': identity, 'name': item['name'], 'unit': item.get('unit', 'кг'), 'quantity': quantity, 'price': cost}]}
+        _record_operation_request(document, user, payload)
+        _set_stock(state, branch_id, identity, _stock(state, branch_id, identity) - quantity)
+        _ledger(state, branch_id=branch_id, item_id=identity, quantity=-quantity, unit_cost=cost,
+                movement_type='warehouse_writeoff', document_number=document['number'], actor=actor)
+        documents.insert(0, document)
+        return 'stock_writeoff', document['id']
+
+    if action == "preparation.produce":
+        branch_id = str(payload.get('branchId') or '') if user['role'] == 'owner' else _branch_user(user)
+        _require(_find(state['branches'], branch_id), 'Выберите заведение')
+        _require_unlocked(state, branch_id)
+        preparation = _find(state.get('preparations', []), payload.get('preparationId'))
+        weight = _number(payload.get('weight'))
+        _require(preparation and weight > 0, 'Выберите полуфабрикат и укажите вес в кг')
+        _require(preparation.get('is_active') is not False, 'Полуфабрикат остановлен', 409)
+        try:
+            components = flatten_composition(state, preparation, (str(preparation['id']),), strict=True, stock=True)
+        except CompositionError as error:
+            raise WorkspaceError(str(error)) from error
+        factor = weight * 1000 / _number(preparation.get('yield'), minimum=.001)
+        requirements = [(row['ingredientId'], row['gross'] / 1000 * factor) for row in components]
+        _require(requirements, 'Заполните состав полуфабриката')
+        for identity, required in requirements:
+            _require(required <= _stock(state, branch_id, identity) + .000001,
+                     'Недостаточно для производства: ' + str((_entity(state, identity) or {}).get('name', identity)), 409)
+        documents = logistics.setdefault('preparationProductions', [])
+        number = _next_number('ПФ', documents)
+        total, snapshot = 0.0, []
+        for identity, required in requirements:
+            cost = _cost(state, branch_id, identity)
+            total += required * cost
+            snapshot.append({'itemId': identity, 'name': (_entity(state, identity) or {}).get('name', identity), 'quantity': required, 'unitCost': cost})
+        stock_id = 'preparation:' + str(preparation['id'])
+        previous, previous_cost = _stock(state, branch_id, stock_id), _cost(state, branch_id, stock_id)
+        document = {'id': 'pf-production-' + uuid4().hex, 'number': number, 'branchId': branch_id,
+                    'preparationId': preparation['id'], 'name': preparation['name'], 'weight': weight,
+                    'cost': total, 'unitCost': total / weight, 'ingredientSnapshot': snapshot,
+                    'createdAt': _now(), 'createdBy': actor, 'createdById': user['id']}
+        _record_operation_request(document, user, payload)
+        for identity, required in requirements:
+            cost = _cost(state, branch_id, identity)
+            _set_stock(state, branch_id, identity, _stock(state, branch_id, identity) - required)
+            _ledger(state, branch_id=branch_id, item_id=identity, quantity=-required, unit_cost=cost,
+                    movement_type='production_consumption', document_number=number, actor=actor)
+        preparation['stockMode'] = 'produced'
+        _set_stock(state, branch_id, stock_id, previous + weight, (previous * previous_cost + total) / (previous + weight))
+        _ledger(state, branch_id=branch_id, item_id=stock_id, quantity=weight, unit_cost=total / weight,
+                movement_type='preparation_production', document_number=number, actor=actor)
+        documents.insert(0, document)
+        return 'preparation_production', document['id']
 
     if action == "preparation.upsert":
         _owner(user)
@@ -1401,6 +1489,12 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
 
     if action in {"ingredient.upsert", "product.upsert", "recipe.upsert"}:
         _owner(user)
+        from .ingredient_rules import unit_change_reason
+        source_collection = 'ingredients' if action == 'ingredient.upsert' else 'products' if action == 'product.upsert' else 'recipes'
+        previous_item = _find(state[source_collection], payload.get('id'))
+        if previous_item and action != 'recipe.upsert' and str(payload.get('unit', previous_item.get('unit'))) != str(previous_item.get('unit')):
+            reason = unit_change_reason(state, previous_item['id'])
+            _require(not reason, reason, 409)
         _persist_modifier_sets(state, payload.get("modifierSets"))
         if action != "ingredient.upsert" and "portionSize" in payload:
             size = payload["portionSize"]
@@ -1427,15 +1521,24 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             if "pieceWeightGrams" in payload:
                 weight = payload["pieceWeightGrams"]
                 _require(isinstance(weight, (float, int)) and isfinite(weight) and weight >= 0, "Укажите корректную массу штуки в граммах")
-                entry["pieceWeightGrams"] = weight
-            losses = payload.get("losses") if isinstance(payload.get("losses"), dict) else {}
+            from .ingredient_rules import loss_changes, parse_losses
+            try:
+                normalized_losses = parse_losses(payload.get('losses', entry.get('losses')))
+                recalculated = loss_changes(state, entry, normalized_losses)
+            except (ValueError, TypeError) as error:
+                raise WorkspaceError(str(error), 422) from error
+
+            if 'pieceWeightGrams' in payload:
+                entry['pieceWeightGrams'] = weight
             entry.update({
                 "name": name, "category": str(payload.get("category", "Без категории")),
                 "unit": str(payload.get("unit", "кг")), "limit": _number(payload.get("limit")),
                 "stock": 0, "averageCost": _number(payload.get("averageCost")),
-                "losses": {key: min(99, _number(losses.get(key))) for key in ("boil", "fry", "bake", "clean")},
+                "losses": normalized_losses,
                 "barcode": str(payload.get("barcode", entry.get("barcode", "")))[:64],
             })
+            for component, gross in recalculated:
+                component['gross'] = gross
         elif collection_name == "products":
             station = str(payload.get("station", entry.get("station", ""))).strip()
             _require(not station or any(row.get("name") == station for row in state.get("stations", [])), "Выберите существующий цех")
@@ -1494,7 +1597,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         _owner(user)
         kind = str(payload.get("kind", "")).strip()
         entry_id = str(payload.get("id", "")).strip()
-        allowed = {"recipe", "preparation", "ingredient", "product", "menu-category", "recipe-category", "product-category", "ingredient-category", "station"}
+        allowed = {"supplier", "recipe", "preparation", "ingredient", "product", "menu-category", "recipe-category", "product-category", "ingredient-category", "station"}
         _require(kind in allowed and entry_id, "Неизвестная позиция справочника")
         if kind in {"product", "recipe"}:
             collection_name = "products" if kind == "product" else "recipes"
@@ -1521,7 +1624,18 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         def sale_uses_item(item_id: str) -> bool:
             return any(str(row.get("id")) == item_id for sale in state.get("sales", []) for row in sale.get("items", []))
 
-        if kind == "recipe":
+        if kind == "supplier":
+            _require(user.get("role") == "owner", "Удаление поставщика доступно только владельцу компании", 403)
+            entry = _find(state['suppliers'], entry_id)
+            _require(entry, 'Поставщик не найден', 404)
+            if entry.get('deletedAt'):
+                return 'catalog-delete', f'supplier:{entry_id}'
+            documents = [row for row in [*logistics.get('supplies', []), *logistics.get('directOrders', [])] if str(row.get('supplierId')) == entry_id]
+            debt = sum(_number(row.get('debt')) for row in documents)
+            _require(debt <= .000001, f'Сначала погасите задолженность поставщику: {debt:.2f}', 409)
+            _require(not any(row.get('status') in {'submitted', 'approved', 'shipped'} for row in logistics.get('directOrders', []) if str(row.get('supplierId')) == entry_id), 'Сначала завершите или отмените открытые заказы поставщику', 409)
+            entry.update(status='inactive', deletedAt=_now(), deletedById=user['id'])
+        elif kind == "recipe":
             entry = _find(state["recipes"], entry_id)
             _require(entry is not None, "Техкарта не найдена", 404)
             _require(not any(str(batch.get("recipeId")) == entry_id for batch in logistics.get("batches", [])), "Техкарту нельзя удалить: по ней уже есть производство", 409)
@@ -1532,6 +1646,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _require(entry is not None, "Полуфабрикат не найден", 404)
             users = preparation_users(state, entry_id)
             _require(not users, "Полуфабрикат используется в составе: " + ", ".join(row.get("name", str(row["id"])) for row in users[:5]) + ". Сначала измените связанные составы", 409)
+            _require(not any(_stock(state, str(branch['id']), 'preparation:' + str(entry_id)) > 0 for branch in state['branches']), 'Сначала спишите или используйте остатки полуфабриката', 409)
             state["preparations"].remove(entry)
         elif kind in {"ingredient", "product"}:
             collection = state["ingredients"] if kind == "ingredient" else state["products"]
@@ -1548,7 +1663,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _require(not document_uses_item(entry_id), "Позицию нельзя удалить: она есть в складских документах", 409)
             _require(not sale_uses_item(entry_id), "Позицию нельзя удалить: по ней уже есть продажи", 409)
             if kind == "ingredient":
-                linked_preparations = [row for row in state.get("preparations", []) if any(str(component.get("ingredientId", "")) == entry_id for component in row.get("components", [])) and preparation_users(state, row["id"])]
+                linked_preparations = [row for row in state.get("preparations", []) if any(str(component.get("ingredientId", "")) == entry_id for component in row.get("components", [])) and (preparation_users(state, row["id"]) or row.get("stockMode") == "produced")]
                 _require(not linked_preparations, "Ингредиент входит в используемый полуфабрикат. Сначала измените его состав", 409)
                 for item in [*state["recipes"], *state.get("preparations", [])]:
                     item["components"] = [row for row in item.get("components", []) if str(row.get("ingredientId")) != entry_id]
@@ -1904,7 +2019,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         _require(not _locked(state, branch_id), "На точке уже идёт инвентаризация", 409)
         scope = payload.get("scope", "full")
         category = str(payload.get("category", ""))
-        entities = [*state["ingredients"], *state["products"]]
+        entities = stock_sources(state)
         if scope == "category":
             entities = [entry for entry in entities if entry.get("category") == category]
         _require(entities, "В выбранной категории нет продуктов")
@@ -2117,7 +2232,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         for component, required in requirements:
             missing = required - _stock(state, branch_id, component["ingredientId"])
             if missing > 0.0001:
-                ingredient = _find(state.get("ingredients", []), component["ingredientId"]) or {}
+                ingredient = _entity(state, component["ingredientId"]) or {}
                 shortages.append(f"{ingredient.get('name', component['ingredientId'])}: {missing:.3f} {ingredient.get('unit', '')}".strip())
         _require(not shortages, "На точке недостаточно сырья. Не хватает: " + "; ".join(shortages), 409)
         number = _next_number("АП", logistics["batches"])
@@ -2129,7 +2244,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             _set_stock(state, branch_id, item_id, _stock(state, branch_id, item_id) - required)
             _ledger(state, branch_id=branch_id, item_id=item_id, quantity=-required, unit_cost=unit_cost, movement_type="production_consumption", document_number=number, actor=actor)
             total_cost += required * unit_cost
-            ingredient = _find(state["ingredients"], item_id) or {}
+            ingredient = _entity(state, item_id) or {}
             ingredient_snapshot.append({"itemId": item_id, "name": ingredient.get("name", str(item_id)), "unit": ingredient.get("unit", "кг"), "quantity": required, "unitCost": unit_cost})
         batch = {"id": f"batch-{uuid4()}", "number": number, "branchId": branch_id, "recipeId": recipe["id"], "actualWeight": weight, "portionWeight": recipe["yield"], "portionWeightSource": "production", "transferredWeight": 0, "soldPortions": 0, "servedPortions": 0, "status": "kitchen", "createdAt": _now(), "createdBy": actor, "createdById": user.get("id"), "cost": total_cost, "ingredientSnapshot": ingredient_snapshot, "custodyVersion": 1, "servingLots": [], "dispatchedWeight": 0}
         _record_operation_request(batch, user, payload)
@@ -2400,7 +2515,7 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
                 for ingredient_id, required in requirements.items():
                     ingredient_deductions[ingredient_id] = ingredient_deductions.get(ingredient_id, 0) + required
                     _require(ingredient_deductions[ingredient_id] <= _stock(state, branch_id, ingredient_id) + 0.000001, f"Недостаточно ингредиентов для блюда: {recipe['name']}", 409)
-                    ingredient = _find(state["ingredients"], ingredient_id) or {}
+                    ingredient = _entity(state, ingredient_id) or {}
                     ingredient_allocations.append({"itemId": ingredient_id, "name": ingredient.get("name", str(ingredient_id)), "unit": ingredient.get("unit", "кг"), "quantity": required, "unitCost": _cost(state, branch_id, ingredient_id)})
                 unit_cost = sum(row["quantity"] * row["unitCost"] for row in ingredient_allocations) / quantity
                 item = recipe

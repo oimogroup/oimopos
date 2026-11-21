@@ -314,7 +314,7 @@ def test_rejected_photo_binding_never_persists_stock_or_audit(stored, authorized
 def test_photo_browser_requests_choose_terminal_cookie_without_admin_fallback(monkeypatch):
     from app.security import token_hash
 
-    request = Request({"type": "http", "path": "/api/v1/pos/supplies/photos/photo-test", "headers": []})
+    request = Request({"type": "http", "method": "GET", "path": "/api/v1/pos/supplies/photos/photo-test", "headers": []})
     accounts = {
         token_hash("admin-cookie"): {"id": 1, "role": "owner", "tenant_id": "admin-tenant", "session_id": 1},
         token_hash("terminal-cookie"): {**TERMINAL, "session_id": 2},

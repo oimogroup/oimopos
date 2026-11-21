@@ -29,7 +29,7 @@
           check("stock-movement-navigation", doc.querySelector("#stockPageTitle").textContent === "Отчёт по движению" && doc.querySelector("#documentActionButton").classList.contains("hidden"));
           win.switchStockTab("overview");
           check("stock-rendered", doc.querySelectorAll("#stockTable tr").length >= 15 && doc.querySelector("#stockTable").textContent.includes("Вода 0,5 л"));
-          check("network-stock-caption", doc.querySelector("#stockValueCaption").textContent.includes("всем точкам") && doc.querySelector("#stockWarehouseFilter").value === "Вся сеть" && doc.querySelector("#lowStockCaption").textContent.includes("поставщику"));
+          check("network-stock-caption", doc.querySelector("#stockValueCaption").textContent.includes("всем точкам") && doc.querySelector("#stockWarehouseFilter").value === "all" && doc.querySelector("#lowStockCaption").textContent.includes("поставщику"));
 
           const bell = doc.querySelector("#notificationButton");
           check("notification-bell", Boolean(bell.querySelector("svg")));
@@ -73,22 +73,22 @@
           doc.querySelector("#supplierInnInput").value = "123456789012";
           doc.querySelector("#supplierPhoneInput").value = "+996 555 000 111";
           doc.querySelector("#supplierEmailInput").value = "orders@test.kg";
-          win.saveSupplier();
+          await win.saveSupplier();
           let savedSuppliers = JSON.parse(win.localStorage.getItem("ashkana-stock-suppliers-v1") || "[]");
           const testSupplier = savedSuppliers.find((supplier) => supplier.name === "Тестовый поставщик");
           check("supplier-create", Boolean(testSupplier) && testSupplier.locations.join(",") === "b1");
           check("suppliers-registry", doc.querySelector("#suppliersTable").textContent.includes("Тестовый поставщик") && doc.querySelector("#suppliersTable").textContent.includes("Весь аккаунт"));
           win.openSupplierForm(testSupplier.id);
           doc.querySelector("#supplierPhoneInput").value = "+996 700 999 888";
-          win.saveSupplier();
+          await win.saveSupplier();
           savedSuppliers = JSON.parse(win.localStorage.getItem("ashkana-stock-suppliers-v1") || "[]");
           check("supplier-edit", savedSuppliers.find((supplier) => supplier.id === testSupplier.id).phone === "+996 700 999 888");
 
           win.openIngredientForm();
           doc.querySelector("#ingredientNameInput").value = "Тестовый ингредиент";
-          doc.querySelector("#ingredientStockInput").value = "5";
+          doc.querySelector("#ingredientStockInput").value = "5000";
           doc.querySelector("#ingredientCostInput").value = "80";
-          win.saveIngredientForm();
+          await win.saveIngredientForm();
           const savedIngredient = JSON.parse(win.localStorage.getItem("ashkana-admin-ingredients-v1") || "[]").find((item) => item.name === "Тестовый ингредиент");
           check("ingredient-point-opening", savedIngredient.stock === 0 && win.branchStock("b1", savedIngredient.id) === 5 && win.branchUnitCost("b1", savedIngredient.id) === 80);
           win.openIngredientForm(savedIngredient.id);
@@ -116,13 +116,13 @@
           preparationRow.querySelector(".preparation-component-ingredient").value = savedIngredient.id;
           preparationRow.querySelector(".preparation-component-gross").value = "500";
           preparationRow.querySelector(".preparation-component-net").value = "500";
-          win.savePreparationForm();
+          await win.savePreparationForm();
           let savedPreparations = JSON.parse(win.localStorage.getItem("ashkana-admin-preparations-v1") || "[]");
           const savedPreparation = savedPreparations.find((item) => item.name === "Тестовая заготовка");
           check("preparation-create", savedPreparation?.components[0].ingredientId === savedIngredient.id && savedPreparation.process === "Замесить, выдержать и охладить" && savedPreparation.cost === 40 && doc.querySelector("#preparationsTable").textContent.includes("Тестовая заготовка"));
           win.openPreparationForm(savedPreparation.id);
           doc.querySelector("#preparationNameInput").value = "Тестовая заготовка новая";
-          win.savePreparationForm();
+          await win.savePreparationForm();
           savedPreparations = JSON.parse(win.localStorage.getItem("ashkana-admin-preparations-v1") || "[]");
           check("preparation-edit", savedPreparations.find((item) => item.id === savedPreparation.id)?.name === "Тестовая заготовка новая");
           win.openPreparationForm(savedPreparation.id);
@@ -138,7 +138,7 @@
           check("menu-category-edit-form", !doc.querySelector("#categoryModal").classList.contains("hidden") && doc.querySelector("#categoryNameInput").value === "Горячее");
           doc.querySelector("#categoryNameInput").value = "Основные блюда тест";
           doc.querySelector("#categoryColorText").value = "#123456";
-          win.saveCategoryForm();
+          await win.saveCategoryForm();
           let savedRecipes = JSON.parse(win.localStorage.getItem("ashkana-admin-recipes-v1") || "[]");
           const savedProductsAfterRecipeRename = JSON.parse(win.localStorage.getItem("ashkana-admin-products-v1") || "[]");
           check("menu-category-edit-updates-both-types", savedRecipes.find((recipe) => recipe.id === 201)?.category === "Основные блюда тест" && savedProductsAfterRecipeRename.find((product) => product.id === "p-1")?.category === "Основные блюда тест" && JSON.parse(win.localStorage.getItem("ashkana-recipe-categories-v1") || "[]").some(category => category.name === "Основные блюда тест" && category.color === "#123456") && doc.querySelector("#menuCategoriesTable").textContent.includes("Основные блюда тест"));
@@ -147,12 +147,12 @@
           win.openCategoryForm("recipe", renamedMenuIndex);
           doc.querySelector("#categoryNameInput").value = "Горячее";
           doc.querySelector("#categoryColorText").value = "#E39A3D";
-          win.saveCategoryForm();
+          await win.saveCategoryForm();
           win.switchMenuPage("recipe-categories");
           doc.querySelector("#menuPageActionButton").click();
           doc.querySelector("#categoryNameInput").value = "Тестовая категория меню";
           doc.querySelector("#categoryColorText").value = "#445566";
-          win.saveCategoryForm();
+          await win.saveCategoryForm();
           const savedMenuCategories = JSON.parse(win.localStorage.getItem("ashkana-recipe-categories-v1") || "[]");
           check("recipe-category-create", savedMenuCategories.some((category) => category.name === "Тестовая категория меню" && category.color === "#445566"));
           const testMenuCategoryRow = [...doc.querySelectorAll("#menuCategoriesTable tr")].find((row) => row.textContent.includes("Тестовая категория меню"));
@@ -165,13 +165,13 @@
           const meatCategoryRow = [...doc.querySelectorAll("#ingredientCategoriesTable tr")].find((row) => row.textContent.includes("Мясо"));
           meatCategoryRow.querySelector("[data-ingredient-category-edit]").click();
           doc.querySelector("#categoryNameInput").value = "Мясо тест";
-          win.saveCategoryForm();
+          await win.saveCategoryForm();
           let savedIngredients = JSON.parse(win.localStorage.getItem("ashkana-admin-ingredients-v1") || "[]");
           check("ingredient-category-edit", savedIngredients.find((ingredient) => ingredient.id === "beef")?.category === "Мясо тест" && doc.querySelector("#ingredientCategoriesTable").textContent.includes("Мясо тест"));
           const renamedIngredientIndex = [...doc.querySelectorAll("#ingredientCategoriesTable tr")].find((row) => row.textContent.includes("Мясо тест"))?.querySelector("[data-ingredient-category-edit]")?.dataset.ingredientCategoryEdit;
           win.openCategoryForm("ingredient", renamedIngredientIndex);
           doc.querySelector("#categoryNameInput").value = "Мясо";
-          win.saveCategoryForm();
+          await win.saveCategoryForm();
 
           win.switchMenuPage("stations");
           const kitchenStationRow = [...doc.querySelectorAll("#stationsTable tr")].find((row) => row.textContent.includes("Кухня"));
@@ -350,16 +350,16 @@
           win.openBatchForm(201, "b1");
           doc.querySelector("#batchWeight").value = "0.38";
           win.updateBatchCalculation();
-          win.saveBatch();
+          await win.saveBatch();
           const batch = JSON.parse(win.localStorage.getItem("ashkana-production-logistics-v3")).batches[0];
           check("weighted-production", batch.actualWeight === 0.38 && win.branchStock("b1", "rice") < batchRiceBefore);
-          win.openServingTransfer(batch.id);
-          doc.querySelector("#servingTransferWeight").value = "0.38";
-          win.saveServingTransfer();
+          await win.openServingTransfer(batch.id);
+          doc.querySelector("#servingTransferWeight").value = "380";
+          await win.saveServingTransfer();
           win.openServingClose(batch.id);
           doc.querySelector("#servingSoldPortions").value = "1";
           doc.querySelector("#servingRemainingWeight").value = "0";
-          win.saveServingClose();
+          await win.saveServingClose();
           const closedBatch = JSON.parse(win.localStorage.getItem("ashkana-production-logistics-v3")).batches.find((item) => item.id === batch.id);
           check("serving-close", closedBatch.status === "closed" && closedBatch.servedPortions === 1);
 

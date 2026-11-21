@@ -47,7 +47,7 @@ function mountAdminFilters() {
       }}]});
   register({scope:'stock-list',toolbar:'#stockSearch',table:'#stockTable',columns:7,render:renderStock,
     controls:controls('stockSearch',['stockCategoryFilter','Все категории'],['stockWarehouseFilter',currentRole==='owner'?'all':String(currentSession.branchId||'')]),
-    fields:[{key:'type',label:'Тип позиции',options:[['ingredient','Ингредиенты'],['product','Товары']],get:row=>isProductEntity(row)?'product':'ingredient'},
+    fields:[{key:'type',label:'Тип позиции',options:[['ingredient','Ингредиенты'],['product','Товары'],['preparation','Произведённые п/ф']],get:row=>row.itemType==='preparation'?'preparation':isProductEntity(row)?'product':'ingredient'},
       {key:'stock',label:'Остаток',options:[['positive','В наличии'],['zero','Нулевой'],['negative','Отрицательный'],['low','На уровне лимита и ниже']],test:(value,row)=>stockTest(value,stockFilterMetrics(row).quantity,row.limit)},
       ...range('cost','Себестоимость',row=>stockFilterMetrics(row).cost),...range('value','Стоимость остатка',row=>stockFilterMetrics(row).value)]});
   register({scope:'suppliers',toolbar:'#supplierSearch',table:'#suppliersTable',columns:9,render:renderSuppliers,

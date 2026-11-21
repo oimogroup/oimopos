@@ -1,0 +1,50 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<iframe id="app" src="../admin.html?test=1#menu/recipes"></iframe>
+<script>
+app.onload=async()=>{
+ const w=app.contentWindow,d=w.document,checks=[];
+ const check=(name,value)=>checks.push(`${value?'PASS':'FAIL'}:${name}`);
+ try{
+  const id=w.eval("recipes[0].editRevision='opened-revision';recipes[0].id");
+  w.openRecipeForm(id);
+  check('form-captures-revision-at-open',w.eval('catalogEditRevisions.recipe')==='opened-revision');
+  w.eval("recipes[0].editRevision='newer-revision';serverMode=true");
+  let sent;
+  w.AshkanaApi.action=async(action,payload,options)=>{sent={action,payload,options};throw Object.assign(new Error('Карточка изменена в другой вкладке'),{status:409});};
+  d.getElementById('recipeNameInput').value='Мои несохранённые изменения';
+  await w.saveRecipeForm();
+  check('save-keeps-original-revision-despite-refresh',sent?.options.expectedRevision==='opened-revision');
+  check('conflict-keeps-form-and-draft',!d.getElementById('recipeModal').classList.contains('hidden')&&d.getElementById('recipeNameInput').value==='Мои несохранённые изменения');
+  check('conflict-explained-in-form',d.getElementById('recipeSaveStatus').textContent.includes('другой вкладке'));
+  check('controls-unlocked-after-conflict',!d.getElementById('saveRecipeButton').disabled&&!d.getElementById('recipeNameInput').disabled);
+  d.getElementById('recipeModal').classList.add('hidden');
+  w.eval("preparations.push({id:'test-dough',name:'Тесто для мантов',yield:1000,components:[{ingredientId:ingredients[0].id,gross:1000,net:1000}]});logisticsState.preparationProductions=[{id:'history',preparationId:'test-dough',branchId:branches[0].id,number:'ПФ-0001',weight:2,cost:100}]");
+  let resolveSave,calls=0;
+  w.AshkanaApi.action=async(action,payload)=>{sent={action,payload};calls++;return new Promise(resolve=>resolveSave=resolve);};
+  w.openPreparationProduction('test-dough');
+  const dialog=d.querySelector('.preparation-production-dialog'),form=dialog.querySelector('form');
+  check('manufacture-dialog-explains-consumption',dialog.textContent.includes('без повторного списания сырья'));
+  check('manufacture-history-is-visible',dialog.textContent.includes('ПФ-0001'));
+  form.elements.weight.value='2.5';
+  const event={preventDefault(){},currentTarget:form};
+  const pending=form.onsubmit(event);form.onsubmit(event);
+  await new Promise(resolve=>setTimeout(resolve,30));
+  check('manufacture-submit-disabled-while-saving',form.querySelector('[type=submit]').disabled);
+  check('manufacture-submits-once',calls===1&&sent.action==='preparation.produce'&&sent.payload.weight===2.5);
+  const closed=new Promise(resolve=>dialog.addEventListener('close',resolve,{once:true}));
+  resolveSave({version:3});await pending;await closed;
+  check('confirmed-manufacture-closes-dialog',!d.querySelector('.preparation-production-dialog'));
+  w.eval("serverMode=false;preparations.find(row=>row.id==='test-dough').stockMode='produced';logisticsState.branchStocks[branches[0].id]['preparation:test-dough']=2.5;logisticsState.branchCosts[branches[0].id]['preparation:test-dough']=50");
+  w.renderAll();
+  check('manufactured-preparation-in-warehouse',d.getElementById('stockTable').textContent.includes('Тесто для мантов [п/ф]'));
+  check('warehouse-filter-has-manufactured-type',w.eval("AdminFilters")!=null&&w.producedStockSources().some(row=>row.id==='preparation:test-dough'));
+ }catch(error){checks.push('FAIL:exception:'+error.stack);}
+ if(new URLSearchParams(location.search).has('preview')){
+   app.style.cssText='position:fixed;inset:0;width:390px;height:100vh;border:0';
+   w.eval('serverMode=true');w.openPreparationProduction('test-dough');
+   const bounds=d.querySelector('.preparation-production-dialog').getBoundingClientRect();
+   check('manufacture-dialog-fits-phone',bounds.left>=0&&bounds.right<=390&&d.documentElement.scrollWidth<=390);
+ }
+ document.getElementById('results').textContent=checks.join('|');
+};
+</script>

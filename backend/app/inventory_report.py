@@ -7,6 +7,7 @@ import zipfile
 from decimal import Decimal, InvalidOperation
 from xml.sax.saxutils import escape
 
+from .composition import stock_sources
 from .inventory_count import variance
 
 
@@ -56,7 +57,7 @@ def build_report(state, inventory_id, items=None):
         if actual is not None and actual < 0:
             raise ValueError('Фактический остаток должен быть числом не меньше нуля')
         actuals[item_id] = actual
-    catalog = {str(item['id']): item for item in [*state.get('ingredients', []), *state.get('products', [])]}
+    catalog = {str(item['id']): item for item in stock_sources(state)}
     rows, movements = [], []
     for item in inventory.get('items', []):
         item_id = str(item['itemId'])

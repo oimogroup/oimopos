@@ -1,0 +1,49 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre>
+<iframe id="app" src="../admin.html?test=1"></iframe>
+<script>
+app.onload=async()=>{
+ const w=app.contentWindow,d=w.document,checks=[];
+ const check=(name,value)=>checks.push(`${value?'PASS':'FAIL'}:${name}`);
+ const hide=()=>d.querySelectorAll('.modal-backdrop').forEach(row=>row.classList.add('hidden'));
+ try{
+  w.eval(`ingredients.find(row=>row.id==='rice').losses={boil:50};recipes[0].components=[{ingredientId:'rice',gross:200,net:100,netWeightGrams:100,method:'boil'}];`);
+  w.openIngredientForm('rice');d.getElementById('lossBoilInput').value=25;await w.saveIngredientForm();
+  const component=w.eval('recipes[0].components[0]');
+  check('loss-recalculates-live-gross',Math.abs(component.gross-100/.75)<1e-8);
+  check('loss-preserves-net',component.net===100&&component.netWeightGrams===100);
+  w.openIngredientForm('rice');d.getElementById('ingredientUnitInput').value='шт';await w.saveIngredientForm();
+  check('used-ingredient-unit-is-protected',w.eval("ingredientById('rice').unit")==='кг');hide();
+  w.eval("ingredientById('rice').category='крупы'");w.renderMenuCategories();
+  w.openCategoryForm('ingredient',w.eval("ingredientCategories.findIndex(name=>name.toLowerCase()==='крупы')"));
+  d.getElementById('categoryNameInput').value='Зерновые';await w.saveCategoryForm();
+  check('category-rename-matches-case-insensitively',w.eval("ingredientById('rice').category")==='Зерновые');hide();
+  w.eval("logisticsState.batches.push({id:'excess-grams',number:'АП-тест',branchId:'b1',recipeId:recipes[0].id,actualWeight:1.5,transferredWeight:0,status:'kitchen'})");
+  await w.openServingTransfer('excess-grams');d.getElementById('servingTransferWeight').value='10000';await w.saveServingTransfer();
+  check('excess-transfer-is-rejected',w.eval("logisticsState.batches.find(row=>row.id==='excess-grams').transferredWeight")===0);
+  check('excess-input-is-not-clamped',d.getElementById('servingTransferWeight').value==='10000'&&!d.getElementById('servingTransferModal').classList.contains('hidden'));
+  d.getElementById('servingTransferWeight').value='500';await w.saveServingTransfer();
+  check('valid-grams-still-convert',w.eval("logisticsState.batches.find(row=>row.id==='excess-grams').transferredWeight")===.5);hide();
+  let sent;
+  w.AshkanaApi.action=async(action,payload,options)=>{sent={action,payload,options};throw Object.assign(new Error('Изменено в другой вкладке'),{status:409});};
+  w.eval("ingredientById('rice').editRevision='ingredient-opened';serverMode=true");
+  w.openIngredientForm('rice');w.eval("ingredientById('rice').editRevision='ingredient-polled'");d.getElementById('ingredientNameInput').value='Мой черновик';await w.saveIngredientForm();
+  check('ingredient-keeps-opened-revision',sent.options.expectedRevision==='ingredient-opened');
+  check('ingredient-conflict-keeps-draft',d.getElementById('ingredientNameInput').value==='Мой черновик'&&!d.getElementById('ingredientModal').classList.contains('hidden'));hide();
+  const supplierId=w.eval("suppliers[0].editRevision='supplier-opened';suppliers[0].id");
+  w.openSupplierForm(supplierId);w.eval("suppliers[0].editRevision='supplier-polled'");await w.saveSupplier();
+  check('supplier-keeps-opened-revision',sent.options.expectedRevision==='supplier-opened');hide();
+  const productId=w.eval("products[0].editRevision='product-opened';products[0].id");
+  w.openProductForm(productId);w.eval("products[0].editRevision='product-polled'");await w.saveProductForm();
+  check('product-keeps-opened-revision',sent.options.expectedRevision==='product-opened');hide();
+  w.eval("serverWorkspaceState={categoryRevisions:{ingredient:{'Зерновые':'category-opened'}}}");
+  w.openCategoryForm('ingredient',w.eval("ingredientCategories.indexOf('Зерновые')"));
+  w.eval("serverWorkspaceState.categoryRevisions.ingredient['Зерновые']='category-polled'");await w.saveCategoryForm();
+  check('category-keeps-opened-revision',sent.options.expectedRevision==='category-opened');hide();
+  const ids=[];
+  w.AshkanaApi.action=async(action,payload)=>{ids.push(payload.id);throw Object.assign(new Error('Связь прервалась'),{status:503});};
+  w.openSupplierForm();d.getElementById('supplierNameInput').value='Новый поставщик с повтором';await w.saveSupplier();await new Promise(resolve=>setTimeout(resolve,15));await w.saveSupplier();
+  check('new-form-identity-survives-retry',ids.length===2&&ids[0]===ids[1]);
+ }catch(error){checks.push('FAIL:exception:'+error.stack);}
+ document.getElementById('results').textContent=checks.join('|');
+};
+</script>

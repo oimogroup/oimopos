@@ -231,6 +231,8 @@ let workspaceVersion = 0;
 let workspaceRefreshTimer = null;
 let serverWorkspaceState = null;
 const catalogSavesInProgress = new Set();
+const catalogEditRevisions = {recipe:null,preparation:null,ingredient:null,product:null,supplier:null,category:null};
+const catalogNewIds = {};
 
 function hydrateServerWorkspace(response) {
   const state = response?.state;
@@ -251,6 +253,7 @@ function hydrateServerWorkspace(response) {
   ingredientCategoryCovers = state.ingredientCategoryCovers || {};
   stations = normalizeStations(state.stations, false);
   logisticsState = state.logisticsState || defaultLogisticsState();
+  stockDocuments = [...stockDocuments.filter(row=>row.type!=='writeoff'), ...(logisticsState.writeoffs||[])];
   logisticsState.stockLedger ||= [];
   logisticsState.supplies ||= [];
   serverSales = Array.isArray(state.sales) ? state.sales : [];
@@ -264,10 +267,26 @@ function hydrateServerWorkspace(response) {
 
 async function runServerAction(action, payload, successMessage = "") {
   let response;
-  const savingPrefix = action.startsWith('recipe.') ? 'recipe' : action === 'preparation.upsert' ? 'preparation' : null;
+  const savingPrefix = ['recipe','preparation','ingredient','product','supplier','category'].find(prefix=>action.startsWith(prefix+'.')&&action.endsWith('.upsert')) || null;
+  let expectedRevision=null;
+  if(savingPrefix){
+    const modal=document.getElementById(savingPrefix+'Modal');
+    if(modal&&!modal.classList.contains('hidden'))expectedRevision=catalogEditRevisions[savingPrefix];
+    else if(savingPrefix==='category')expectedRevision=payload.originalName ? serverWorkspaceState?.categoryRevisions?.[payload.kind==='ingredient'?'ingredient':'menu']?.[payload.originalName] || null : 'new';
+    else {
+      const collection={recipe:recipes,preparation:preparations,ingredient:ingredients,product:products,supplier:suppliers}[savingPrefix];
+      const row=collection.find(row=>String(row.id)===String(payload.id));
+      expectedRevision=row?.editRevision || (row?null:'new');
+    }
+  }
+  if(expectedRevision==='new'&&savingPrefix!=='category'&&savingPrefix&&document.getElementById(savingPrefix+'Modal')&&!document.getElementById(savingPrefix+'Modal').classList.contains('hidden')){
+    if(!Object.hasOwn(catalogNewIds,savingPrefix))catalogNewIds[savingPrefix]=payload.id;
+    payload={...payload,id:catalogNewIds[savingPrefix]};
+  }
   try {
     response = await window.AshkanaApi.action(action, payload, {
-      compactCatalog: Boolean(serverWorkspaceState) && ['recipe.upsert', 'recipe.group.upsert', 'preparation.upsert'].includes(action),
+      compactCatalog: Boolean(serverWorkspaceState) && Boolean(savingPrefix),
+      expectedRevision,
     });
   } catch (error) {
     if (error.status === 401) {
@@ -324,7 +343,7 @@ async function withCatalogSave(prefix, save) {
   if (catalogSavesInProgress.has(prefix) || !CatalogCover.ready(prefix)) return;
   catalogSavesInProgress.add(prefix);
   const modal = document.getElementById(`${prefix}Modal`);
-  const button = document.getElementById(prefix === 'recipe' ? 'saveRecipeButton' : 'savePreparationButton');
+  const button = document.getElementById({recipe:'saveRecipeButton',preparation:'savePreparationButton',category:'saveCategoryButton',ingredient:'saveIngredientButton',supplier:'saveSupplierButton'}[prefix]);
   const controls = [...modal.querySelectorAll('button, input, select, textarea')].map(control => [control, control.disabled]);
   const label = button.innerHTML;
   controls.forEach(([control]) => { control.disabled = true; });
@@ -340,7 +359,7 @@ async function withCatalogSave(prefix, save) {
   } catch (error) {
     console.error('Catalog form processing failed', error);
     const confirmed = document.getElementById(`${prefix}SaveStatus`)?.textContent.startsWith('Сохранено.');
-    const message = confirmed ? 'Изменения сохранены. Обновите страницу, чтобы обновить список.' : 'Не удалось обработать форму. Обновите страницу и проверьте сохранённую техкарту.';
+    const message = confirmed ? 'Изменения сохранены. Обновите страницу, чтобы обновить список.' : 'Не удалось обработать форму. Обновите страницу и проверьте сохранённую карточку.';
     setCatalogSaveStatus(prefix, message);
     showToast(message);
   } finally {
@@ -568,6 +587,10 @@ function mergeMenuCategoryRegistries(...registries) {
   return normalizeMenuCategories(merged, []);
 }
 
+function ingredientCategoryAppearance(name) {
+  const key=Object.keys(ingredientCategoryCovers).find(key=>key.trim().toLocaleLowerCase('ru')===String(name||'').trim().toLocaleLowerCase('ru'));
+  return ingredientCategoryCovers[key]||{};
+}
 function normalizeIngredientCategories(saved) {
   const normalized = Array.isArray(saved) ? saved.map((entry) => String(typeof entry === "string" ? entry : entry?.name || "").trim()).filter(Boolean) : [];
   ingredients.forEach((ingredient) => {
@@ -765,6 +788,7 @@ function ingredientById(id) { return ingredients.find((ingredient) => ingredient
 function componentGross(component) { return Math.max(0, Number(component.gross ?? component.net ?? 0)); }
 function compositionState() { return {ingredients, preparations}; }
 function rawRecipeComponents(recipe) { return CatalogComposition.flatten(recipe, compositionState()); }
+function stockRecipeComponents(recipe) { return CatalogComposition.flatten(recipe, compositionState(), [], true); }
 function componentSource(component) {
   if (component.preparationId != null) {
     const preparation = preparationById(component.preparationId);
@@ -776,8 +800,18 @@ function componentSourceByValue(value) {
   return String(value).startsWith('preparation:') ? componentSource({preparationId:String(value).slice(12)}) : ingredientById(value);
 }
 function componentSelectionValue(component) { return component.preparationId != null ? 'preparation:'+component.preparationId : component.ingredientId; }
-function componentCost(component) { return CatalogComposition.cost({components:[component]},compositionState(),id=>ingredientById(id)?.averageCost); }
-function recipeCost(recipe) { return CatalogComposition.cost(recipe,compositionState(),id=>ingredientById(id)?.averageCost); }
+function catalogStockUnitCost(identity) {
+  if(!String(identity).startsWith('preparation:'))return Number(ingredientById(identity)?.averageCost||0);
+  let quantity=0,value=0;
+  const known=[];
+  for(const branch of branches){
+    const amount=branchStock(branch.id,identity),cost=branchUnitCost(branch.id,identity);
+    quantity+=amount;value+=amount*cost;if(cost>0)known.push(cost);
+  }
+  return quantity>0?value/quantity:known.length?known.reduce((sum,value)=>sum+value,0)/known.length:0;
+}
+function componentCost(component) { return stockRecipeComponents({components:[component]}).reduce((sum,row)=>sum+row.gross/1000*catalogStockUnitCost(row.ingredientId),0); }
+function recipeCost(recipe) { return stockRecipeComponents(recipe).reduce((sum,row)=>sum+row.gross/1000*catalogStockUnitCost(row.ingredientId),0); }
 function foodCost(recipe) { return recipe.price ? recipeCost(recipe) / recipe.price * 100 : 0; }
 function markup(recipe) { const cost = recipeCost(recipe); return cost ? (recipe.price - cost) / cost * 100 : 0; }
 function recipeStation(recipe) { return recipe.station || (recipe.category === "Салаты" ? "Холодный цех" : recipe.category === "Напитки" ? "Бар" : "Кухня"); }
@@ -808,7 +842,9 @@ function consumedQuantity(ingredientId) {
 
 function availableStock(ingredient) { return Math.max(0, ingredient.stock - consumedQuantity(ingredient.id)); }
 function availableProductStock(product) { return Math.max(0, product.stock - soldQuantity(product.id)); }
-function stockEntityById(id) { return ingredientById(id) || productById(id); }
+function producedStockSources() { if(serverMode && serverWorkspaceState?.producedStockItems)return serverWorkspaceState.producedStockItems; return preparations.filter(row=>row.stockMode==='produced').map(row=>({...row,id:'preparation:'+row.id,preparationId:row.id,name:row.name+' [п/ф]',unit:'кг',averageCost:0,itemType:'preparation'})); }
+function allStockSources() { return [...ingredients,...products,...producedStockSources()]; }
+function stockEntityById(id) { return ingredientById(id) || productById(id) || producedStockSources().find(row=>row.id===String(id)); }
 function isProductEntity(entity) { return products.some((product) => product.id === entity?.id); }
 function availableEntityStock(entity) { return isProductEntity(entity) ? availableProductStock(entity) : availableStock(entity); }
 
@@ -859,7 +895,7 @@ function inventoryById(id) { return logisticsState.inventories.find((inventory) 
 function logisticsItem(itemId) { return stockEntityById(itemId); }
 function branchStock(branchId, itemId) { return Number(logisticsState.branchStocks[branchId]?.[itemId] || 0); }
 function branchUnitCost(branchId, itemId) { return Number(logisticsState.branchCosts?.[branchId]?.[itemId] ?? stockEntityById(itemId)?.averageCost ?? 0); }
-function recipeCostForBranch(recipe, branchId) { return CatalogComposition.cost(recipe,compositionState(),id=>branchUnitCost(branchId,id)); }
+function recipeCostForBranch(recipe, branchId) { return stockRecipeComponents(recipe).reduce((sum,row)=>sum+row.gross/1000*branchUnitCost(branchId,row.ingredientId),0); }
 function requestItemQuantity(item, field = "requested") { return Number(item[field] ?? item.requested ?? 0); }
 function requestTotalQuantity(request, field = "requested") { return request.items.reduce((sum, item) => sum + requestItemQuantity(item, field), 0); }
 function requestStatusLabel(status) { return ({ submitted: "Подана", approved: "К комплектации", shipped: "В пути", received: "Принята" })[status] || status; }
@@ -1651,9 +1687,9 @@ function pointTransferSources(destinationBranchId) {
 }
 
 function pointTransferItemOptions(selectedId, sourceBranchId) {
-  const entities = [...ingredients, ...products];
+  const entities = allStockSources();
   const option = (entity) => `<option value="${entity.id}" ${entity.id === selectedId ? "selected" : ""}>${escapeHtml(entity.name)}${serverMode ? "" : ` · ${decimal(branchStock(sourceBranchId, entity.id), 3)} ${entity.unit}`}</option>`;
-  return `<optgroup label="Ингредиенты">${ingredients.map(option).join("")}</optgroup><optgroup label="Готовые товары">${products.map(option).join("")}</optgroup>`;
+  return `<optgroup label="Ингредиенты">${ingredients.map(option).join("")}</optgroup><optgroup label="Готовые товары">${products.map(option).join("")}</optgroup><optgroup label="Произведённые п/ф">${producedStockSources().map(option).join("")}</optgroup>`;
 }
 
 function syncPointTransferDraft() {
@@ -1943,7 +1979,7 @@ function updateBatchCalculation() {
   const equivalent = weight * 1000 / recipe.yield;
   $("#batchPortions").textContent = `${decimal(equivalent, 1)} порций`;
   $("#batchCost").textContent = money(recipeCostForBranch(recipe, branchId) * equivalent);
-  $("#batchRequirements").innerHTML = rawRecipeComponents(recipe).map((component) => {
+  $("#batchRequirements").innerHTML = stockRecipeComponents(recipe).map((component) => {
     const entity = logisticsItem(component.ingredientId);
     const required = componentGross(component) / 1000 * equivalent;
     const available = branchStock(branchId, component.ingredientId);
@@ -1960,7 +1996,7 @@ async function saveBatch() {
   if (!recipe || !weight) return;
   if (!ensureBranchStockUnlocked(branchId)) return;
   const equivalent = weight * 1000 / recipe.yield;
-  const shortage = rawRecipeComponents(recipe).find((component) => componentGross(component) / 1000 * equivalent > branchStock(branchId, component.ingredientId) + .0001);
+  const shortage = stockRecipeComponents(recipe).find((component) => componentGross(component) / 1000 * equivalent > branchStock(branchId, component.ingredientId) + .0001);
   if (shortage) { showToast(`На точке недостаточно «${logisticsItem(shortage.ingredientId)?.name || "сырья"}»`); return; }
   if (serverMode) {
     $("#saveBatchButton").disabled = true;
@@ -1974,7 +2010,7 @@ async function saveBatch() {
     showToast(`Выпущено ${decimal(weight, 3)} кг «${recipe.name}»`);
     return;
   }
-  rawRecipeComponents(recipe).forEach((component) => {
+  stockRecipeComponents(recipe).forEach((component) => {
     const required = componentGross(component) / 1000 * equivalent;
     logisticsState.branchStocks[branchId][component.ingredientId] = Math.max(0, branchStock(branchId, component.ingredientId) - required);
   });
@@ -2004,8 +2040,8 @@ async function openServingTransfer(batchId) {
   const recipe = recipes.find((entry) => Number(entry.id) === Number(batch.recipeId));
   const remaining = Math.max(0, (batch.kitchenAvailableWeight != null ? Number(batch.kitchenAvailableWeight) : Number(batch.actualWeight) - Number(batch.transferredWeight || 0)));
   $("#servingTransferTitle").textContent = `${recipe?.name || "Блюдо"} · ${batch.number}`;
-  $("#servingTransferWeight").value = Number(remaining.toFixed(3));
-  $("#servingTransferWeight").max = remaining;
+  $("#servingTransferWeight").value = Number((remaining*1000).toFixed(3));
+  $("#servingTransferWeight").max = remaining*1000;
   $("#servingTransferTemperature").value = recipe?.category === "Салаты" ? 7 : 65;
   $("#servingLine").value = recipe?.category === "Салаты" ? "Холодная витрина · салаты" : recipe?.category === "Первые" ? "Линия №2 · супы" : "Линия №1 · горячие блюда";
   updateServingTransferCalculation();
@@ -2015,7 +2051,7 @@ async function openServingTransfer(batchId) {
 function updateServingTransferCalculation() {
   const batch = logisticsBatchById(currentServingBatchId);
   const recipe = recipes.find((entry) => Number(entry.id) === Number(batch?.recipeId));
-  const weight = Math.max(0, Number($("#servingTransferWeight").value || 0));
+  const weight = Math.max(0, Number($("#servingTransferWeight").value || 0)/1000);
   $("#servingTransferPortions").textContent = `${recipe ? Math.floor(weight * 1000 / recipe.yield) : 0} порций`;
 }
 
@@ -2023,8 +2059,9 @@ async function saveServingTransfer() {
   const batch = logisticsBatchById(currentServingBatchId);
   if (!batch) return;
   const remaining = Math.max(0, (batch.kitchenAvailableWeight != null ? Number(batch.kitchenAvailableWeight) : Number(batch.actualWeight) - Number(batch.transferredWeight || 0)));
-  const weight = Math.min(remaining, Math.max(0, Number($("#servingTransferWeight").value || 0)));
-  if (!weight) return;
+  const weight = Number($("#servingTransferWeight").value)/1000;
+  if(!Number.isFinite(weight)||weight<=0){showToast('Укажите вес передачи больше нуля в граммах');return;}
+  if(weight>remaining+1e-9){showToast(`Недостаточно готового блюда: доступно ${decimal(remaining*1000,3)} г. Исправьте вес передачи.`);return;}
   if (serverMode) {
     const response = await runServerAction("batch.transfer", {
       id: batch.id,
@@ -2038,7 +2075,7 @@ async function saveServingTransfer() {
     $("#servingTransferModal").classList.add("hidden");
     switchView("logistics");
     switchProductionTab("record");
-    showToast(`${batch.number}: отправлено на приёмку ${decimal(weight, 3)} кг`);
+    showToast(`${batch.number}: отправлено на приёмку ${decimal(weight*1000, 3)} г`);
     return;
   }
   batch.transferredWeight = Number(batch.transferredWeight || 0) + weight;
@@ -2052,7 +2089,7 @@ async function saveServingTransfer() {
   renderAll();
   switchView("logistics");
   switchProductionTab("record");
-  showToast(`${batch.number}: на раздачу передано ${decimal(weight, 2)} кг`);
+  showToast(`${batch.number}: на раздачу передано ${decimal(weight*1000, 3)} г`);
 }
 
 function openServingClose(batchId) {
@@ -3241,13 +3278,51 @@ function preparationById(id) {
 function preparationCost(preparation) {
   if (!preparation?.components?.length) return Number(preparation?.cost || 0);
   const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || '';
-  return CatalogComposition.cost(preparation,compositionState(),id=>branchUnitCost(branchId,id)||ingredientById(id)?.averageCost);
+  return stockRecipeComponents(preparation).reduce((sum,row)=>sum+row.gross/1000*(branchUnitCost(branchId,row.ingredientId)||ingredientById(row.ingredientId)?.averageCost||0),0);
 }
 
 function filteredPreparations() {
   const query = $("#preparationSearch").value.trim().toLowerCase();
   const category = $("#preparationCategoryFilter").value;
   return preparations.filter((preparation) => (!query || preparation.name.toLowerCase().includes(query) || String(preparation.usedIn || "").toLowerCase().includes(query)) && (category === "Все категории" || preparation.category === category)).filter(item => listMatches("preparation-list", item));
+}
+
+function openPreparationProduction(identity = preparations[0]?.id) {
+  if(!canAccessView("logistics"))return;
+  if(!serverMode){showToast('Производство п/ф доступно после подключения к серверу');return;}
+  const preparation=preparationById(identity);
+  if(!preparation){showToast('Сначала создайте полуфабрикат в меню');return;}
+  const dialog=document.createElement('dialog');
+  dialog.className='preparation-production-dialog';
+  const allowed=branches.filter(row=>row.status!=='inactive'&&(currentRole==='owner'||row.id===currentSession.branchId));
+  const history=(logisticsState.preparationProductions||[]).filter(row=>String(row.preparationId)===String(identity)).slice(0,20);
+  dialog.innerHTML=`<form><h2>Произвести: ${escapeHtml(preparation.name)}</h2>
+    <label>Полуфабрикат<select name="preparationId">${preparations.map(row=>`<option value="${escapeHtml(row.id)}" ${String(row.id)===String(identity)?'selected':''}>${escapeHtml(row.name)}</option>`).join('')}</select></label>
+    <p>Ингредиенты спишутся сейчас. При изготовлении блюд будет расходоваться готовый полуфабрикат без повторного списания сырья. После первого производства этот п/ф учитывается как готовый остаток на всех складах.</p>
+    <label>Склад<select name="branchId" required>${allowed.map(row=>`<option value="${escapeHtml(row.id)}">${escapeHtml(row.name)}</option>`).join('')}</select></label>
+    <label>Фактический выход, кг<input name="weight" type="number" min="0.001" step="0.001" required value="${Number(preparation.yield||0)/1000}"></label>
+    <p data-production-status role="status"></p><div class="preparation-production-actions"><button type="button" data-cancel>Отмена</button><button type="submit" class="primary-button">Произвести</button></div>
+    <h3>Последние производства</h3>${history.length?`<ul>${history.map(row=>`<li>${escapeHtml(row.number)} · ${escapeHtml(branchById(row.branchId)?.name||row.branchId)} · ${decimal(row.weight,3)} кг · ${money(row.cost)}</li>`).join('')}</ul>`:'<p>Пока нет проведённых производств.</p>'}</form>`;
+  document.body.append(dialog);
+  dialog.querySelector('[name=preparationId]').onchange=event=>{const next=event.target.value;dialog.close();openPreparationProduction(next);};
+  dialog.querySelector('[data-cancel]').onclick=()=>dialog.close();
+  dialog.addEventListener('close',()=>dialog.remove());
+  let busy=false;
+  dialog.addEventListener('cancel',event=>{if(busy)event.preventDefault();});
+  dialog.querySelector('form').onsubmit=async event=>{
+    event.preventDefault();if(busy)return;
+    const form=event.currentTarget,weight=Number(form.elements.weight.value),branchId=form.elements.branchId.value;
+    if(!Number.isFinite(weight)||weight<=0)return;
+    busy=true;dialog.setAttribute('aria-busy','true');
+    const controls=[...form.querySelectorAll('input,select,button')];controls.forEach(control=>control.disabled=true);
+    const status=form.querySelector('[data-production-status]');status.textContent='Проводим производство…';
+    try {
+      const response=await runServerAction('preparation.produce',{preparationId:identity,branchId,weight});
+      if(response){dialog.close();showToast('Полуфабрикат произведён. Остатки и себестоимость обновлены.');}
+      else status.textContent='Производство не подтверждено. Проверьте сообщение и повторите попытку — повтор не спишет сырьё дважды.';
+    } finally {busy=false;dialog.removeAttribute('aria-busy');controls.forEach(control=>control.disabled=false);}
+  };
+  dialog.showModal();
 }
 
 function renderPreparations() {
@@ -3259,7 +3334,7 @@ function renderPreparations() {
     const batchCost = preparationCost(preparation);
     const unitCost = Number(preparation.yield) > 0 ? batchCost / (Number(preparation.yield) / 1000) : 0;
     const id = escapeHtml(String(preparation.id));
-    return `<tr data-preparation-id="${id}" class="${preparation.is_active === false ? 'catalog-stopped' : ''}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong>${stoppedBadge(preparation.is_active)}</span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button>${catalogRowMenu('preparation', preparation.id, preparation.name, 'Удалить полуфабрикат', preparation.is_active)}</div></td></tr>`;
+    return `<tr data-preparation-id="${id}" class="${preparation.is_active === false ? 'catalog-stopped' : ''}"><td><button class="dish-cell preparation-open" data-preparation-compose="${id}" type="button" aria-haspopup="dialog" aria-label="Состав: ${escapeHtml(preparation.name)}">${CatalogCover.thumb(preparation)}<span><strong>${escapeHtml(preparation.name)}</strong>${stoppedBadge(preparation.is_active)}</span></button></td><td>${escapeHtml(preparation.category || "Без категории")}</td><td class="catalog-number">${decimal(preparation.yield,3)} <span class="catalog-unit">г</span></td><td class="catalog-number"><strong>${money(batchCost)}</strong><small>${money(unitCost)} / кг</small></td><td><div class="preparation-row-actions catalog-row-actions"><button class="poster-action secondary-action" data-preparation-compose="${id}" type="button" aria-haspopup="dialog">Состав</button><button class="poster-action secondary-action" data-preparation-edit="${id}" type="button">Изменить</button>${canAccessView("logistics") ? `<button class="poster-action secondary-action" data-preparation-produce="${id}" type="button">Произвести</button>` : ""}${catalogRowMenu('preparation', preparation.id, preparation.name, 'Удалить полуфабрикат', preparation.is_active)}</div></td></tr>`;
   }).join("") : `<tr class="table-empty"><td colspan="5">${preparations.length ? "По заданным условиям полуфабрикаты не найдены" : "Полуфабрикаты ещё не настроены"}</td></tr>`;
   listResult("preparation-list", visible.length, preparations.length);
 }
@@ -3281,9 +3356,9 @@ function renderMenuCategories() {
   $("#ingredientCategoriesTable").innerHTML = visibleIngredientCategories.map(category => {
     const index = ingredientCategories.indexOf(category);
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
-    const group = ingredients.filter((ingredient) => ingredient.category === category);
+    const group = ingredients.filter((ingredient) => String(ingredient.category||"").trim().toLocaleLowerCase("ru") === category.toLocaleLowerCase("ru"));
     const value = group.reduce((sum, ingredient) => sum + branchStock(branchId, ingredient.id) * branchUnitCost(branchId, ingredient.id), 0);
-    return `<tr><td><div class="dish-cell">${CatalogCover.thumb(ingredientCategoryCovers[category], category)}<strong>${escapeHtml(category)}</strong></div></td><td>${group.length}</td><td>${money(value)}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-ingredient-category-edit="${index}" type="button">Изменить</button>${catalogRowDeleteMenu('ingredient-category', category, category, 'Удалить категорию')}</div></td></tr>`;
+    return `<tr><td><button class="dish-cell" type="button" data-ingredient-category-name="${escapeHtml(category)}" aria-haspopup="dialog" aria-label="Редактировать категорию ${escapeHtml(category)}">${CatalogCover.thumb(ingredientCategoryAppearance(category), category)}<strong>${escapeHtml(category)}</strong></button></td><td>${group.length}</td><td>${money(value)}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-ingredient-category-edit="${index}" type="button">Изменить</button>${catalogRowDeleteMenu('ingredient-category', category, category, 'Удалить категорию')}</div></td></tr>`;
   }).join("");
 
   const visibleStations = stations.filter(row=>listMatches("stations",row));
@@ -3311,7 +3386,7 @@ function refreshCategoryControls() {
   $("#preparationCategoryFilter").innerHTML = '<option>Все категории</option>' + preparationCategories.map(name=>`<option value="${escapeHtml(name)}">${escapeHtml(name)}</option>`).join('');
   $("#preparationCategoryFilter").value = preparationCategories.includes(previousPreparation) ? previousPreparation : 'Все категории';
   const selectedStockCategory = $("#stockCategoryFilter").value;
-  const stockCategories = [...new Set([...ingredientCategories, ...menuCategories.map((category) => category.name)])];
+  const stockCategories = [...new Set([...ingredientCategories, ...menuCategories.map((category) => category.name), ...producedStockSources().map(row=>row.category).filter(Boolean)])];
   $("#stockCategoryFilter").innerHTML = `<option>Все категории</option>${stockCategories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("")}`;
   $("#stockCategoryFilter").value = [...$("#stockCategoryFilter").options].some((option) => option.value === selectedStockCategory) ? selectedStockCategory : "Все категории";
   const stationNames = stationNamesWithLegacy();
@@ -3323,16 +3398,19 @@ function refreshCategoryControls() {
 }
 
 function openCategoryForm(kind, index = null) {
+  if(catalogSavesInProgress.has("category"))return;
+  setCatalogSaveStatus("category", "");
   syncMenuCategoryRegistries();
   editingCategoryKind = ["recipe", "product", "menu"].includes(kind) ? "menu" : kind;
   const isMenuCategory = editingCategoryKind === "menu";
   const registry = isMenuCategory ? menuCategories : ingredientCategories;
   const entry = index == null ? null : registry[Number(index)];
   editingCategoryName = isMenuCategory ? entry?.name || null : entry || null;
+  catalogEditRevisions.category=entry ? serverWorkspaceState?.categoryRevisions?.[isMenuCategory?'menu':'ingredient']?.[editingCategoryName] || null : 'new';
   const linkedItems = isMenuCategory ? [...recipes, ...products] : ingredients;
   const linkedCount = isMenuCategory
     ? linkedItems.filter((item) => item.category === editingCategoryName).length
-    : ingredients.filter((item) => item.category === editingCategoryName).length;
+    : ingredients.filter((item) => String(item.category||"").trim().toLocaleLowerCase("ru") === String(editingCategoryName||"").toLocaleLowerCase("ru")).length;
   $("#categoryModalEyebrow").textContent = isMenuCategory ? "Меню / Категории товаров и техкарт" : "Меню / Категории ингредиентов";
   $("#categoryModalTitle").textContent = entry ? "Редактировать категорию" : "Новая категория";
   $("#categoryModalDescription").textContent = isMenuCategory
@@ -3340,10 +3418,10 @@ function openCategoryForm(kind, index = null) {
     : "Категория используется в складском учёте, фильтрах и инвентаризации.";
   $("#categoryNameInput").value = editingCategoryName || "";
   $("#categoryColorField").classList.remove("hidden");
-  const color = isMenuCategory ? entry?.color || categoryPalette[registry.length % categoryPalette.length] : ingredientCategoryCovers[entry]?.color || "#633d60";
+  const color = isMenuCategory ? entry?.color || categoryPalette[registry.length % categoryPalette.length] : ingredientCategoryAppearance(entry).color || "#633d60";
   $("#categoryColorInput").value = color;
   $("#categoryColorText").value = color.toUpperCase();
-  CatalogCover.open("category", isMenuCategory ? entry : ingredientCategoryCovers[entry], "categoryColorInput");
+  CatalogCover.open("category", isMenuCategory ? entry : ingredientCategoryAppearance(entry), "categoryColorInput");
   $("#categoryLinkedText").textContent = entry
     ? `${linkedCount} ${pluralRu(linkedCount, "связанная позиция будет обновлена", "связанные позиции будут обновлены", "связанных позиций будут обновлены")} автоматически.`
     : "Категорию можно создать заранее и затем выбрать в карточке позиции.";
@@ -3354,6 +3432,10 @@ function openCategoryForm(kind, index = null) {
 }
 
 async function saveCategoryForm() {
+  return withCatalogSave("category", saveCategoryFormContent);
+}
+
+async function saveCategoryFormContent() {
   if (!CatalogCover.ready("category")) return;
   const name = $("#categoryNameInput").value.trim();
   if (!name) {
@@ -3394,11 +3476,14 @@ async function saveCategoryForm() {
     if (editingCategoryName) {
       const categoryIndex = ingredientCategories.indexOf(editingCategoryName);
       if (categoryIndex >= 0) ingredientCategories[categoryIndex] = name;
-      ingredients.forEach((ingredient) => { if (ingredient.category === editingCategoryName) ingredient.category = name; });
+      ingredients.forEach((ingredient) => { if (String(ingredient.category||"").trim().toLocaleLowerCase("ru") === editingCategoryName.toLocaleLowerCase("ru")) ingredient.category = name; });
     } else ingredientCategories.push(name);
     saveIngredients();
   }
-  if (!isMenuCategory) { if (editingCategoryName && editingCategoryName !== name) delete ingredientCategoryCovers[editingCategoryName]; ingredientCategoryCovers[name] = {color,image}; }
+  if (!isMenuCategory) {
+    if(editingCategoryName)for(const key of Object.keys(ingredientCategoryCovers))if(key.toLocaleLowerCase('ru')===editingCategoryName.toLocaleLowerCase('ru')&&key!==name)delete ingredientCategoryCovers[key];
+    ingredientCategoryCovers[name] = {color,image};
+  }
   syncMenuCategoryRegistries();
   saveCategoryRegistries();
   $("#categoryModal").classList.add("hidden");
@@ -3498,7 +3583,7 @@ function renderStock(scope = stockDisplayScope) {
   const branch = branchById(branchId);
   const networkMode = currentRole==='owner' && select.value==='all';
   stockDisplayScope = networkMode ? 'network' : 'branch';
-  const stockEntities = [...ingredients, ...products];
+  const stockEntities = allStockSources();
   const quantityFor = entity => stockFilterMetrics(entity).quantity;
   const costFor = entity => stockFilterMetrics(entity).cost;
   const visible = stockEntities.filter(entity=>(!query || [entity.name,entity.id,entity.barcode].some(value=>String(value||'').toLowerCase().includes(query))) && (category==='Все категории'||entity.category===category) && listMatches('stock-list',entity));
@@ -3521,7 +3606,7 @@ function renderStock(scope = stockDisplayScope) {
     const limit = Number(entity.limit || 0);
     const low = available <= limit;
     const critical = available <= limit * .6;
-    const movement = networkMode ? "Суммарно по сети" : isProductEntity(entity) ? "Готовый товар точки" : "Сырьё кухни точки";
+    const movement = networkMode ? "Суммарно по сети" : entity.itemType === "preparation" ? "Произведённый полуфабрикат" : isProductEntity(entity) ? "Готовый товар точки" : "Сырьё кухни точки";
     const status = critical ? "Критично" : low ? "Заказать" : "В норме";
     const unitCost = costFor(entity);
     return `<tr><td><span class="stock-name">${escapeHtml(entity.name)}</span><small>${movement}</small></td><td>${escapeHtml(entity.category)}</td><td><span class="stock-value ${low ? "low" : ""}">${decimal(available, 3)} ${entity.unit}</span></td><td>${money(unitCost)} / ${entity.unit}</td><td><strong>${money(available * unitCost)}</strong></td><td>${decimal(limit, 3)} ${entity.unit}</td><td><span class="status-badge ${critical ? "bad" : low ? "warn" : "good"}">${status}</span></td></tr>`;
@@ -3550,7 +3635,7 @@ function renderSuppliers() {
     const total = documents.reduce((sum, document) => sum + Number(document.total || 0), 0);
     const lastDelivery = documents.sort((a, b) => new Date(b.createdAt) - new Date(a.createdAt))[0];
     const debt = documents.reduce((sum, document) => sum + Number(document.debt || 0), 0);
-    const action = `<button class="poster-action secondary-action" data-supplier-edit="${supplier.id}" type="button">Изменить</button>`;
+    const action = `<div class="catalog-row-actions"><button class="poster-action secondary-action" data-supplier-edit="${escapeHtml(supplier.id)}" type="button">Изменить</button>${currentRole==='owner'?catalogRowDeleteMenu('supplier',supplier.id,supplier.name,'Удалить поставщика'):''}</div>`;
     const contactDetails = [supplier.contact, supplier.email].filter(Boolean).join(" · ") || "Контакт не указан";
     return `<tr><td><strong>${escapeHtml(supplier.name)}</strong><small>${supplier.inn ? `ИНН ${escapeHtml(supplier.inn)}` : escapeHtml(supplier.comment || "Без комментария")}</small></td><td><div class="supplier-location-tags"><span>Весь аккаунт</span></div></td><td><strong>${escapeHtml(supplier.phone || "—")}</strong><small>${escapeHtml(contactDetails)}</small></td><td>${escapeHtml(supplier.address || "—")}</td><td><strong>${documents.length}</strong><small>${lastDelivery ? `последняя ${new Date(lastDelivery.createdAt).toLocaleDateString("ru-RU")}` : "поставок ещё нет"}</small></td><td><strong>${money(total)}</strong></td><td><strong class="${debt > 0 ? "deficit-value" : "available-value"}">${money(debt)}</strong></td><td><span class="status-badge ${supplier.status === "active" ? "good" : "warn"}">${supplier.status === "active" ? "Активный" : "Архивный"}</span></td><td>${action}</td></tr>`;
   }).join("");
@@ -5033,6 +5118,8 @@ function openRecipeForm(recipeId = null) {
   let recipe = recipes.find((entry) => entry.id === recipeId);
   if (recipe?.parentId) recipe = recipes.find(entry => String(entry.id) === String(recipe.parentId)) || recipe;
   editingRecipeId = recipe?.id || null;
+  delete catalogNewIds.recipe;
+  catalogEditRevisions.recipe = recipe?.editRevision || (recipe ? null : 'new');
   renderRecipeImportNotes("#recipeImportNotes", recipe);
   recipeCategories = normalizeScopedCategories(recipeCategories, recipes);
   $("#recipeCategoryInput").innerHTML = recipeCategories.length
@@ -5181,6 +5268,8 @@ function openPreparationForm(preparationId = null) {
   }
   const preparation = preparationById(preparationId);
   editingPreparationId = preparation?.id || null;
+  delete catalogNewIds.preparation;
+  catalogEditRevisions.preparation = preparation?.editRevision || (preparation ? null : 'new');
   const categories = [...new Set(["Заготовки кухни", "Холодный цех", "Соусы и заправки", "Выпечка", ...preparations.map((entry) => entry.category).filter(Boolean), "Без категории"] )];
   const stationNames = stationNamesWithLegacy();
   $("#preparationCategoryInput").innerHTML = categories.map((category) => `<option value="${escapeHtml(category)}">${escapeHtml(category)}</option>`).join("");
@@ -5260,8 +5349,12 @@ async function savePreparationFormContent() {
 }
 
 function openIngredientForm(ingredientId = null) {
+  if(catalogSavesInProgress.has("ingredient"))return;
+  setCatalogSaveStatus("ingredient", "");
   const ingredient = ingredientById(ingredientId);
   editingIngredientId = ingredient?.id || null;
+  delete catalogNewIds.ingredient;
+  catalogEditRevisions.ingredient=ingredient?.editRevision || (ingredient?null:'new');
   populateBranchSelect($("#ingredientWarehouseInput"));
   $("#ingredientWarehouseInput").value = pendingOwnerObjectScope || branches[0]?.id;
   ingredientCategories = normalizeIngredientCategories(ingredientCategories);
@@ -5311,6 +5404,23 @@ function updateIngredientOpeningTotal() {
   $("#ingredientOpeningTotal").textContent = money(CatalogUnits.stockQuantity(stock,unit) * cost);
 }
 
+function catalogUnitChangeReason(item,unit) {
+  if(!item||item.unit===unit)return '';
+  const identity=String(item.id);
+  const used=branches.some(branch=>branchStock(branch.id,identity)>1e-9)||logisticsUsesCatalogItem(identity)||
+    [...recipes,...preparations].some(row=>(row.components||[]).some(component=>String(component.ingredientId)===identity))||
+    modifierSets.some(group=>(group.options||[]).some(option=>String(option.sourceId)===identity))||
+    getSales().some(sale=>(sale.items||[]).some(row=>String(row.id)===identity||(row.ingredientAllocations||[]).some(allocation=>String(allocation.itemId)===identity)));
+  return used?'Нельзя менять единицу измерения позиции с остатками, составами или историей. Создайте новую позицию с нужной единицей.':'';
+}
+function recalculateIngredientLosses(ingredient,losses) {
+  for(const row of [...recipes,...preparations])for(const component of row.components||[]){
+    const method=component.method;
+    if(String(component.ingredientId)===String(ingredient.id)&&Object.hasOwn(losses,method)&&Number(ingredient.losses?.[method]||0)!==Number(losses[method])){
+      component.gross=Number(component.net??component.gross)/(1-Number(losses[method])/100);
+    }
+  }
+}
 function ingredientIdFromName(name) {
   const normalized = name.toLowerCase().replace(/[^a-zа-яё0-9]+/gi, "-").replace(/^-|-$/g, "").slice(0, 24) || "ingredient";
   let id = normalized;
@@ -5320,13 +5430,21 @@ function ingredientIdFromName(name) {
 }
 
 async function saveIngredientForm() {
+  return withCatalogSave("ingredient",saveIngredientFormContent);
+}
+
+async function saveIngredientFormContent() {
   if (!CatalogCover.ready("ingredient")) return;
   const name = $("#ingredientNameInput").value.trim();
   if (!name) {
     showToast("Введите название ингредиента");
     return;
   }
+  const losses=Object.fromEntries([['boil','lossBoilInput'],['fry','lossFryInput'],['bake','lossBakeInput'],['clean','lossCleanInput']].map(([key,id])=>[key,Number($('#'+id).value||0)]));
+  if(['lossBoilInput','lossFryInput','lossBakeInput','lossCleanInput'].some(id=>$('#'+id).validity.badInput)||Object.values(losses).some(value=>!Number.isFinite(value)||value<0||value>99)){showToast('Укажите потери от 0 до 99%');setCatalogSaveStatus('ingredient','Укажите потери от 0 до 99%');return;}
   const existing = ingredientById(editingIngredientId);
+  const unitReason=catalogUnitChangeReason(existing,$('#ingredientUnitInput').value);
+  if(unitReason){showToast(unitReason);return;}
   const details = {
     name,
     category: $("#ingredientCategoryInput").value,
@@ -5335,12 +5453,7 @@ async function saveIngredientForm() {
     unit: $("#ingredientUnitInput").value,
     pieceWeightGrams: Math.max(0, Number($("#ingredientPieceWeightInput").value || 0)),
     limit: CatalogUnits.stockQuantity($("#ingredientLimitInput").value, $("#ingredientUnitInput").value),
-    losses: {
-      boil: Math.min(99, Math.max(0, Number($("#lossBoilInput").value || 0))),
-      fry: Math.min(99, Math.max(0, Number($("#lossFryInput").value || 0))),
-      bake: Math.min(99, Math.max(0, Number($("#lossBakeInput").value || 0))),
-      clean: Math.min(99, Math.max(0, Number($("#lossCleanInput").value || 0)))
-    }
+    losses
   };
 
   if (serverMode) {
@@ -5358,7 +5471,9 @@ async function saveIngredientForm() {
   }
 
   if (existing) {
+    recalculateIngredientLosses(existing,details.losses);
     Object.assign(existing, details);
+    saveRecipes();savePreparations();
   } else {
     const stock = CatalogUnits.stockQuantity($("#ingredientStockInput").value, details.unit);
     const averageCost = Math.max(0, Number($("#ingredientCostInput").value || 0));
@@ -5385,14 +5500,18 @@ function productById(id) { return products.find((product) => String(product.id) 
 
 let productPhotoDraft = "";
 let productPhotoToken = 0, productPhotoBusy = false, productSaveInProgress = false;
+let deferredProductForm = null;
 function setProductPhotoLoading(busy) {
   productPhotoBusy = busy;
   CatalogCover.loading($('#productCoverPreview'),$('#productPhotoStatus'),busy,'Сжимаем фото…');
 }
 
 function openProductForm(productId = null) {
+  if(productSaveInProgress){if($('#productModal').classList.contains('hidden'))deferredProductForm={id:productId};return;}
   const product = productById(productId);
   editingProductId = product?.id || null;
+  delete catalogNewIds.product;
+  catalogEditRevisions.product=product?.editRevision || (product?null:'new');
   populateBranchSelect($("#productWarehouseInput"));
   $("#productWarehouseInput").value = pendingOwnerObjectScope || branches[0]?.id;
   productCategories = normalizeScopedCategories(productCategories, products);
@@ -5474,11 +5593,13 @@ async function saveProductForm(createAnother = false) {
   if (productSaveInProgress) return;
   if (productPhotoBusy) { showToast("Дождитесь загрузки фото"); return; }
   productSaveInProgress = true;
+  const modal=$('#productModal');
+  const controls=[...modal.querySelectorAll('button,input,select,textarea')].map(control=>[control,control.disabled]);
+  modal.setAttribute('aria-busy','true');
   const buttons = [$("#saveProductButton"), $("#saveProductAndNewButton")];
-  const previousDisabled = buttons.map(button => button.disabled);
   const activeButton = buttons[createAnother ? 1 : 0];
   const previousLabel = activeButton.textContent;
-  buttons.forEach(button => { button.disabled = true; });
+  controls.forEach(([control])=>control.disabled=true);
   activeButton.innerHTML = '<span class="admin-loading-spinner" aria-hidden="true"></span><span>Сохраняем…</span>';
   activeButton.setAttribute("aria-busy", "true");
   try {
@@ -5487,11 +5608,17 @@ async function saveProductForm(createAnother = false) {
     productSaveInProgress = false;
     activeButton.textContent = previousLabel;
     activeButton.removeAttribute("aria-busy");
-    buttons.forEach((button, index) => { button.disabled = previousDisabled[index]; });
+    modal.removeAttribute('aria-busy');
+    controls.forEach(([control,disabled])=>control.disabled=disabled);
+    if(deferredProductForm){const next=deferredProductForm;deferredProductForm=null;openProductForm(next.id);}
   }
 }
 
 async function saveProductFormContent(createAnother = false) {
+  const unit=$('#productUnitInput').value;
+  const family=editingProductId==null?[]:products.filter(row=>String(row.id)===String(editingProductId)||String(row.parentId)===String(editingProductId));
+  const reason=family.map(row=>catalogUnitChangeReason(row,unit)).find(Boolean);
+  if(reason){showToast(reason);return;}
   if (await window.ProductVariants.save(createAnother)) return;
   const modifierData = window.CatalogModifiers.read();
   if (!modifierData) return;
@@ -5504,6 +5631,8 @@ async function saveProductFormContent(createAnother = false) {
   }
   if (!await ensureProductCategory()) return;
   const existing = productById(editingProductId);
+  const unitReason=catalogUnitChangeReason(existing,$('#productUnitInput').value);
+  if(unitReason){showToast(unitReason);return;}
   const details = {
     name,
     category: $("#productCategoryInput").value,
@@ -5561,6 +5690,7 @@ async function saveProductFormContent(createAnother = false) {
 }
 
 const catalogDeleteConfig = {
+  supplier: {label:"Поставщик", deleted:"Поставщик удалён", modal:"supplierModal", page:"suppliers"},
   recipe: { label: "Технологическая карта", deleted: "Техкарта удалена", modal: "recipeModal", page: "recipes" },
   preparation: { label: "Полуфабрикат", deleted: "Полуфабрикат удалён", modal: "preparationModal", page: "preparations" },
   ingredient: { label: "Ингредиент", deleted: "Ингредиент удалён", modal: "ingredientModal", page: "ingredients" },
@@ -5582,6 +5712,12 @@ function logisticsUsesCatalogItem(itemId) {
 
 function catalogDeleteConstraint(kind, id) {
   const key = String(id);
+  if(kind==='supplier'){
+    const documents=[...(logisticsState.supplies||[]),...(logisticsState.directOrders||[])].filter(row=>String(row.supplierId)===key);
+    const debt=documents.reduce((sum,row)=>sum+Number(row.debt||0),0);
+    if(debt>.000001)return `Сначала погасите задолженность поставщику: ${money(debt)}.`;
+    if((logisticsState.directOrders||[]).some(row=>String(row.supplierId)===key&&['submitted','approved','shipped'].includes(row.status)))return 'Сначала завершите или отмените открытые заказы поставщику.';
+  }
   if (kind === "product" || kind === "recipe") {
     const collection = kind === "product" ? products : recipes;
     for (const child of collection.filter(item => String(item.parentId) === key)) {
@@ -5661,6 +5797,10 @@ function requestCatalogDelete(kind, id, name) {
     });
     $("#catalogDeleteStatus p").textContent = reason || "Уверены, что хотите удалить этот ингредиент?";
   }
+  if(kind==='supplier'&&!reason){
+    $('#catalogDeleteDescription').textContent='Поставщик исчезнет из справочника и выбора для новых поставок. История поставок и оплат сохранится.';
+    $('#catalogDeleteStatus p').textContent='Задолженности и открытых заказов нет. Поставщика можно удалить.';
+  }
   $("#catalogDeleteModal").classList.remove("hidden");
 }
 
@@ -5676,6 +5816,7 @@ function deleteCatalogLocally({ kind, id }) {
     if (index >= 0) collection.splice(index, 1);
   };
   if (kind === "recipe") { recipes.filter(item => String(item.parentId) === String(id)).forEach(item => deleteCatalogLocally({kind:"recipe", id:item.id})); removeById(recipes); saveRecipes(); }
+  else if (kind === "supplier") { removeById(suppliers); saveSuppliers(); }
   else if (kind === "preparation") { removeById(preparations); savePreparations(); }
   else if (kind === "ingredient") {
     [...recipes, ...preparations].forEach(item => { item.components = (item.components || []).filter(component => String(component.ingredientId) !== String(id)); });
@@ -5700,7 +5841,7 @@ function deleteCatalogLocally({ kind, id }) {
 }
 
 async function confirmCatalogDelete() {
-  if (!pendingCatalogDelete) return;
+  if (!pendingCatalogDelete || $("#confirmCatalogDeleteButton").disabled) return;
   const reason = catalogDeleteConstraint(pendingCatalogDelete.kind, pendingCatalogDelete.id);
   if (reason) {
     $("#catalogDeleteStatus").classList.add("blocked");
@@ -5710,13 +5851,18 @@ async function confirmCatalogDelete() {
   }
   const deletion = { ...pendingCatalogDelete };
   if (serverMode) {
-    const response = await runServerAction("catalog.delete", { kind: deletion.kind, id: deletion.id });
+    const button=$('#confirmCatalogDeleteButton');
+    button.disabled=true;
+    let response;
+    try {response=await runServerAction("catalog.delete", { kind: deletion.kind, id: deletion.id });}
+    finally {button.disabled=false;}
     if (!response) return;
   } else deleteCatalogLocally(deletion);
   $("#catalogDeleteModal").classList.add("hidden");
   $(`#${deletion.modal}`).classList.add("hidden");
   pendingCatalogDelete = null;
-  switchMenuPage(deletion.page);
+  if(deletion.kind==="supplier")switchStockTab("suppliers");
+  else switchMenuPage(deletion.page);
   showToast(`${deletion.deleted}: «${deletion.name}»`);
 }
 
@@ -5729,9 +5875,13 @@ function populateSupplySuppliers(selectedId = $("#supplySupplier").value) {
 }
 
 function openSupplierForm(supplierId = null, returnToSupply = false) {
+  if(catalogSavesInProgress.has("supplier"))return;
+  setCatalogSaveStatus("supplier", "");
   if (!hasRole("owner", "branch")) return;
   const supplier = supplierById(supplierId);
   editingSupplierId = supplier?.id || null;
+  delete catalogNewIds.supplier;
+  catalogEditRevisions.supplier=supplier?.editRevision || (supplier?null:'new');
   supplierReturnToSupply = returnToSupply;
   $("#supplierModalTitle").textContent = supplier ? "Редактировать поставщика" : "Новый поставщик";
   $("#supplierNameInput").value = supplier?.name || "";
@@ -5745,11 +5895,16 @@ function openSupplierForm(supplierId = null, returnToSupply = false) {
   $("#supplierLocationOptions").innerHTML = "";
   $("#supplierLocationHint").textContent = "Поставщик доступен во всём аккаунте";
   $("#saveSupplierButton").textContent = supplier ? "Сохранить изменения" : "Добавить поставщика";
+  $("#deleteSupplierButton").classList.toggle("hidden", !supplier || currentRole!=="owner");
   $("#supplierModal").classList.remove("hidden");
   setTimeout(() => $("#supplierNameInput").focus(), 20);
 }
 
 async function saveSupplier() {
+  return withCatalogSave("supplier",saveSupplierFormContent);
+}
+
+async function saveSupplierFormContent() {
   if (!hasRole("owner", "branch")) return;
   const name = $("#supplierNameInput").value.trim();
   if (!name) { showToast("Укажите название поставщика"); return; }
@@ -6031,7 +6186,8 @@ async function saveSupply() {
 }
 
 function populateWriteoffForm() {
-  $("#writeoffIngredient").innerHTML = `<optgroup label="Ингредиенты">${ingredients.map((ingredient) => `<option value="${ingredient.id}">${ingredient.name} · ${decimal(availableStock(ingredient), 3)} ${ingredient.unit}</option>`).join("")}</optgroup><optgroup label="Готовые товары">${products.map((product) => `<option value="${product.id}">${product.name} · ${decimal(availableProductStock(product), 3)} ${product.unit}</option>`).join("")}</optgroup>`;
+  populateBranchSelect($("#writeoffBranch"));
+  $("#writeoffIngredient").innerHTML = allStockSources().map(entity=>`<option value="${escapeHtml(entity.id)}">${escapeHtml(entity.name)} · ${decimal(availableEntityStock(entity),3)} ${entity.unit}</option>`).join('');
   updateWriteoffCalculation();
 }
 
@@ -6040,14 +6196,22 @@ function updateWriteoffCalculation() {
   const quantity = Math.max(0, Number($("#writeoffQuantity").value || 0));
   if (!ingredient) return;
   $("#writeoffUnit").textContent = ingredient.unit;
-  $("#writeoffCost").textContent = money(quantity * ingredient.averageCost);
+  $("#writeoffCost").textContent = money(quantity * (serverMode ? branchUnitCost($("#writeoffBranch").value,ingredient.id) : ingredient.averageCost));
 }
 
-function saveWriteoff() {
-  if (!hasRole("owner", "warehouse")) return;
+async function saveWriteoff() {
+  if (!canAccessStockTab("writeoff") || $("#saveWriteoffButton").disabled) return;
   const ingredient = stockEntityById($("#writeoffIngredient").value);
   const quantity = Math.max(0, Number($("#writeoffQuantity").value || 0));
   if (!ingredient || !quantity) return;
+  if(serverMode){
+    const button=$("#saveWriteoffButton");button.disabled=true;
+    try {
+      const response=await runServerAction('stock.writeoff',{branchId:$('#writeoffBranch').value,itemId:ingredient.id,quantity,reason:$('#writeoffReason').value});
+      if(response){$('#writeoffModal').classList.add('hidden');switchStockTab('writeoff');showToast('Списание проведено и сохранено на сервере');}
+    } finally {button.disabled=false;}
+    return;
+  }
   if (quantity > availableEntityStock(ingredient)) {
     showToast(`Недостаточно остатка: доступно ${decimal(availableEntityStock(ingredient), 3)} ${ingredient.unit}`);
     return;
@@ -6079,7 +6243,7 @@ function updateProductionPreview() {
   const quantity = Math.max(1, Number($("#productionQuantity").value || 1));
   if (!recipe) return;
   $("#productionCost").textContent = money(recipeCost(recipe) * quantity);
-  $("#productionPreview").innerHTML = rawRecipeComponents(recipe).map((component) => {
+  $("#productionPreview").innerHTML = stockRecipeComponents(recipe).map((component) => {
     const ingredient = componentSource(component);
     const required = componentGross(component) / 1000 * quantity;
     const available = ingredient ? availableStock(ingredient) : 0;
@@ -6092,7 +6256,7 @@ function saveProduction() {
   const recipe = recipes.find((entry) => entry.id === Number($("#productionRecipe").value));
   const quantity = Math.max(1, Math.round(Number($("#productionQuantity").value || 1)));
   if (!recipe) return;
-  const shortage = rawRecipeComponents(recipe).find((component) => {
+  const shortage = stockRecipeComponents(recipe).find((component) => {
     const ingredient = componentSource(component);
     return !ingredient || componentGross(component) / 1000 * quantity > availableStock(ingredient);
   });
@@ -6101,7 +6265,7 @@ function saveProduction() {
     return;
   }
   const total = recipeCost(recipe) * quantity;
-  rawRecipeComponents(recipe).forEach((component) => {
+  stockRecipeComponents(recipe).forEach((component) => {
     const ingredient = componentSource(component);
     ingredient.stock -= componentGross(component) / 1000 * quantity;
   });
@@ -6113,7 +6277,7 @@ function saveProduction() {
     quantity,
     total,
     description: `${recipe.name} · ${quantity} порц. · готово ${finishedStock(recipe.id) + quantity} порц.`,
-    items: rawRecipeComponents(recipe).map((component) => ({ ingredientId: component.ingredientId, quantity: componentGross(component) / 1000 * quantity }))
+    items: stockRecipeComponents(recipe).map((component) => ({ ingredientId: component.ingredientId, quantity: componentGross(component) / 1000 * quantity }))
   });
   $("#productionModal").classList.add("hidden");
   renderAll();
@@ -6122,11 +6286,11 @@ function saveProduction() {
 }
 
 function inventoryCategories() {
-  return [...new Set([...ingredients, ...products].map((entity) => entity.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
+  return [...new Set(allStockSources().map((entity) => entity.category).filter(Boolean))].sort((a, b) => a.localeCompare(b, "ru"));
 }
 
 function inventorySnapshotItems(branchId, scope, category) {
-  return [...ingredients, ...products]
+  return allStockSources()
     .filter((entity) => scope === "full" || entity.category === category)
     .map((entity) => ({ itemId: entity.id, book: branchStock(branchId, entity.id), actual: null, unitCost: branchUnitCost(branchId, entity.id) }));
 }
@@ -6344,7 +6508,7 @@ function openInventoryMovement(index, bucket) {
   if (!summary?.available) return;
   const titles = { incoming: "Поступления", outgoing: "Расход", writeoff: "Списания", adjustment: "Корректировки" };
   if (!titles[bucket]) return;
-  const types = { supplier_receipt: "Поставка", transfer_in: "Перемещение на точку", transfer_out: "Перемещение с точки", production_consumption: "Производство", sale: "Продажа товара", sale_consumption: "Продажа блюда", sale_refund: "Возврат продажи", sales_import: "Импорт продаж", external_sale: "Импорт продаж", writeoff: "Списание", inventory_adjustment: "Инвентаризация", ingredient_count: "Пересчёт смены" };
+  const types = { preparation_production: "Производство п/ф", warehouse_writeoff: "Списание со склада", supplier_receipt: "Поставка", transfer_in: "Перемещение на точку", transfer_out: "Перемещение с точки", production_consumption: "Производство", sale: "Продажа товара", sale_consumption: "Продажа блюда", sale_refund: "Возврат продажи", sales_import: "Импорт продаж", external_sale: "Импорт продаж", writeoff: "Списание", inventory_adjustment: "Инвентаризация", ingredient_count: "Пересчёт смены" };
   const entries = (summary.entries || []).filter(entry => entry.bucket === bucket);
   const entity = inventoryItemInfo(item);
   $("#inventoryMovementTitle").textContent = `${titles[bucket]} · ${entity.name}`;
@@ -6910,6 +7074,9 @@ new MutationObserver(renderMobileWorkspaceNavigation).observe($("#mainNav"), {
 
 $("#mainNav").addEventListener("click", (event) => {
   if (!event.target.closest("button")) return;
+  if(document.querySelector('.modal-backdrop[aria-busy="true"]:not(.hidden)')){
+    event.preventDefault();event.stopImmediatePropagation();showToast('Дождитесь завершения сохранения');return;
+  }
   document.querySelectorAll(".modal-backdrop:not(.hidden), .side-drawer-backdrop:not(.hidden)").forEach((workspace) => workspace.classList.add("hidden"));
 }, { capture: true });
 
@@ -7067,6 +7234,8 @@ $("#productsTable").addEventListener("click", (event) => {
 $("#preparationSearch").addEventListener("input", renderPreparations);
 $("#preparationCategoryFilter").addEventListener("change", renderPreparations);
 $("#preparationsTable").addEventListener("click", (event) => {
+  const produce = event.target.closest('[data-preparation-produce]');
+  if(produce){openPreparationProduction(produce.dataset.preparationProduce);return;}
   const button = event.target.closest("[data-preparation-edit]");
   if (button) { openPreparationForm(button.dataset.preparationEdit); return; }
   const compose = event.target.closest('[data-preparation-compose]');
@@ -7088,6 +7257,12 @@ $("#menuCategoriesTable").addEventListener("click", (event) => {
   if (button) openCategoryForm("menu", button.dataset.menuCategoryEdit);
 });
 $("#ingredientCategoriesTable").addEventListener("click", (event) => {
+  const nameButton = event.target.closest('[data-ingredient-category-name]');
+  if(nameButton){
+    const index=ingredientCategories.indexOf(nameButton.dataset.ingredientCategoryName);
+    if(index>=0)openCategoryForm('ingredient',index);
+    return;
+  }
   const button = event.target.closest("[data-ingredient-category-edit]");
   if (button) openCategoryForm("ingredient", button.dataset.ingredientCategoryEdit);
 });
@@ -7226,6 +7401,7 @@ $("#productionTabs").addEventListener("click", (event) => {
   const button = event.target.closest("[data-production-tab]");
   if (button) switchProductionTab(button.dataset.productionTab);
 });
+$('#openPreparationProductionButton').addEventListener('click',()=>openPreparationProduction());
 $("#openBatchButton").addEventListener("click", () => openBatchForm());
 $("#productionBranchSelect").addEventListener("change", () => { renderProductionRecord(); renderProductionJournal(); });
 $("#productionSearch").addEventListener("input", renderProductionRecord);
@@ -7283,7 +7459,7 @@ $("#saveRequestButton").addEventListener("click", saveRequest);
 $("#addDirectOrderItemButton").addEventListener("click", () => {
   syncDirectOrderDraft();
   const usedIds = new Set(directOrderDraftItems.map((item) => item.itemId));
-  const stockEntities = [...ingredients, ...products];
+  const stockEntities = allStockSources();
   const entity = stockEntities.find((entry) => !usedIds.has(entry.id)) || stockEntities[0];
   if (!entity) return;
   const branchId = $("#directOrderBranch").value;
@@ -7329,7 +7505,7 @@ $("#addPointTransferItemButton").addEventListener("click", () => {
   syncPointTransferDraft();
   const usedIds = new Set(pointTransferDraftItems.map((item) => item.itemId));
   const sourceBranchId = $("#pointTransferSource").value;
-  const entities = [...ingredients, ...products];
+  const entities = allStockSources();
   const entity = entities.find((entry) => !usedIds.has(entry.id) && branchStock(sourceBranchId, entry.id) > 0) || entities.find((entry) => !usedIds.has(entry.id)) || entities[0];
   if (!entity) return;
   pointTransferDraftItems.push({ itemId: entity.id, quantity: 1 });
@@ -7635,11 +7811,16 @@ $("#supplyImportZone").addEventListener("drop", (event) => {
   importSupplyCsv(event.dataTransfer?.files?.[0]);
 });
 $("#saveSupplierButton").addEventListener("click", saveSupplier);
+$('#deleteSupplierButton').addEventListener('click',()=>{
+  const supplier=supplierById(editingSupplierId);
+  if(supplier&&currentRole==='owner')requestCatalogDelete('supplier',supplier.id,supplier.name);
+});
 $("#printDirectOrderButton").addEventListener("click", () => openDirectOrderPrint());
 $("#confirmDirectOrderSendButton").addEventListener("click", confirmDirectOrderSend);
 $("#writeoffIngredient").addEventListener("change", updateWriteoffCalculation);
 $("#writeoffQuantity").addEventListener("input", updateWriteoffCalculation);
 $("#saveWriteoffButton").addEventListener("click", saveWriteoff);
+$("#writeoffBranch").addEventListener("change", updateWriteoffCalculation);
 $("#productionRecipe").addEventListener("change", updateProductionPreview);
 $("#productionQuantity").addEventListener("input", updateProductionPreview);
 $("#saveProductionButton").addEventListener("click", saveProduction);

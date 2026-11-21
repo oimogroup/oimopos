@@ -1,6 +1,7 @@
 """Kitchen shifts with explicit opening/closing counts, separate from cash shifts."""
 from uuid import uuid4
 from . import custody
+from .composition import produced_sources
 
 
 def current(state, branch_id):
@@ -11,7 +12,7 @@ def ingredient_stocks(state, branch_id):
     stock = state['logisticsState'].get('branchStocks', {}).get(branch_id, {})
     return sorted([{'id': str(item['id']), 'name': item['name'], 'unit': item.get('unit') or 'кг',
                     'quantity': float(stock.get(str(item['id']), stock.get(item['id'], 0)) or 0)}
-                   for item in state.get('ingredients', [])], key=lambda item: item['name'].casefold())
+                   for item in [*state.get('ingredients', []), *produced_sources(state)]], key=lambda item: item['name'].casefold())
 
 
 def context(state, branch_id):

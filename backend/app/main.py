@@ -2,6 +2,7 @@ from __future__ import annotations
 from . import production_shifts
 
 from contextlib import asynccontextmanager
+from copy import deepcopy
 import asyncio
 from datetime import datetime, timedelta, timezone
 from decimal import Decimal
@@ -17,7 +18,7 @@ from psycopg import Connection
 from psycopg.errors import CheckViolation, ForeignKeyViolation, UniqueViolation
 from psycopg.types.json import Jsonb
 
-from . import custody
+from . import custody, catalog_saves
 from .transfer_history import build_transfer_history, build_cash_shift_history
 from .config import get_settings
 from .database import close_pool, get_connection, open_pool, pool
@@ -213,9 +214,9 @@ def _authorize_staff_action(user: dict, action: str) -> None:
         required = "finance"
     elif action in {"category.upsert", "station.upsert", "preparation.upsert", "ingredient.upsert", "ingredient.import", "product.upsert", "product.group.upsert", "recipe.upsert", "recipe.group.upsert", "catalog.delete"}:
         required = "menu"
-    elif action in {"supplier.upsert", "supply.create", "order.create", "order.approve", "order.send", "order.receive", "transfer.create", "transfer.approve", "transfer.dispatch", "transfer.receive", "inventory.start", "inventory.save", "inventory.submit", "inventory.cancel", "inventory.return", "inventory.post"}:
+    elif action in {"stock.writeoff", "supplier.upsert", "supply.create", "order.create", "order.approve", "order.send", "order.receive", "transfer.create", "transfer.approve", "transfer.dispatch", "transfer.receive", "inventory.start", "inventory.save", "inventory.submit", "inventory.cancel", "inventory.return", "inventory.post"}:
         required = "inventory"
-    elif action.startswith("production.shift.") or action.startswith("custody.") or action in {"batch.create", "batch.transfer", "batch.close", "batch.release", "batch.serve", "batch.serve_many"}:
+    elif action.startswith("production.shift.") or action.startswith("custody.") or action in {"preparation.produce", "batch.create", "batch.transfer", "batch.close", "batch.release", "batch.serve", "batch.serve_many"}:
         required = "production"
     else:
         raise HTTPException(status_code=403, detail="Это действие недоступно сотруднику")
@@ -2464,13 +2465,13 @@ def workspace_action(
     locked_workspace = _workspace_row(connection, tenant_id, for_update=True)
     acting_user = user
     previous_operation = None
-    replayable_operations = {"supply.create", "batch.create", "pos.cash.movement"}
+    replayable_operations = {"stock.writeoff", "supply.create", "batch.create", "preparation.produce", "pos.cash.movement"}
     pos_actions = {
         "work.shift.open", "work.shift.close",
         "pos.receiving.accept", "pos.receiving.reject", "pos.serving.writeoff", "pos.serving.surplus",
         "sale.import", "sale.create", "sale.refund", "pos.order.save", "pos.order.remove",
         "pos.customer.upsert", "pos.cash.movement", "supply.create", "pos.order.status",
-        "batch.create", "batch.transfer", "batch.close", "batch.release", "batch.serve", "batch.serve_many",
+        "preparation.produce", "batch.create", "batch.transfer", "batch.close", "batch.release", "batch.serve", "batch.serve_many",
     }
     if (command.action in pos_actions or command.action.startswith("custody.") or command.action.startswith("production.shift.")) and request.headers.get("X-Ashkana-Client") == "pos":
         operator = _current_pos_operator(connection, user, ashkana_pos_operator)
@@ -2499,6 +2500,22 @@ def workspace_action(
             "shift_id": shift["id"] if shift else None,
         }
     _authorize_staff_action(acting_user, command.action)
+    catalog_command = command.action in catalog_saves.ACTIONS
+    catalog_signature = None
+    if catalog_command:
+        if command.request_id:
+            try:
+                catalog_signature = catalog_saves.digest([command.action, command.payload, command.expected_revision])
+            except (ValueError, TypeError) as error:
+                raise HTTPException(422, 'Проверьте числовые поля карточки') from error
+            previous = catalog_saves.operation(connection, tenant_id, acting_user['id'], command.request_id)
+            if previous:
+                if previous['payload']['_catalogSave']['signature'] != catalog_signature:
+                    raise HTTPException(409, 'Идентификатор сохранения уже использован для других изменений')
+                return {'version': locked_workspace['version'], 'replayed': True,
+                        'entity': {'type': previous['entity_type'], 'id': previous['entity_id']},
+                        'state': visible_state(locked_workspace['payload'], acting_user)}
+        catalog_saves.check_revision(locked_workspace['payload'], command)
     if command.action in replayable_operations:
         from .workspace import operation_replay
         try:
@@ -2523,6 +2540,7 @@ def workspace_action(
         with connection.transaction():
             row = locked_workspace
             state = row["payload"]
+            catalog_before = deepcopy(state) if catalog_command else None
             from .workspace_patch import CATALOG_ACTIONS, state_patch
             compact = compact_catalog and acting_user.get("role") == "owner" and command.action in CATALOG_ACTIONS
             before_visible = visible_state(state, acting_user) if compact else None
@@ -2550,11 +2568,16 @@ def workspace_action(
             if command.action == "branch.upsert":
                 _update_branch_account(connection, tenant_id, command.payload, state)
             version = int(row["version"]) + 1
-            connection.execute(
-                "UPDATE operational_state SET version = %s, payload = %s, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s",
-                (version, Jsonb(state), tenant_id),
-            )
-            audit_payload = {key: value for key, value in command.payload.items() if key != "password"}
+            if catalog_command:
+                catalog_saves.update(connection, tenant_id, version, catalog_before, state)
+            else:
+                connection.execute(
+                    "UPDATE operational_state SET version = %s, payload = %s, updated_at = CURRENT_TIMESTAMP WHERE tenant_id = %s",
+                    (version, Jsonb(state), tenant_id),
+                )
+            audit_payload = catalog_saves.audit_payload(command.payload) if catalog_command else {key: value for key, value in command.payload.items() if key != "password"}
+            if catalog_signature:
+                audit_payload['_catalogSave'] = {'requestId': command.request_id, 'signature': catalog_signature}
             if command.action == "settings.update":
                 audit_payload = {"section": command.payload.get("section"), "fields": list(command.payload.get("values", {}))}
             connection.execute(
@@ -2572,6 +2595,18 @@ def workspace_action(
     if compact:
         return {**result, "baseVersion": row["version"], "statePatch": state_patch(before_visible, output)}
     return {**result, "state": output}
+
+
+@app.get('/api/v1/workspace/catalog-operations/{request_id}', tags=['operations'])
+def catalog_operation_status(request_id: str, user: dict = Depends(current_user), connection: Connection = Depends(get_connection)):
+    tenant = _tenant_user(user)
+    event = catalog_saves.operation(connection, tenant, user['id'], request_id)
+    if not event:
+        return {'confirmed': False}
+    row = _workspace_row(connection, tenant)
+    return {'confirmed': True, 'version': row['version'],
+            'entity': {'type': event['entity_type'], 'id': event['entity_id']},
+            'state': visible_state(row['payload'], user)}
 
 
 @app.get("/api/v1/audit-events", tags=["operations"])

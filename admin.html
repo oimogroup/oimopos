@@ -4,7 +4,7 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=list-filters-1" />
+    <link rel="stylesheet" href="admin.css?v=catalog-reliability-20261121" />
     <link rel="stylesheet" href="minimal.css?v=modifiers-1" />
       <link rel="stylesheet" href="oimo.css?v=photo-upload-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
@@ -269,6 +269,7 @@
           <section class="admin-view" id="view-logistics">
             <div class="page-heading">
               <div><p>Кухня столовой</p><h1>Производство</h1><small>План, фактический выпуск, передача на раздачу и остатки после обслуживания</small></div>
+              <button class="secondary-action" id="openPreparationProductionButton" type="button">Произвести полуфабрикат</button>
               <button class="primary-button" id="openBatchButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-plus"/></svg>Выпустить продукцию</button>
             </div>
 
@@ -577,7 +578,8 @@
           <label class="supplier-comment-field"><span>Комментарий</span><textarea id="supplierCommentInput" rows="3" placeholder="Условия доставки, график, примечания"></textarea></label>
         </div>
         <div class="supplier-location-section hidden"><div><strong>Заведения</strong><small id="supplierLocationHint">Поставщик доступен во всём аккаунте</small></div><div class="supplier-location-options" id="supplierLocationOptions"></div></div>
-        <div class="modal-actions"><button class="secondary-action" data-close="supplierModal" type="button">Отмена</button><button class="primary-button" id="saveSupplierButton" type="button">Сохранить поставщика</button></div>
+        <p id="supplierSaveStatus" class="catalog-save-status" role="status" aria-live="polite" hidden></p>
+        <div class="modal-actions"><button class="danger-button hidden" id="deleteSupplierButton" type="button">Удалить поставщика</button><button class="secondary-action" data-close="supplierModal" type="button">Отмена</button><button class="primary-button" id="saveSupplierButton" type="button">Сохранить поставщика</button></div>
       </section>
     </div>
 
@@ -719,7 +721,8 @@
     <div class="modal-backdrop hidden" id="writeoffModal">
       <section class="admin-modal compact-modal">
         <header><div><p>Складской документ</p><h2>Новое списание</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="writeoffModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
-        <label class="full-label"><span>Ингредиент</span><select id="writeoffIngredient"></select></label>
+        <label>Склад<select id="writeoffBranch"></select></label>
+        <label class="full-label"><span>Позиция</span><select id="writeoffIngredient"></select></label>
         <div class="modal-grid"><label><span>Количество</span><div class="unit-input"><input id="writeoffQuantity" type="number" min="0.01" step="0.01" value="1" /><b id="writeoffUnit">кг</b></div></label><label><span>Причина</span><select id="writeoffReason"><option>Порча</option><option>Истёк срок годности</option><option>Проработка блюда</option><option>Недостача</option><option>Другое</option></select></label></div>
         <div class="document-result"><span>Будет списано со склада</span><strong id="writeoffCost">0 сом</strong></div>
         <div class="modal-actions"><button class="secondary-action" data-close="writeoffModal" type="button">Отмена</button><button class="primary-button" id="saveWriteoffButton" type="button">Провести списание</button></div>
@@ -864,6 +867,7 @@
 
           <div class="edit-stock-note hidden" id="editIngredientStockNote"><svg class="ui-icon"><use href="#ui-info"/></svg><p>Остаток и себестоимость существующего ингредиента изменяются через поставки, списания или инвентаризацию.</p></div>
         </div>
+        <p id="ingredientSaveStatus" class="catalog-save-status" role="status" aria-live="polite" hidden></p>
         <div class="modal-actions catalog-editor-footer"><button class="danger-button modal-delete-action hidden" id="deleteIngredientButton" type="button"><svg class="ui-icon"><use href="#ui-trash"/></svg>Удалить</button><span></span><button class="secondary-action" data-close="ingredientModal" type="button">Отмена</button><button class="primary-button" id="saveIngredientButton" type="button">Сохранить</button></div>
       </section>
     </div>
@@ -907,6 +911,7 @@
           </section>
           <div class="edit-stock-note" id="categoryLinkedNote"><svg class="ui-icon"><use href="#ui-info"/></svg><p id="categoryLinkedText">После переименования связанные позиции обновятся автоматически.</p></div>
         </div>
+        <p id="categorySaveStatus" class="catalog-save-status" role="status" aria-live="polite" hidden></p>
         <div class="modal-actions catalog-editor-footer"><button class="danger-button modal-delete-action hidden" id="deleteCategoryButton" type="button"><svg class="ui-icon"><use href="#ui-trash"/></svg>Удалить</button><span></span><button class="secondary-action" data-close="categoryModal" type="button">Отмена</button><button class="primary-button" id="saveCategoryButton" type="button">Сохранить</button></div>
       </section>
     </div>
@@ -1115,7 +1120,7 @@
     <div class="modal-backdrop hidden" id="servingTransferModal">
       <section class="admin-modal compact-modal">
         <header><div><p>Кухня → линия раздачи</p><h2 id="servingTransferTitle">Передача готовой партии</h2></div><button class="modal-close icon-button" aria-label="Закрыть" data-close="servingTransferModal" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#ui-close"/></svg></button></header>
-        <div class="modal-grid"><label><span>Передать на раздачу</span><div class="unit-input"><input id="servingTransferWeight" type="number" min="0.1" step="0.1" /><b>кг</b></div></label><label><span>Температура блюда</span><div class="unit-input"><input id="servingTransferTemperature" type="number" step="0.1" value="65" /><b>°C</b></div></label></div>
+        <div class="modal-grid"><label><span>Передать на раздачу</span><div class="unit-input"><input id="servingTransferWeight" type="number" min="0.001" step="0.001" inputmode="decimal" /><b>г</b></div></label><label><span>Температура блюда</span><div class="unit-input"><input id="servingTransferTemperature" type="number" step="0.1" value="65" /><b>°C</b></div></label></div>
         <div class="modal-grid"><label><span>Линия / мармит</span><select id="servingLine"><option>Линия №1 · горячие блюда</option><option>Линия №2 · супы</option><option>Холодная витрина · салаты</option></select></label><label><span>Кто примет</span><select id="servingReceiver" required></select></label></div>
         <div class="document-result"><span>Расчётно получится</span><strong id="servingTransferPortions">0 порций</strong></div>
         <div class="modal-actions"><button class="secondary-action" data-close="servingTransferModal" type="button">Отмена</button><button class="primary-button" id="saveServingTransferButton" type="button">Передать на раздачу</button></div>
@@ -1136,11 +1141,11 @@
     <dialog id="payrollDialog" class="payroll-dialog"><form id="payrollForm"><header><div><p id="payrollDialogEyebrow">Зарплата</p><h2 id="payrollDialogTitle"></h2></div><button type="button" id="payrollDialogClose" class="icon-button" aria-label="Закрыть">×</button></header><div id="payrollFormFields"></div><p id="payrollFormError" role="alert"></p><footer><button type="button" class="secondary-action" id="payrollDialogCancel">Отмена</button><button type="submit" class="primary-button" id="payrollDialogSubmit">Сохранить</button></footer></form></dialog>
     <div class="admin-toast hidden" id="adminToast"></div>
     <script src="numeric-inputs.js?v=1"></script>
-    <script src="api-client.js?v=filtered-export-1"></script>
+    <script src="api-client.js?v=catalog-integrity-20261121"></script>
     <script src="catalog-cover.js?v=photo-upload-2"></script>
     <script src="company-settings.js?v=modifiers-1"></script>
     <script src="catalog-units.js?v=preparation-components-1"></script>
-    <script src="composition-core.js?v=1"></script>
+    <script src="composition-core.js?v=catalog-reliability-20261121"></script>
     <script src="catalog-modifiers.js?v=modifiers-2"></script>
     <script src="ingredients-list.js?v=list-filters-1"></script>
     <script src="ingredient-picker.js?v=preparation-components-1"></script>
@@ -1148,8 +1153,8 @@
     <script src="recipe-variants.js?v=save-feedback-1"></script>
     <script src="custody.js?v=actions-15"></script>
     <script src="admin-filters.js?v=1"></script>
-    <script src="admin-list-filters.js?v=1"></script>
-    <script src="admin.js?v=preparation-components-1"></script>
+    <script src="admin-list-filters.js?v=catalog-reliability-20261121"></script>
+    <script src="admin.js?v=form-validation-20261121"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>

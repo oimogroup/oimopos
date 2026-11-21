@@ -27,3 +27,17 @@ assert.equal(projected.state.logisticsState.branchStocks.b1.flour,9.76);
 assert.equal(device.workspace.state.logisticsState.branchStocks.b1.flour,10);
 assert.equal(projected.state.recipes[0].availableToOrder,81);
 console.log('Preparation expansion, costs, cycles, duplicate ingredients, authorized snapshots and offline deductions: passed');
+const produced=structuredClone(state);produced.preparations[0].stockMode='produced';
+produced.logisticsState.branchStocks.b1['preparation:dough']=1;
+produced.logisticsState.branchCosts.b1['preparation:dough']=60;
+assert.deepEqual(JSON.parse(JSON.stringify(C.flatten(produced.recipes[0],produced,[],true))),[
+ {ingredientId:'preparation:dough',gross:200,net:200},{ingredientId:'meat',gross:100,net:100}]);
+const producedDevice={session:{branchId:'b1',registerId:1},receipts:[],workspace:{version:1,state:produced}};
+const producedEntry=core.create(producedDevice,actor,{requestId:'pf-produced-offline-test-0001',orderType:'dine-in',items:[{id:1,quantity:2}],payments:[{method:'cash',amount:400}]},now);
+assert.equal(producedEntry.sale.items[0].unitCost,62);
+assert.deepEqual(Array.from(producedEntry.deductions,row=>row.id),['preparation:dough','meat']);
+producedDevice.receipts.push(producedEntry);
+const producedProjection=core.project(producedDevice);
+assert.equal(producedProjection.state.logisticsState.branchStocks.b1['preparation:dough'],.6);
+assert.equal(producedProjection.state.logisticsState.branchStocks.b1.flour,10);
+console.log('Manufactured preparations: frozen cost and offline consumption without double raw deductions passed');

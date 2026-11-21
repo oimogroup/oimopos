@@ -114,3 +114,8 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '024_workspac
 \if :run_024
   \ir 024_workspace_subdomains.sql
 \endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '025_catalog_save_operations') AS run_025 \gset
+\if :run_025
+  \ir 025_catalog_save_operations.sql
+\endif

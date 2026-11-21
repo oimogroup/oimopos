@@ -94,11 +94,11 @@
           const timeline = id => row(id).querySelector('.transfer-timeline');
           const eventText = (id, index) => timeline(id).children[index]?.textContent || '';
           check('pending-sender-time-recipient', eventText('pending', 0).includes('Айбек Повар') && eventText('pending', 0).includes('05.10.2026') && eventText('pending', 0).includes('10:05') && eventText('pending', 1).includes('Основная раздача'));
-          check('accepted-recipient-time-weight', eventText('accepted', 1).includes('Алия Кассир') && eventText('accepted', 1).includes('09:35') && eventText('accepted', 1).includes('5 кг'));
+          check('accepted-recipient-time-weight', eventText('accepted', 1).includes('Алия Кассир') && eventText('accepted', 1).includes('09:35') && eventText('accepted', 1).replace(/\s/g,'').includes('5000г'));
           check('difference-reason-reviewer', row('difference').querySelector('[data-status="difference"]') && row('difference').textContent.includes('Пролилось при передаче') && row('difference').textContent.includes('Дастан Руководитель') && row('difference').textContent.includes('Вес проверен'));
           check('rejected-returned-to-kitchen', eventText('rejected', 1).includes('возвращено на кухню') && eventText('rejected', 1).includes('Эрмек Кассир') && eventText('rejected', 1).includes('11:10') && eventText('rejected', 1).includes('Блюдо остыло'));
           check('canceled-actor-time-reason', eventText('canceled', 1).includes('Айбек Повар') && eventText('canceled', 1).includes('12:05') && eventText('canceled', 1).includes('Ошибка в количестве'));
-          check('zero-actual-is-shown', eventText('zero', 1).includes('0 кг') && row('zero').querySelector('[data-status="difference"]') && row('zero').textContent.includes('-5 кг'));
+          check('zero-actual-is-shown', eventText('zero', 1).includes('0 г') && row('zero').querySelector('[data-status="difference"]') && row('zero').textContent.replace(/\s/g,'').includes('-5000г'));
           check('xss-text-and-attributes-escaped', row(documents[6].id)?.textContent.includes(unsafe) && !doc.querySelector('#transferHistoryList img, #transferHistoryList [data-injected]') && !win.__historyXss);
 
           setFilter('#transferHistoryStatus', 'pending');

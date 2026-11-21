@@ -1,0 +1,46 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre><iframe id="app" src="../admin.html?test=1"></iframe>
+<script>
+app.onload=async()=>{
+ const w=app.contentWindow,d=w.document,r=[];
+ const check=(name,value)=>r.push((value?'PASS:':'FAIL:')+name);
+ const hide=()=>d.querySelectorAll('.modal-backdrop').forEach(row=>row.classList.add('hidden'));
+ try{
+  w.eval('serverMode=true');let finish,calls=0;
+  w.AshkanaApi.action=async()=>{calls++;return new Promise(resolve=>finish=resolve);};
+  w.openSupplierForm();d.getElementById('supplierNameInput').value='Поставщик с ожиданием';
+  const pending=w.saveSupplier();await new Promise(resolve=>setTimeout(resolve,30));
+  check('supplier-inputs-lock',d.getElementById('supplierNameInput').disabled&&d.getElementById('supplierModal').getAttribute('aria-busy')==='true');
+  check('supplier-progress-visible',d.getElementById('supplierSaveStatus').textContent.includes('Сохраняем'));
+  await w.saveSupplier();check('supplier-double-click-collapsed',calls===1);
+  const name=d.getElementById('supplierNameInput').value;w.openSupplierForm();
+  check('supplier-cannot-reopen-mid-save',d.getElementById('supplierNameInput').value===name);
+  const nav=d.querySelector('#mainNav button');nav.click();
+  check('navigation-does-not-hide-pending-form',!d.getElementById('supplierModal').classList.contains('hidden'));
+  d.querySelector('[data-close=supplierModal]').click();
+  check('close-disabled-while-saving',!d.getElementById('supplierModal').classList.contains('hidden'));
+  finish({version:2});await pending;
+  check('supplier-controls-unlocked',!d.getElementById('supplierNameInput').disabled&&d.getElementById('supplierModal').getAttribute('aria-busy')!=='true');hide();
+  calls=0;
+  w.AshkanaApi.action=async()=>{calls++;throw Object.assign(new Error('Проверьте поля'),{status:422});};
+  w.openIngredientForm('rice');const original=w.eval("ingredientById('rice').losses?.boil||0");
+  d.getElementById('lossBoilInput').value='100';await w.saveIngredientForm();
+  check('invalid-loss-blocked-before-api',calls===0&&!d.getElementById('ingredientModal').classList.contains('hidden'));
+  check('invalid-loss-is-not-replaced-with-99',d.getElementById('lossBoilInput').value==='100');
+  check('invalid-loss-status-explains-range',d.getElementById('ingredientSaveStatus').textContent.includes('0 до 99'));
+  check('invalid-loss-keeps-saved-data',w.eval("ingredientById('rice').losses?.boil||0")===original);
+  check('ingredient-controls-unlocked-after-validation',!d.getElementById('ingredientNameInput').disabled);hide();
+  w.eval('serverMode=false');w.openProductForm();
+  d.getElementById('productNameInput').value='Товар и новая карточка';d.getElementById('productPriceInput').value='100';
+  const saving=w.saveProductForm(true);
+  check('product-fields-lock',d.getElementById('productNameInput').disabled&&d.getElementById('productModal').getAttribute('aria-busy')==='true');
+  await saving;
+  check('save-and-new-opens-empty-form',!d.getElementById('productModal').classList.contains('hidden')&&d.getElementById('productNameInput').value==='');
+  check('new-product-fields-have-correct-state',!d.getElementById('productNameInput').disabled&&!d.getElementById('productStockInput').disabled);
+  hide();w.openProductForm(w.eval('products[0].id'));
+  check('existing-product-opening-stock-is-locked',d.getElementById('productStockInput').disabled);
+  await w.saveProductForm(true);
+  check('existing-save-and-new-restores-editable-stock',d.getElementById('productNameInput').value===''&&!d.getElementById('productStockInput').disabled);
+ }catch(error){r.push('FAIL:exception:'+error.stack);}
+ document.getElementById('results').textContent=r.join('|');
+};
+</script>

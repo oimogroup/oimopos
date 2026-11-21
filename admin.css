@@ -1769,3 +1769,10 @@ body[data-ui=admin] .recipe-variant-toolbar :is(button,select) { min-height:40px
 @media(max-width:700px) {.list-filter-tools{width:100%;margin:0;}.list-filter-panel{grid-template-columns:1fr 1fr;padding:10px;gap:10px;}.list-filter-panel input{font-size:16px;}.list-filter-result{margin-left:auto;}}
 @media(max-width:380px) {.list-filter-panel{grid-template-columns:1fr;}}
 @media print {.list-filter-tools{display:none!important;}}
+.preparation-production-dialog{width:min(560px,calc(100vw - 32px));max-height:85vh;overflow:auto;border:0;border-radius:16px;padding:24px;color:var(--text,#25232b)}
+.preparation-production-dialog::backdrop{background:#0006}
+.preparation-production-dialog form{display:grid;gap:14px}
+.preparation-production-dialog h2,.preparation-production-dialog h3,.preparation-production-dialog p{margin:0}
+.preparation-production-dialog label{display:grid;gap:6px}
+.preparation-production-dialog input,.preparation-production-dialog select{width:100%;padding:10px}
+.preparation-production-actions{display:flex;justify-content:flex-end;gap:12px}

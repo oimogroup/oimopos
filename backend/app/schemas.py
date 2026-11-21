@@ -91,6 +91,8 @@ class LoginInput(BaseModel):
 class WorkspaceActionInput(BaseModel):
     action: Annotated[str, StringConstraints(strip_whitespace=True, min_length=3, max_length=80)]
     payload: dict[str, Any] = Field(default_factory=dict)
+    request_id: Annotated[str, StringConstraints(min_length=16, max_length=100, pattern=r'^[a-zA-Z0-9-]+$')] | None = None
+    expected_revision: Annotated[str, StringConstraints(min_length=3, max_length=64)] | None = None
 
 
 TenantSlug = Annotated[str, StringConstraints(strip_whitespace=True, to_lower=True, min_length=3, max_length=48, pattern=r"^[a-z0-9]+(?:-[a-z0-9]+)*$")]

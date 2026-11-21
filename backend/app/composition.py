@@ -24,7 +24,18 @@ def preparation_users(state, preparation_id):
                    for component in row.get('components', []))]
 
 
-def flatten(state, item, stack=(), *, strict=False):
+def produced_sources(state):
+    return [{**row, 'id': 'preparation:' + str(row['id']), 'preparationId': str(row['id']),
+             'name': str(row.get('name', '')) + ' [п/ф]', 'unit': 'кг', 'averageCost': 0,
+             'itemType': 'preparation'}
+            for row in state.get('preparations', []) if row.get('stockMode') == 'produced']
+
+
+def stock_sources(state):
+    return [*state.get('ingredients', []), *state.get('products', []), *produced_sources(state)]
+
+
+def flatten(state, item, stack=(), *, strict=False, stock=False):
     ingredients = {str(row['id']): row for row in state.get('ingredients', [])} if strict else {}
     preparations = {str(row['id']): row for row in state.get('preparations', [])}
     amounts = {}
@@ -49,6 +60,13 @@ def flatten(state, item, stack=(), *, strict=False):
                 if identity in path:
                     names = [preparations[key].get('name', key) for key in (*path, identity)]
                     raise CompositionError('Цикл в составе полуфабрикатов: ' + ' → '.join(names))
+                if stock and preparation.get('stockMode') == 'produced':
+                    key = 'preparation:' + identity
+                    amount = amounts.get(key, 0) + gross * factor
+                    if not isfinite(amount):
+                        raise CompositionError('Слишком большое количество компонента')
+                    amounts[key] = amount
+                    continue
                 try:
                     output = float(preparation.get('yield', 0))
                 except (ValueError, TypeError):

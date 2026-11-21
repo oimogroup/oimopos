@@ -73,7 +73,7 @@
     throw new ApiError("Не удалось связаться с Oimo. Проверьте подключение к интернету и повторите попытку.", 0, lastError?.message);
   }
 
-  const replayProtectedActions = new Set(["pnl.expense.create", "pnl.expense.void", "pnl.pay", "pnl.reverse", "payroll.policy", "payroll.time", "payroll.adjust", "payroll.approve", "payroll.pay", "payroll.advance", "payroll.reverse", "work.shift.open", "work.shift.close", "supply.create", "batch.create", "pos.cash.movement", "supply.pay", "supply.payment.reverse"]);
+  const replayProtectedActions = new Set(["stock.writeoff", "preparation.produce","pnl.expense.create", "pnl.expense.void", "pnl.pay", "pnl.reverse", "payroll.policy", "payroll.time", "payroll.adjust", "payroll.approve", "payroll.pay", "payroll.advance", "payroll.reverse", "work.shift.open", "work.shift.close", "supply.create", "batch.create", "pos.cash.movement", "supply.pay", "supply.payment.reverse"]);
   const pendingActions = new Map();
   const pendingIds = new Map();
   let operationActorId = null;
@@ -105,10 +105,12 @@
     if (crypto.randomUUID) return crypto.randomUUID();
     return Array.from(crypto.getRandomValues(new Uint8Array(16)), byte => byte.toString(16).padStart(2, "0")).join("");
   }
-  function action(actionName, payload = {}, { compactCatalog = false } = {}) {
+  const catalogActions = new Set(["recipe.upsert", "recipe.group.upsert", "preparation.upsert", "ingredient.upsert", "product.upsert", "product.group.upsert", "supplier.upsert", "category.upsert"]);
+  function action(actionName, payload = {}, { compactCatalog = false, expectedRevision = null } = {}) {
     const path = compactCatalog ? "/workspace/actions?compact_catalog=true" : "/workspace/actions";
-    if (!replayProtectedActions.has(actionName)) return request(path, { method: "POST", body: JSON.stringify({ action: actionName, payload }) });
-    const signature = JSON.stringify([operationScope(), actionName, canonicalPayload(payload)]);
+    const catalog = catalogActions.has(actionName);
+    if (!catalog && !replayProtectedActions.has(actionName)) return request(path, { method: "POST", body: JSON.stringify({ action: actionName, payload }) });
+    const signature = JSON.stringify([operationScope(), actionName, canonicalPayload(payload), ...(catalog ? [expectedRevision] : [])]);
     if (pendingActions.has(signature)) return pendingActions.get(signature);
     const pending = (async () => {
       const storageKey = await operationStorageKey(signature);
@@ -117,10 +119,29 @@
       requestId ||= newRequestId();
       pendingIds.set(storageKey, requestId);
       try { sessionStorage.setItem(storageKey, requestId); } catch (_) { /* Private browser storage can be unavailable. */ }
-      const result = await request("/workspace/actions", {
-        method: "POST", retrySafe: true,
-        body: JSON.stringify({ action: actionName, payload: { ...payload, requestId } }),
-      });
+      let result;
+      try {
+        result = await request(path, {
+          method: "POST", retrySafe: true,
+          body: JSON.stringify(catalog
+            ? {action: actionName, payload, request_id: requestId, expected_revision: expectedRevision}
+            : {action: actionName, payload: {...payload, requestId}}),
+        });
+      } catch (error) {
+        if (!catalog || ![0, 503].includes(error.status)) {
+          if (catalog && error.status >= 400 && error.status < 500) {
+            pendingIds.delete(storageKey);
+            try { sessionStorage.removeItem(storageKey); } catch (_) {}
+          }
+          throw error;
+        }
+        // The COMMIT may have succeeded even though its response was lost.
+        try {
+          const status = await request('/workspace/catalog-operations/' + encodeURIComponent(requestId));
+          if (status.confirmed) result = status;
+        } catch (_) { /* Preserve the operation ID for the next attempt. */ }
+        if (!result) throw error;
+      }
       pendingIds.delete(storageKey);
       try { sessionStorage.removeItem(storageKey); } catch (_) { /* In-memory cleanup is sufficient for this session. */ }
       return result;

@@ -20,7 +20,7 @@ def reconcile_one(pool,settings):
             if not order: return False
             connection.execute('UPDATE subscription_payments SET checked_at=now() WHERE id=%s',(order['id'],))
         try:
-            values=freedompay.request_api(settings,'/get_status3.php',{'pg_order_id':order['id'],**({'pg_payment_id':order['provider_payment_id']} if order['provider_payment_id'] else {})})
+            values=freedompay.request_api(settings,'/get_status3.php',({'pg_payment_id':order['provider_payment_id']} if order['provider_payment_id'] else {'pg_order_id':order['id']}))
             if values.get('pg_status')=='ok' and values.get('pg_payment_id')!='0':
                 with connection.transaction(): billing.settle(connection,order['id'],values,settings,source='status')
         except (freedompay.ProviderError,ValueError):

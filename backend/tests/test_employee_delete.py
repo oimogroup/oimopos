@@ -25,7 +25,7 @@ MANAGER = {"id": 2, "role": "branch", "tenant_id": "tenant-a", "branch_id": "b1"
            "staff_role": "branch_manager", "login": "manager"}
 EMPLOYEE = {"id": 10, "role": "branch", "tenant_id": "tenant-a", "branch_id": "b1",
             "staff_role": "cashier", "login": "cashier", "display_name": "Кассир"}
-REQUEST = Request({"type": "http", "path": "/api/v1/employees/10", "headers": [(b"origin", b"http://127.0.0.1:8000")]})
+REQUEST = Request({"type": "http", "method": "POST", "path": "/api/v1/employees/10", "headers": [(b"origin", b"http://127.0.0.1:8000")]})
 
 
 class Connection:
@@ -158,7 +158,7 @@ def database():
         connection.execute("ALTER TABLE pos_shifts ADD FOREIGN KEY (opened_by_user_id) REFERENCES auth_users(id)")
         connection.execute("ALTER TABLE operational_events ADD FOREIGN KEY (actor_user_id) REFERENCES auth_users(id)")
         connection.execute("SELECT deleted_at FROM auth_users LIMIT 0")  # Requires migrations 014 and 015.
-        connection.execute("INSERT INTO tenants (id, slug, name) VALUES ('tenant-a', 'delete-test', 'Тест удаления')")
+        connection.execute("INSERT INTO tenants (id, slug, name, workspace_subdomain) VALUES ('tenant-a', 'delete-test', 'Тест удаления', 'delete-test')")
         connection.execute("""INSERT INTO tenant_subscriptions (tenant_id, plan_code, status)
                               VALUES ('tenant-a', 'canteen', 'active')""")
         for account in (OWNER, MANAGER, EMPLOYEE, {**EMPLOYEE, "id": 90, "login": "register", "staff_role": "pos_terminal"}):

@@ -1,7 +1,7 @@
 /* Virtual preparations are expanded proportionally; only raw ingredients move. */
 (function(global) {
   'use strict';
-  function flatten(item, state, initialPath = []) {
+  function flatten(item, state, initialPath = [], stock = false) {
     const preparations = new Map((state.preparations || []).map(row=>[String(row.id),row]));
     const totals = new Map();
     function expand(components, factor, path) {
@@ -14,6 +14,11 @@
           const id=String(component.preparationId), preparation=preparations.get(id);
           if(!preparation)throw new Error('Полуфабрикат не найден: '+id);
           if(path.includes(id))throw new Error('Цикл в составе полуфабрикатов: '+[...path,id].map(key=>preparations.get(key)?.name||key).join(' → '));
+          if(stock && preparation.stockMode==='produced'){
+            const key='preparation:'+id,total=(totals.get(key)||0)+gross*factor;
+            if(!Number.isFinite(total))throw new Error('Слишком большое количество компонента');
+            totals.set(key,total);continue;
+          }
           const output=Number(preparation.yield);
           if(!Number.isFinite(output)||output<=0||!preparation.components?.length)throw new Error('Проверьте состав и выход полуфабриката «'+preparation.name+'»');
           expand(preparation.components,factor*gross/output,[...path,id]);

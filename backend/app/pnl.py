@@ -100,7 +100,7 @@ def report(state, start, end, branch_id=None):
     categories['pnl-stock-losses'] = 'Списания и недостачи'
     stock_review = False
     for row in state.get('logisticsState', {}).get('stockLedger', []):
-        if row.get('movementType') != 'inventory_adjustment' or not selected(row) or not within(row.get('effectiveAt') or row.get('createdAt')):
+        if row.get('movementType') not in {'inventory_adjustment', 'warehouse_writeoff'} or not selected(row) or not within(row.get('effectiveAt') or row.get('createdAt')):
             continue
         value = D(row.get('quantity')) * D(row.get('unitCost'))
         if value < 0:

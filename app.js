@@ -2095,7 +2095,7 @@ function transferHistoryCard(row) {
   const difference = transferHasDifference(row);
   const state = difference ? 'difference' : row.status;
   const status = {pending:'Ожидает приёмки',accepted:'Принято',difference:'С расхождением',rejected:'Отказано',canceled:'Отменено'}[state] || 'Передача';
-  const weight = value => Number(value || 0).toLocaleString('ru-RU', {maximumFractionDigits:6}) + ' кг';
+  const weight = transferGrams;
   const event = (title, date, actor, detail = '', shift = null) => `<li><strong>${escapeHtml(title)}</strong><span>${escapeHtml(transferHistoryDate(date))}${actor?.name ? ' · ' + escapeHtml(actor.name) : ''}</span>${shift ? `<span class="history-event-shift">${escapeHtml(historyShiftTitle(shift))} · ${escapeHtml(historyShiftCaption(shift))}</span>` : ''}${detail ? `<p>${escapeHtml(detail)}</p>` : ''}</li>`;
   let events = event('Отправлено на раздачу', row.createdAt, row.actor, weight(row.weight), row.productionShift);
   if (row.status === 'accepted') {
@@ -2203,6 +2203,8 @@ function updateProductionAccess() {
   $("#productionButton").classList.toggle("hidden", !allowed);
   if (!allowed) closeDrawer("#productionDrawer");
 }
+function transferGrams(weight) { return (Number(weight||0)*1000).toLocaleString('ru-RU',{maximumFractionDigits:3})+' г'; }
+function productionUnitFactor(unit,item) { return unit==='portions'?Number(item?.yield||0)/1000:unit==='g'?1/1000:1; }
 function productionSelected(row = $('#productionLines .production-line')) {
   return productionData.recipes.find(item => String(item.id) === row?.querySelector('[data-production-item]').value);
 }
@@ -2217,7 +2219,7 @@ function numberProductionRows() {
 function addProductionLine() {
   if(document.querySelectorAll('#productionLines .production-line').length>=100)return;
   const row=document.createElement('div');row.className='production-line';
-  row.innerHTML=`<div class="production-line-heading"><strong data-row-title></strong><button class="icon-button danger-button" type="button" data-remove-production aria-label="Удалить блюдо">×</button></div><label>Блюдо<select data-production-item required></select></label><div class="production-quantity"><label>Количество<input data-production-quantity type="number" min="0.001" step="0.001" required inputmode="decimal"></label><label>Единица<select data-production-unit><option value="kg">кг</option><option value="portions">порции / шт.</option></select></label></div>`;
+  row.innerHTML=`<div class="production-line-heading"><strong data-row-title></strong><button class="icon-button danger-button" type="button" data-remove-production aria-label="Удалить блюдо">×</button></div><label>Блюдо<select data-production-item required></select></label><div class="production-quantity"><label>Количество<input data-production-quantity type="number" min="0.001" step="0.001" required inputmode="decimal"></label><label>Единица<select data-production-unit><option value="g">г</option><option value="kg">кг</option><option value="portions">порции / шт.</option></select></label></div>`;
   $('#productionLines').append(row);numberProductionRows();renderProductionOptions(row);row.querySelector('[data-production-item]').focus();
 }
 function renderProductionOptions(row) {
@@ -2230,14 +2232,14 @@ function renderProductionOptions(row) {
 function updateProductionQuantity() {
   let total=0;let valid=true;const rows=[...document.querySelectorAll('#productionLines .production-line')];
   rows.forEach(row=>{
-    const item=productionSelected(row);const portions=row.querySelector('[data-production-unit]').value==='portions';
+    const item=productionSelected(row);const unit=row.querySelector('[data-production-unit]').value;const portions=unit==='portions';
     const ready=productionData.batches.filter(batch=>String(batch.recipeId)===String(item?.id)).reduce((sum,batch)=>sum+Number(batch.availableWeight||0),0);
     const kg=ready+Number(item?.maxWeight||0);const input=row.querySelector('[data-production-quantity]');
-    input.step=portions?'1':'0.001';input.min=portions?'1':'0.001';input.max=portions?(item?.yield>0?Math.floor(kg*1000/item.yield+1e-8):0):kg;
+    input.step=portions?'1':'0.001';input.min=portions?'1':'0.001';input.max=portions?(item?.yield>0?Math.floor(kg*1000/item.yield+1e-8):0):unit==='g'?Number((kg*1000).toFixed(3)):kg;
     if(!item||kg<=0)valid=false;
-    total+=Number(input.value||0)*(portions?Number(item?.yield||0)/1000:1);
+    total+=Number(input.value||0)*productionUnitFactor(unit,item);
   });
-  $('#productionSummary').textContent=`Блюд: ${rows.length} · Всего: ${total.toLocaleString('ru-RU',{maximumFractionDigits:3})} кг`;
+  $('#productionSummary').textContent=`Блюд: ${rows.length} · Всего: ${transferGrams(total)}`;
   $('#saveProductionButton').disabled=productionBusy||!rows.length||!valid;
 }
 async function openPosProduction() {
@@ -2268,7 +2270,7 @@ async function savePosProduction(event) {
   if (!operatorCan("production")) { showToast("Нет права на производство"); return; }
   const items=[...document.querySelectorAll('#productionLines .production-line')].map(row=>{
     const item=productionSelected(row);const quantity=Number(row.querySelector('[data-production-quantity]').value);
-    return {recipeId:item?.id,weight:Math.round(quantity*(row.querySelector('[data-production-unit]').value==='portions'?Number(item?.yield||0)/1000:1)*1e6)/1e6};
+    return {recipeId:item?.id,weight:Math.round(quantity*productionUnitFactor(row.querySelector('[data-production-unit]').value,item)*1e6)/1e6};
   });
   if(!items.length||items.some(item=>!item.recipeId||item.weight<=0)) { $('#productionError').textContent='Добавьте блюда и укажите количество';return; }
   if(new Set(items.map(item=>String(item.recipeId))).size!==items.length) { $('#productionError').textContent='Одинаковые блюда объедините в одну строку';return; }
@@ -2288,7 +2290,7 @@ async function savePosProduction(event) {
   try {
     const response = await window.AshkanaApi.action("batch.serve_many", payload);
     hydrateWorkspace(response); renderProducts();
-    $("#productionResult").textContent = `Блюд: ${items.length} · ${items.reduce((sum,item)=>sum+item.weight,0).toLocaleString("ru-RU")} кг отправлено на приёмку в кассу`;
+    $("#productionResult").textContent = `Блюд: ${items.length} · ${transferGrams(items.reduce((sum,item)=>sum+item.weight,0))} отправлено на приёмку в кассу`;
     refreshTransferHistory();
     document.querySelectorAll("[data-production-quantity]").forEach(input=>input.value="");
     productionRequest = null;
@@ -2317,7 +2319,7 @@ function canReceive() {
   return activeShift && ['cashier','branch_manager','hall_admin'].includes(activeOperator?.staffRole) && workspaceState?.serviceMode !== 'restaurant';
 }
 function renderReceiving() {
-  $('#receivingList').innerHTML = receivingDocuments.length ? receivingDocuments.map(doc => `<form class="receiving-card" data-receiving-id="${escapeHtml(doc.id)}"><h3>${escapeHtml(doc.name)}</h3><p>${escapeHtml(doc.sender)} · ${escapeHtml(doc.batchNumber)} · ${Number(doc.weight).toLocaleString('ru-RU')} кг</p>${doc.legacy?'<p class="receiving-legacy">Пересчёт остатка</p>':''}<label>Принято, кг<input name="actualWeight" type="number" min="0" step="0.001" required value="${Number(Number(doc.weight).toFixed(3))}"></label><label>Причина расхождения / отказа<input name="reason" maxlength="500" placeholder="—"></label><div class="receiving-actions"><button class="primary-button" type="submit" name="decision" value="accept">Принять</button>${doc.legacy||doc.kind==='handover'?'':'<button class="danger-button" type="submit" name="decision" value="reject" formnovalidate>Отказать</button>'}</div></form>`).join('') : '<p class="production-hint">Нет ожидающих передач.</p>';
+  $('#receivingList').innerHTML = receivingDocuments.length ? receivingDocuments.map(doc => `<form class="receiving-card" data-receiving-id="${escapeHtml(doc.id)}"><h3>${escapeHtml(doc.name)}</h3><p>${escapeHtml(doc.sender)} · ${escapeHtml(doc.batchNumber)} · ${transferGrams(doc.weight)}</p>${doc.legacy?'<p class="receiving-legacy">Пересчёт остатка</p>':''}<label>Принято, г<input name="actualWeight" type="number" min="0" step="0.001" required value="${Number((Number(doc.weight)*1000).toFixed(3))}"></label><label>Причина расхождения / отказа<input name="reason" maxlength="500" placeholder="—"></label><div class="receiving-actions"><button class="primary-button" type="submit" name="decision" value="accept">Принять</button>${doc.legacy||doc.kind==='handover'?'':'<button class="danger-button" type="submit" name="decision" value="reject" formnovalidate>Отказать</button>'}</div></form>`).join('') : '<p class="production-hint">Нет ожидающих передач.</p>';
 }
 async function refreshReceiving() {
   const allowed = canReceive();
@@ -2360,7 +2362,7 @@ $('#receivingList').addEventListener('submit',async event=>{
   const decision=event.submitter?.value || 'accept';
   const doc=receivingDocuments.find(entry=>entry.id===form.dataset.receivingId);if(!doc)return;
   const weightInput=form.elements.actualWeight;
-  const actualWeight=Number(weightInput.value)===Number(weightInput.defaultValue) ? Number(doc.weight) : Number(weightInput.value);
+  const actualWeight=Number(weightInput.value)===Number(weightInput.defaultValue) ? Number(doc.weight) : Number(weightInput.value)/1000;
   const reason=form.elements.reason.value.trim();
   if((decision==='reject'||Math.abs(actualWeight-doc.weight)>0.000001)&&reason.length<3) { $('#receivingError').textContent='Укажите причину отказа или расхождения (не менее 3 символов)';return; }
   const payload={documentId:doc.id,actualWeight,reason};
@@ -2711,7 +2713,7 @@ function salePaymentSummary(sale) { return salePaymentParts(sale).map(part=>`${p
 
 function confirmProductionTransfer(items) {
   const dialog = $("#productionConfirmDialog");
-  $("#productionConfirmSummary").textContent = `Блюд: ${items.length} · ${items.reduce((sum,item)=>sum+item.weight,0).toLocaleString("ru-RU")} кг`;
+  $("#productionConfirmSummary").textContent = `Блюд: ${items.length} · ${transferGrams(items.reduce((sum,item)=>sum+item.weight,0))}`;
   return new Promise(resolve => {
     dialog.returnValue = "cancel";
     dialog.addEventListener("close", () => resolve(dialog.returnValue === "send"), {once:true});

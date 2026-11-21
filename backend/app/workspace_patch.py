@@ -1,7 +1,7 @@
 """Small responses for owner catalog edits; unchanged photos stay in the browser."""
 
-CATALOG_ACTIONS = {"recipe.upsert", "recipe.group.upsert", "preparation.upsert"}
-CATALOG_LISTS = {"recipes", "preparations", "modifierSets"}
+from .catalog_saves import ACTIONS as CATALOG_ACTIONS
+CATALOG_LISTS = {"recipes", "preparations", "modifierSets", "ingredients", "products", "suppliers"}
 
 
 def state_patch(before: dict, after: dict) -> dict:

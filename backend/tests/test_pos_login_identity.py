@@ -5,7 +5,7 @@ from fastapi import Request, Response, HTTPException
 from app import main
 from app.schemas import LoginInput
 
-REQUEST=Request({'type':'http','headers':[(b'origin',b'http://127.0.0.1:8000'),(b'x-ashkana-client',b'pos')]})
+REQUEST=Request({'type':'http','method':'POST','path':'/api/v1/auth/login','headers':[(b'origin',b'http://127.0.0.1:8000'),(b'x-ashkana-client',b'pos')]})
 
 class Connection:
     def __init__(self, employee, terminal): self.employee=employee; self.terminal=terminal; self.calls=[]

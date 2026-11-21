@@ -2,7 +2,7 @@
 (function(global){
  'use strict';
  const copy=value=>JSON.parse(JSON.stringify(value));
- const rawComponents=(recipe,state)=>global.CatalogComposition ? global.CatalogComposition.flatten(recipe,state) : recipe.rawComponents || recipe.components || [];
+ const rawComponents=(recipe,state)=>global.CatalogComposition ? global.CatalogComposition.flatten(recipe,state,[],true) : recipe.rawComponents || recipe.components || [];
  const round=value=>Math.round((value+Number.EPSILON)*100)/100;
  const require=(ok,message)=>{if(!ok){const error=new Error(message);error.status=422;throw error;}};
  function pending(device){return (device.receipts||[]).filter(r=>r.status!=='synced');}

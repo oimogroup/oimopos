@@ -133,7 +133,7 @@
             await win.openPosProduction();
             frame.contentDocument.querySelector('#productionItem').value='r1';
             win.updateProductionQuantity();
-            frame.contentDocument.querySelector('#productionQuantity').value='5';
+            frame.contentDocument.querySelector('#productionQuantity').value='5000';
           }
           if (['pin','receiving','kitchen-shift','kitchen-shift-error'].includes(new URLSearchParams(location.search).get('preview'))) {
             const win=frame.contentWindow,doc=frame.contentDocument,mode=new URLSearchParams(location.search).get('preview');
@@ -343,25 +343,27 @@
             await win.saveOpenOrder();
             check('saved-order-preserves-lots',savedLots.length===2&&savedLots[0].lotId==='lot-b'&&savedLots[1].lotId==='lot-a');
             win.hydrateWorkspace(await win.AshkanaApi.workspace());
-            const productionContext = {recipients:[{id:2,name:'Айбек'}],recipes:[{id:'r1',name:'Плов праздничный',yield:250,maxWeight:5}],batches:[{id:'k1',number:'АП-001',name:'Плов праздничный',yield:250,availableWeight:2}]};
+            const productionContext = {recipients:[{id:2,name:'Айбек'}],recipes:[{id:'r1',name:'Плов праздничный',yield:250,maxWeight:5}],batches:[{id:'k1',recipeId:'r1',number:'АП-001',name:'Плов праздничный',yield:250,availableWeight:2}]};
             win.AshkanaApi.posProductionContext = async () => productionContext;
             win.activateOperator(authenticated.operator,authenticated.shift);
             check('production-manager-button',!doc.querySelector('#productionButton').classList.contains('hidden'));
             await win.openPosProduction();
             check('production-open',!doc.querySelector('#productionDrawer').classList.contains('hidden'));
             doc.querySelector('#productionItem').value='r1';
-            doc.querySelector('#productionUnit').value='portions';win.updateProductionQuantity();
-            doc.querySelector('#productionQuantity').value='4';
+            check('production-default-grams',doc.querySelector('#productionUnit').value==='g');
+            win.updateProductionQuantity();
+            check('production-grams-capacity',Number(doc.querySelector('#productionQuantity').max)===7000);
+            doc.querySelector('#productionQuantity').value='1000';
             let productionCalls=[];
             win.AshkanaApi.action=async(action,payload)=>{productionCalls.push({action,payload});return win.AshkanaApi.workspace();};
             const cancelledTransfer=win.savePosProduction({preventDefault(){}});
             check('production-awaits-confirmation',doc.querySelector('#productionConfirmDialog').open&&productionCalls.length===0&&!doc.querySelector('[data-production-available]'));
             doc.querySelector('#productionConfirmDialog').close('cancel');doc.querySelector('#productionConfirmDialog').dispatchEvent(new win.Event('close'));await cancelledTransfer;
-            check('production-cancel-preserves-form',productionCalls.length===0&&doc.querySelector('#productionQuantity').value==='4');
+            check('production-cancel-preserves-form',productionCalls.length===0&&doc.querySelector('#productionQuantity').value==='1000');
             const approvedTransfer=win.savePosProduction({preventDefault(){}});
             doc.querySelector('#productionConfirmDialog').close('send');doc.querySelector('#productionConfirmDialog').dispatchEvent(new win.Event('close'));await approvedTransfer;
             win.confirmProductionTransfer=async()=>true;
-            check('production-portions-convert',productionCalls[0].action==='batch.serve_many'&&productionCalls[0].payload.items[0].weight===1&&Boolean(productionCalls[0].payload.requestId));
+            check('production-grams-convert',productionCalls[0].action==='batch.serve_many'&&productionCalls[0].payload.items[0].weight===1&&Boolean(productionCalls[0].payload.requestId));
             check('production-success',doc.querySelector('#productionResult').textContent.includes('приёмку'));
             doc.querySelector('#productionItem').value='r1';doc.querySelector('#productionUnit').value='kg';win.updateProductionQuantity();
             doc.querySelector('#productionQuantity').value='0.5';
