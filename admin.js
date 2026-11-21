@@ -6851,6 +6851,7 @@ const ownerNavSectionByView = {
   inventory: "stock",
   logistics: "stock",
   finance: "finance",
+  marketing: "marketing",
   branches: "access",
   registers: "access",
   employees: "access",
@@ -6860,9 +6861,9 @@ const ownerNavSectionByView = {
 function mobileWorkspaceChoices() {
   const view = document.querySelector(".admin-view.active")?.id.replace("view-", "");
   const section = ownerNavSectionByView[view];
-  const submenuId = { analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
+  const submenuId = { marketing: "marketingNavSubmenu", analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
   if (!submenuId) return [];
-  const targets = { menuPage: "recipes", ownerAnalyticsTab: "reports", ownerStockTab: "inventory", ownerFinanceTab: "finance", settingsTab: "settings" };
+  const targets = { marketingTab: "marketing", menuPage: "recipes", ownerAnalyticsTab: "reports", ownerStockTab: "inventory", ownerFinanceTab: "finance", settingsTab: "settings" };
   return [...document.querySelectorAll(`#${submenuId} button`)].flatMap((button) => {
     const key = Object.keys(targets).find((name) => button.dataset[name]) || (button.dataset.ownerAccessView ? "ownerAccessView" : "ownerView");
     const value = button.dataset[key];
@@ -6884,7 +6885,7 @@ function renderMobileWorkspaceNavigation() {
 }
 
 function setOwnerNavSection(section, open) {
-  const submenuId = { analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
+  const submenuId = { marketing: "marketingNavSubmenu", analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
   const submenu = submenuId ? $(`#${submenuId}`) : null;
   const trigger = document.querySelector(`[data-nav-section="${section}"]`);
   if (!submenu || !trigger) return;
@@ -6893,7 +6894,7 @@ function setOwnerNavSection(section, open) {
 }
 
 function openOwnerNavSection(section) {
-  ["analytics", "menu", "stock", "finance", "access", "settings"].forEach((name) => setOwnerNavSection(name, name === section));
+  ["analytics", "menu", "stock", "finance", "marketing", "access", "settings"].forEach((name) => setOwnerNavSection(name, name === section));
 }
 
 function setMenuSubnav(open) {
@@ -6922,6 +6923,7 @@ function switchView(view) {
     logistics: "Склад / Производство",
     inventory: "Склад / Остатки",
     finance: "Финансы / Прибыль и убытки",
+    marketing: "Маркетинг",
     branches: "Доступ / Заведения",
     registers: "Доступ / Кассы",
     employees: "Доступ / Сотрудники",
@@ -6934,6 +6936,7 @@ function switchView(view) {
   } else if (view === "reports") history.replaceState(null, "", `#reports/${activeAnalyticsTab}`);
   else if (view === "finance") history.replaceState(null, "", `#finance/${activeFinanceTab}`);
   else history.replaceState(null, "", `#${view}`);
+  if (view === "marketing") window.OimoMarketing?.open();
   if (view === "settings") window.CompanySettings.open(window.CompanySettings.currentTab);
   document.querySelector(".admin-content")?.scrollTo(0, 0);
 }
@@ -6993,6 +6996,7 @@ function renderAll() {
     if (canAccessView("registers")) renderRegisters();
     return;
   }
+  window.OimoMarketing?.render();
   renderDashboard();
   renderBranches();
   renderRegisters();
@@ -7088,7 +7092,7 @@ $("#mainNav").addEventListener("click", (event) => {
     const section = sectionButton.dataset.navSection;
     const currentView = document.querySelector(".admin-view.active")?.id.replace("view-", "") || "dashboard";
     if (ownerNavSectionByView[currentView] === section) {
-      const submenuId = { analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
+      const submenuId = { marketing: "marketingNavSubmenu", analytics: "analyticsNavSubmenu", menu: "menuSubnav", stock: "stockNavSubmenu", finance: "financeNavSubmenu", access: "accessNavSubmenu", settings: "settingsNavSubmenu" }[section];
       setOwnerNavSection(section, !sectionButton.closest(".role-navigation").querySelector(`#${submenuId}`).classList.contains("visible"));
       return;
     }
@@ -7096,6 +7100,7 @@ $("#mainNav").addEventListener("click", (event) => {
     else if (section === "menu") switchMenuPage(document.querySelector("[data-menu-page].active")?.dataset.menuPage || "recipes");
     else if (section === "stock") { switchView("inventory"); switchStockTab(document.querySelector("[data-owner-stock-tab].active")?.dataset.ownerStockTab || "overview"); }
     else if (section === "finance") { switchView("finance"); switchFinanceTab(activeFinanceTab); }
+    else if (section === "marketing") switchView("marketing");
     else if (section === "access") switchView("registers");
     else if (section === "settings") switchView("settings");
     return;
@@ -7913,7 +7918,10 @@ document.addEventListener("keydown", (event) => {
 });
 
 function routeInitialWorkspace(initialView = location.hash.slice(1)) {
-  if (initialView.startsWith("settings") && canAccessView("settings")) {
+  if (initialView.startsWith("marketing") && currentRole === "owner") {
+    switchView("marketing");
+    window.OimoMarketing?.open(initialView.split("/")[1]);
+  } else if (initialView.startsWith("settings") && canAccessView("settings")) {
     switchView("settings");
     window.CompanySettings.open(initialView.split("/")[1] || "general");
   } else if (initialView === "new-direct-order" && currentRole === "branch") {

@@ -12,6 +12,7 @@ COPY docs/program-process-flow.html ./public/docs/program-process-flow.html
 COPY docs/user-guide ./public/docs/user-guide/
 COPY work-time.js ./public/
 COPY pos-compact.css ./public/
+COPY marketing.js marketing.css ./public/
 COPY offline-pos.js offline-pos-core.js pos-worker.js pos-pwa.js pos.webmanifest ./public/
 COPY payroll.js ./public/
 COPY offline-review.js ./public/

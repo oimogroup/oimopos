@@ -83,6 +83,7 @@ function hydrateWorkspace(response) {
     availableLots: recipe.availableLots,
     groupName: recipe.groupName || "", parentId: recipe.parentId == null ? "" : String(recipe.parentId), variantName: recipe.variantName || "",
     modifierSetIds: recipe.modifierSetIds || [],
+    noDiscount: Boolean(recipe.noDiscount),
     portionSize: recipe.portionSize, portionUnit: recipe.portionUnit,
     kind: "recipe"
   }));

@@ -629,6 +629,11 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
     _ensure_finance(output)
     _ensure_supplies(output)
     pos = _ensure_pos(output)
+    from .marketing import discount as customer_discount
+    for customer in pos["customers"]:
+        customer["discountPercent"] = customer_discount(state, customer)
+    if user["role"] != "owner":
+        pos["customers"] = [c for c in pos["customers"] if not c.get("archivedAt")]
     for records in (output["logisticsState"].get("batches", []), output["logisticsState"].get("supplies", []), output["logisticsState"].get("preparationProductions", []), output["logisticsState"].get("writeoffs", []), pos["cashMovements"]):
         for record in records:
             for key in ("requestId", "requestPayload", "requestActorId", "requestRegisterId"):
@@ -774,7 +779,7 @@ def visible_state(state: dict[str, Any], user: dict[str, Any]) -> dict[str, Any]
         output["stations"] = []
         output["ingredientCategories"] = []
         output["recipes"] = [
-            {key: recipe.get(key) for key in ("id", "name", "category", "price", "yield", "color", "image", "station", "availableToOrder", "availableLots", "groupName", "variantName", "parentId", "portionSize", "portionUnit", "modifierSetIds")}
+            {key: recipe.get(key) for key in ("id", "name", "category", "price", "yield", "color", "image", "station", "availableToOrder", "availableLots", "groupName", "variantName", "parentId", "portionSize", "portionUnit", "modifierSetIds", "noDiscount")}
             for recipe in output["recipes"]
             if recipe.get("is_active", True)
         ]
@@ -930,6 +935,9 @@ def freeze_batch_portions(state):
 
 
 def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, payload: dict[str, Any]) -> tuple[str, str | None]:
+    if action.startswith("marketing."):
+        from .marketing import apply
+        return apply(state, user, action, payload)
     if action.startswith("pnl."):
         from .pnl import apply as apply_pnl
         return apply_pnl(state, user, action, payload)
@@ -971,7 +979,9 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             require_manager(state, user, security_keys[action])
         if action in {"sale.create", "pos.order.save"} and payload.get("customerId"):
             customer_for_policy = _find(pos["customers"], payload.get("customerId"))
-            if customer_for_policy and customer_for_policy.get("discountPercent"):
+            from .marketing import discount as customer_discount
+            _require(customer_for_policy and not customer_for_policy.get("archivedAt"), "Гость недоступен. Выберите другого гостя", 409)
+            if customer_discount(state, customer_for_policy):
                 require_manager(state, user, "discount")
     except PermissionError as error:
         raise WorkspaceError(str(error), 403) from error
@@ -2271,8 +2281,10 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         _require(name, "Укажите имя гостя")
         _require(phone, "Укажите телефон гостя")
         customer = _find(pos["customers"], payload.get("id"))
+        from .marketing import phone_key
+        _require(not customer or not customer.get("archivedAt"), "Гость находится в архиве", 409)
         _require(not any(
-            other is not customer and str(other.get("phone", "")).strip() == phone
+            other is not customer and phone_key(other.get("phone")) == phone_key(phone)
             for other in pos["customers"]
         ), "Гость с таким телефоном уже существует", 409)
         if customer is None:
@@ -2286,8 +2298,10 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
         customer.update({
             "name": name, "phone": phone,
             "discountPercent": discount,
+            "personalDiscountPercent": discount,
             "comment": str(payload.get("comment", "")).strip(),
             "updatedAt": _now(), "updatedBy": actor,
+            "editRevision": str(uuid4()),
         })
         branches = {str(value) for value in customer.get("branches", [])}
         branches.add(branch_id)
@@ -2322,7 +2336,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             pos["openOrders"].insert(0, order)
         _require(order.get("branchId") in {None, branch_id}, "Заказ относится к другой точке", 403)
         customer = _find(pos["customers"], payload.get("customerId"))
-        discount = _number(customer.get("discountPercent")) if customer else 0
+        from .marketing import discount as customer_discount
+        discount = customer_discount(state, customer)
         _require(discount <= 100, "Скидка не может быть больше 100%")
         order.update({
             **order_details,
@@ -2614,7 +2629,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
             total += price * quantity
         subtotal = total
         customer = _find(pos["customers"], payload.get("customerId"))
-        discount_percent = _number(customer.get("discountPercent")) if customer else 0
+        from .marketing import discount as customer_discount
+        discount_percent = customer_discount(state, customer)
         _require(discount_percent <= 100, "Скидка не может быть больше 100%")
         discountable = sum(item["price"] * item["quantity"] for item in sale_items if not item.get("noDiscount"))
         discount_amount = round(discountable * discount_percent / 100, 2)

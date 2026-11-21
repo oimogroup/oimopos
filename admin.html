@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=motion-9" />
   <link rel="stylesheet" href="/brand.css?v=1">
+  <link rel="stylesheet" href="marketing.css?v=1">
 <link rel="icon" href="/favicon.svg?v=4">
 </head>
   <body data-ui="admin">
@@ -96,6 +97,8 @@
             <button data-owner-finance-tab="categories" type="button">Категории</button>
           </div>
 
+          <button class="nav-item" data-nav-section="marketing" type="button" aria-controls="marketingNavSubmenu" aria-expanded="false"><svg class="ui-icon"><use href="#ui-users"/></svg>Маркетинг <svg class="ui-icon nav-chevron"><use href="#ui-chevron"/></svg></button>
+          <div class="nav-submenu" id="marketingNavSubmenu"><button type="button" data-marketing-tab="customers">Клиенты</button><button type="button" data-marketing-tab="groups">Группы клиентов</button><button type="button" data-marketing-tab="statistics">Статистика клиентов</button><button type="button" data-marketing-tab="exclusions">Исключения</button></div>
           <p id="ownerScopeNavLabel">Организация</p>
           <button class="nav-item" data-nav-section="access" type="button" aria-controls="accessNavSubmenu" aria-expanded="false"><svg class="ui-icon"><use href="#ui-users"/></svg>Заведения и команда <svg class="ui-icon nav-chevron"><use href="#ui-chevron"/></svg></button>
           <div class="nav-submenu" id="accessNavSubmenu">
@@ -159,6 +162,11 @@
             <label for="mobileWorkspaceSelect">В этом разделе</label>
             <select id="mobileWorkspaceSelect" aria-label="Подраздел текущего раздела"></select>
           </div>
+          <section class="admin-view" id="view-marketing">
+            <header class="marketing-heading"><h1 id="marketingTitle">Клиенты</h1><button type="button" class="primary-button" id="marketingAdd">Добавить клиента</button></header>
+            <div class="marketing-filters"><input id="marketingSearch" type="search" placeholder="Поиск по имени или телефону" aria-label="Поиск в маркетинге"><select id="marketingGroupFilter" aria-label="Группа клиентов"></select><select id="marketingStatusFilter" aria-label="Статус клиента"><option value="active">Активные</option><option value="archived">Архив</option></select></div>
+            <p id="marketingHint" class="marketing-hint"></p><p id="marketingStatus" role="status"></p><div class="marketing-table"><table class="data-table"><thead id="marketingHead"></thead><tbody id="marketingRows"></tbody></table></div>
+          </section>
           <section class="admin-view active getting-started" id="view-dashboard">
             <div class="page-heading getting-started-heading">
               <div><h1>Главная</h1></div>
@@ -1154,9 +1162,10 @@
     <script src="custody.js?v=actions-15"></script>
     <script src="admin-filters.js?v=1"></script>
     <script src="admin-list-filters.js?v=catalog-reliability-20261121"></script>
-    <script src="admin.js?v=form-validation-20261121"></script>
+    <script src="admin.js?v=marketing-20261121"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>
+    <script src="marketing.js?v=1"></script>
   </body>
 </html>
