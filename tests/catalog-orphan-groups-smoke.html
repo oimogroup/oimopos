@@ -1,0 +1,12 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre><iframe id="app" src="../admin.html?test=1#menu/products"></iframe><script>
+app.onload=()=>{const w=app.contentWindow,d=w.document,c=[];const check=(n,v)=>c.push(`${v?'PASS':'FAIL'}:${n}`);try{
+const rows=[{id:'cheese-a',name:'Чизкейк — белый',groupName:'Чизкейк',variantName:'белый',parentId:'missing',category:'Десерты',price:250,unit:'шт',editRevision:'original-family'},{id:'cheese-b',name:'Чизкейк — шоколадный',groupName:'Чизкейк',variantName:'шоколадный',parentId:'missing',category:'Десерты',price:250,unit:'шт',editRevision:'original-family'}];
+w.eval('products = recoverCatalogGroups([...products,...'+JSON.stringify(rows)+']); renderMenuCategories(); renderProducts();');
+d.querySelector('#productSearch').value='Чизкейк';w.renderProducts();
+check('orphan-family-visible-once',d.querySelectorAll('#productsTable tr').length===1&&d.querySelector('#productsTable').textContent.includes('Чизкейк'));
+w.openProductForm('cheese-a');check('both-flavours-editable',d.querySelectorAll('#productVariantRows .product-variant-row').length===2);
+check('original-revision-kept',w.eval('catalogEditRevisions.product')==='original-family');
+check('root-id-preserved',w.eval('editingProductId')==='cheese-a');
+check('source-not-mutated',rows.every(r=>r.parentId==='missing'));
+check('orphan-recipe-family-also-recovered',w.recoverCatalogGroups([{id:201,parentId:999},{id:202,parentId:999}]).filter(r=>!r.parentId).length===1);
+}catch(e){c.push('FAIL:'+e.stack)}results.textContent=c.join('|')};</script>

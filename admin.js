@@ -234,6 +234,22 @@ const catalogSavesInProgress = new Set();
 const catalogEditRevisions = {recipe:null,preparation:null,ingredient:null,product:null,supplier:null,category:null};
 const catalogNewIds = {};
 
+function recoverCatalogGroups(rows) {
+  const result = rows.map(row=>({...row}));
+  const identities = new Set(result.map(row=>String(row.id))), groups = new Map();
+  for(const row of result) {
+    if(row.parentId == null || identities.has(String(row.parentId)))continue;
+    const key=String(row.parentId);
+    if(!groups.has(key))groups.set(key,[]);
+    groups.get(key).push(row);
+  }
+  for(const members of groups.values()) {
+    const root=[...members].sort((a,b)=>Number(a.is_active===false)-Number(b.is_active===false)||(String(a.id)<String(b.id)?-1:String(a.id)>String(b.id)?1:0))[0];
+    members.forEach(row=>row.parentId=row===root?null:root.id);
+  }
+  return result;
+}
+
 function hydrateServerWorkspace(response) {
   const state = response?.state;
   if (!state) return false;
@@ -243,8 +259,8 @@ function hydrateServerWorkspace(response) {
   branches = Array.isArray(state.branches) ? state.branches : [];
   suppliers = Array.isArray(state.suppliers) ? state.suppliers : [];
   ingredients = Array.isArray(state.ingredients) ? state.ingredients : [];
-  recipes = Array.isArray(state.recipes) ? state.recipes : [];
-  products = Array.isArray(state.products) ? state.products : [];
+  recipes = recoverCatalogGroups(Array.isArray(state.recipes) ? state.recipes : []);
+  products = recoverCatalogGroups(Array.isArray(state.products) ? state.products : []);
   modifierSets = Array.isArray(state.modifierSets) ? state.modifierSets : [];
   preparations = Array.isArray(state.preparations) ? state.preparations : [];
   menuCategories = mergeMenuCategoryRegistries(state.menuCategories || [], state.recipeCategories || [], state.productCategories || [], normalizeMenuCategories([], [...recipes, ...products]));

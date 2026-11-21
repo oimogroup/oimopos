@@ -1412,6 +1412,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
     if action == "recipe.group.upsert":
         _owner(user)
         draft = deepcopy(state)
+        from .catalog_groups import repair_missing_parents
+        repair_missing_parents(draft['recipes'])
         _persist_modifier_sets(draft, payload.get("modifierSets"))
         existing = _find(draft["recipes"], payload.get("id"))
         _require(not existing or not existing.get("parentId"), "Редактируйте основную карточку техкарты")
@@ -1447,6 +1449,8 @@ def apply_action(state: dict[str, Any], user: dict[str, Any], action: str, paylo
     if action == "product.group.upsert":
         _owner(user)
         draft = deepcopy(state)
+        from .catalog_groups import repair_missing_parents
+        repair_missing_parents(draft['products'])
         _persist_modifier_sets(draft, payload.get("modifierSets"))
         root_id = str(payload.get("id") or f"product-{uuid4().hex[:12]}")
         previous_root_id = str(payload.get("previousGroupId") or root_id)
