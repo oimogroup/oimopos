@@ -49,3 +49,95 @@ body[data-ui=pos] .order-options-dialog .order-comment { display: flex; margin: 
 body[data-ui=pos] .order-options-dialog .pos-order-settings { padding: 12px 0; }
 body[data-ui=pos] .order-options-dialog .kitchen-order-action { width: 100%; min-height: 44px; text-align: left; }
 body[data-ui=pos] .order-options-dialog footer { display: flex; justify-content: flex-end; margin-top: 12px; }
+
+/* The functions menu is a grouped list with one consistent action style. */
+body[data-ui=pos] #terminalFunctions { padding: 16px; }
+body[data-ui=pos] #terminalFunctions .functions-modal { width: min(760px,100%); max-height: calc(min(100dvh,var(--pos-viewport-height,100dvh)) - 32px); padding: 0; display: flex; flex-direction: column; overflow: hidden; border: 1px solid var(--line); border-radius: 16px; }
+body[data-ui=pos] #terminalFunctions .modal-header { flex-shrink: 0; padding: 18px 22px; border-bottom: 1px solid var(--line); align-items: center; }
+body[data-ui=pos] #terminalFunctions h2 { font-size: 20px; font-weight: 600; letter-spacing: -.3px; }
+body[data-ui=pos] #terminalFunctions .functions-content { min-height: 0; overflow-y: auto; overscroll-behavior: contain; padding: 20px 22px; }
+body[data-ui=pos] #terminalFunctions .function-section + .function-section,
+body[data-ui=pos] #terminalFunctions #functionOperations + .function-section { margin-top: 24px; }
+body[data-ui=pos] #terminalFunctions #functionOperations .function-section { margin-top: 24px; }
+body[data-ui=pos] #terminalFunctions h3 { margin: 0 0 10px; color: var(--muted); font-size: 12px; font-weight: 500; letter-spacing: .2px; }
+body[data-ui=pos] #terminalFunctions .function-grid { display: grid; grid-template-columns: repeat(2,minmax(0,1fr)); gap: 8px; }
+body[data-ui=pos] #terminalFunctions .function-grid button { min-width: 0; min-height: 82px; padding: 12px; display: flex; flex-direction: row; align-items: center; justify-content: flex-start; gap: 12px; border: 1px solid var(--line); border-radius: 10px; background: #fff; text-align: left; color: var(--ink); }
+body[data-ui=pos] #terminalFunctions .function-grid button:hover { background: #faf8fb; border-color: #bca9c1; }
+body[data-ui=pos] #terminalFunctions .function-icon { display: grid; place-items: center; width: 36px; height: 36px; flex: 0 0 36px; border-radius: 9px; background: #f4f0f5; color: #6c5074; }
+body[data-ui=pos] #terminalFunctions .function-copy { flex: 1; min-width: 0; }
+body[data-ui=pos] #terminalFunctions .function-copy strong { display: block; font-size: 13px; font-weight: 500; line-height: 1.4; overflow-wrap: anywhere; }
+body[data-ui=pos] #terminalFunctions .function-copy small { display: block; margin-top: 3px; font-size: 11px; line-height: 1.45; color: var(--muted); overflow-wrap: anywhere; }
+body[data-ui=pos] #terminalFunctions .function-arrow { flex: 0 0 16px; color: #9a8d9d; }
+body[data-ui=pos] #terminalFunctions .function-arrow .ui-icon { width: 16px; height: 16px; }
+body[data-ui=pos] #terminalFunctions .functions-footer { flex-shrink: 0; padding: 10px 22px; border-top: 1px solid var(--line); background: #fbfafc; }
+body[data-ui=pos] #terminalFunctions .function-guide-link { min-height: 36px; padding: 0; display: inline-flex; align-items: center; gap: 10px; border: 0; background: transparent; color: var(--muted); font-size: 12px; text-decoration: none; }
+@media screen and (max-width:600px) {
+  body[data-ui=pos] #terminalFunctions { padding: 8px; }
+  body[data-ui=pos] #terminalFunctions .functions-modal { max-height: calc(min(100dvh,var(--pos-viewport-height,100dvh)) - 16px); border-radius: 12px; }
+  body[data-ui=pos] #terminalFunctions .function-grid { grid-template-columns: minmax(0,1fr); }
+  body[data-ui=pos] #terminalFunctions .modal-header { padding: 12px 16px; }
+  body[data-ui=pos] #terminalFunctions .functions-content { padding: 16px; }
+  body[data-ui=pos] #terminalFunctions .function-grid button { min-height: 72px; }
+  body[data-ui=pos] #terminalFunctions .functions-footer { padding: 8px 16px; }
+}
+
+/* Use available screen space instead of scaling a desktop terminal down. */
+body[data-ui=pos] .app-shell { height: min(100dvh,var(--pos-viewport-height,100dvh)); }
+body[data-ui=pos] .app-shell .product-bottom { min-width: 0; }
+body[data-ui=pos] .app-shell .product-price { overflow-wrap: anywhere; }
+body[data-ui=pos] .app-shell .catalog-panel,
+body[data-ui=pos] .app-shell .order-items { overscroll-behavior: contain; scrollbar-gutter: stable; }
+body[data-ui=pos] .app-shell .category-label { min-width: 0; }
+body[data-ui=pos] .app-shell .category-label strong { overflow-wrap: anywhere; }
+body[data-ui=pos] :is(.modal-backdrop,.drawer-backdrop) { max-height: min(100dvh,var(--pos-viewport-height,100dvh)); }
+body[data-ui=pos] .order-options-dialog { max-height: calc(min(100dvh,var(--pos-viewport-height,100dvh)) - 24px); }
+@media screen and (min-width:701px) {
+  body[data-ui=pos] .app-shell .workspace { grid-template-columns: clamp(290px,34vw,440px) minmax(0,1fr); }
+  body[data-ui=pos] .app-shell .topbar { min-height: 64px; height: 64px; flex-basis: 64px; padding: 8px 12px; gap: 8px; }
+  body[data-ui=pos] .app-shell .topbar :is(.topbar-action,.cashier,.shift-chip) { min-height: 44px; height: 44px; }
+  body[data-ui=pos] .app-shell .topbar .branch-picker select { height: 44px; }
+}
+@media screen and (min-width:701px) and (max-width:1100px) {
+  body[data-ui=pos] .app-shell .topbar { flex-wrap: nowrap; overflow: visible; }
+  body[data-ui=pos] .app-shell .topbar .brand { display: none; }
+  body[data-ui=pos] .app-shell .topbar .branch-picker { flex: 0 1 140px; min-width: 90px; }
+  body[data-ui=pos] .app-shell .topbar .shift-chip { margin-left: auto; padding: 6px 8px; }
+  body[data-ui=pos] .app-shell .topbar .shift-chip small,
+  body[data-ui=pos] .app-shell .topbar .cashier small,
+  body[data-ui=pos] .app-shell .topbar .clock { display: none; }
+  body[data-ui=pos] .app-shell .topbar .cashier { max-width: 130px; padding: 4px 7px; }
+  body[data-ui=pos] .app-shell .topbar .cashier > div { min-width: 0; }
+  body[data-ui=pos] .app-shell .topbar .cashier strong { white-space: nowrap; overflow: hidden; text-overflow: ellipsis; }
+  body[data-ui=pos] .app-shell .topbar .topbar-action { padding: 0 8px; }
+  body[data-ui=pos] .app-shell .topbar :is(#openOrdersButton,#historyButton,#receivingButton) { width: 44px; min-width: 44px; padding: 0; justify-content: center; font-size: 0; position: relative; }
+  body[data-ui=pos] .app-shell .topbar #receivingButton::before { content: '↓'; font-size: 24px; }
+  body[data-ui=pos] .app-shell .topbar .topbar-counter { position: absolute; right: -3px; top: -3px; font-size: 10px; }
+  body[data-ui=pos] .app-shell .topbar #servingSurplusButton { display: none; }
+  body[data-ui=pos] .app-shell .categories { grid-template-columns: repeat(auto-fill,minmax(140px,1fr)); gap: 8px; }
+  body[data-ui=pos] .app-shell .product-grid { grid-template-columns: repeat(auto-fill,minmax(130px,1fr)); gap: 8px; }
+  body[data-ui=pos] .app-shell .category-button { min-height: 90px; padding: 10px; }
+  body[data-ui=pos] .app-shell .category-forward { display: none; }
+  body[data-ui=pos] .app-shell .order-row { grid-template-columns: minmax(0,1fr) auto; gap: 8px; }
+  body[data-ui=pos] .app-shell .order-row-right { min-width: 112px; }
+}
+@media screen and (max-width:700px) {
+  body[data-ui=pos] :is(input,select,textarea) { font-size: 16px; }
+  body[data-ui=pos] .app-shell .topbar { padding-top: max(6px,env(safe-area-inset-top,0px)); }
+  body[data-ui=pos] .app-shell .product-card { min-height: 116px; }
+  body[data-ui=pos] .app-shell .category-button { min-height: 110px; }
+  body[data-ui=pos] .app-shell .category-button > img,
+  body[data-ui=pos] .app-shell .category-button > .category-cover { height: 64px; }
+  body[data-ui=pos] .app-shell .product-photo { height: 82px; }
+  body[data-ui=pos] .app-shell .order-row-right { min-width: 128px; }
+  body[data-ui=pos] .app-shell .quantity-control button { min-width: 44px; min-height: 44px; }
+  body[data-ui=pos] .order-options-dialog .order-context { grid-template-columns: minmax(0,1fr); }
+  body[data-ui=pos] .order-options-dialog .order-comment { align-items: stretch; flex-direction: column; }
+  body[data-ui=pos] .order-options-dialog .order-comment input { width: 100%; min-height: 44px; }
+  body[data-ui=pos] #paymentModal .payment-modal { height: min(100dvh,var(--pos-viewport-height,100dvh)); max-height: min(100dvh,var(--pos-viewport-height,100dvh)); }
+}
+@media screen and (max-height:500px) and (min-width:701px) {
+  body[data-ui=pos] .app-shell .topbar { min-height: 54px; height: 54px; flex-basis: 54px; padding: 5px 10px; }
+  body[data-ui=pos] .app-shell .category-button { min-height: 76px; }
+  body[data-ui=pos] .app-shell .product-card { min-height: 100px; }
+  body[data-ui=pos] .app-shell .product-photo { height: 64px; }
+}

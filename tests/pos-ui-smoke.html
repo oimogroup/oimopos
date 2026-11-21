@@ -100,6 +100,7 @@
             }
           }
           if (new URLSearchParams(location.search).get("preview") === "catalog") { frame.contentDocument.querySelector("#supplyDrawer").classList.add("hidden"); frame.contentWindow.mobilePosView("catalog"); }
+          if (new URLSearchParams(location.search).get('preview') === 'functions') {frame.contentWindow.closeDrawer('#supplyDrawer');frame.contentWindow.openTerminalFunctions();}
           if (new URLSearchParams(location.search).get("preview") === "archive") {
             const win=frame.contentWindow,doc=frame.contentDocument,response=await win.AshkanaApi.workspace();
             response.state.sales=[{id:'preview',number:55,cashier:'Айбек',createdAt:new Date().toISOString(),total:520,payments:[{method:'cash',amount:320},{method:'card',amount:200}],items:[{name:'Лагман домашний',quantity:2,price:250,unit:'порция'},{name:'Чай',quantity:1,price:20,unit:'шт'}]}];
@@ -205,6 +206,17 @@
             win.closeDrawer('#supplyDrawer');
             win.openTerminalFunctions();
             check('functions-use-authorized-actions', !doc.querySelector('#terminalFunctions').classList.contains('hidden') && !!doc.querySelector('[data-function-target="supplyButton"]'));
+            check('functions-grouped-by-task',doc.querySelector('[data-function-target="supplyButton"]').closest('.function-section').querySelector('h3').textContent==='Кухня и склад'&&doc.querySelector('[data-function-target="shiftButton"]').closest('.function-section').querySelector('h3').textContent==='Смена и деньги');
+            check('functions-focus-starts-at-close',doc.activeElement===doc.querySelector('#closeFunctions'));
+            doc.querySelector('#closeFunctions').dispatchEvent(new win.KeyboardEvent('keydown',{key:'Tab',shiftKey:true,bubbles:true,cancelable:true}));
+            check('functions-keyboard-focus-contained',doc.activeElement===doc.querySelector('#terminalFunctions .function-guide-link'));
+            doc.activeElement.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Escape',bubbles:true,cancelable:true}));
+            check('functions-escape-restores-trigger',doc.querySelector('#terminalFunctions').classList.contains('hidden')&&doc.activeElement===doc.querySelector('#terminalFunctionsButton'));
+            win.openTerminalFunctions();
+            doc.querySelector('[data-function-target="supplyButton"] .function-icon').click();
+            await new Promise(resolve=>setTimeout(resolve,50));
+            check('functions-icon-opens-original-action',doc.querySelector('#terminalFunctions').classList.contains('hidden')&&!doc.querySelector('#supplyDrawer').classList.contains('hidden'));
+            win.closeDrawer('#supplyDrawer');win.openTerminalFunctions();
             doc.querySelector('#closeFunctions').click();
             win.addProduct('p1'); win.openPayment('card');
             await new Promise(resolve=>setTimeout(resolve,50));
@@ -242,6 +254,14 @@
             check('long-receipt-keeps-payment-visible', paymentRect.bottom <= 800 && doc.querySelector('#orderItems').scrollHeight > doc.querySelector('#orderItems').clientHeight);
             check('receipt-left-catalog-right',doc.querySelector('.order-panel').getBoundingClientRect().left < doc.querySelector('.catalog-panel').getBoundingClientRect().left);
             check('receipt-prioritizes-items', doc.querySelector('#orderItems').clientHeight > doc.querySelector('.order-panel').clientHeight * .65);
+            if (win.visualViewport) {
+              Object.defineProperty(win.visualViewport, 'height', {configurable:true, value:500});
+              win.visualViewport.dispatchEvent(new win.Event('resize'));
+              check('visible-viewport-keeps-pay-accessible',doc.querySelector('.app-shell').clientHeight<=500&&doc.querySelector('#payButton').getBoundingClientRect().bottom<=500);
+              delete win.visualViewport.height;
+              win.visualViewport.dispatchEvent(new win.Event('resize'));
+              check('visible-viewport-restores-height',doc.querySelector('.app-shell').clientHeight===800);
+            }
             doc.querySelector('#orderOptionsButton').click();
             const optionsDialog = doc.querySelector('#orderOptionsDialog');
             check('receipt-options-open', optionsDialog.open && optionsDialog.contains(doc.querySelector('#posOrderType')) && optionsDialog.contains(doc.querySelector('#orderComment')));

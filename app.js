@@ -2629,20 +2629,43 @@ function openTerminalFunctions() {
   $("#salesReportButton").classList.toggle("hidden", activeOperator?.role === "production" || activeOperator?.staffRole === "production");
   $("#salesImportButton").classList.toggle("hidden", activeOperator?.role === "production" || activeOperator?.staffRole === "production" || workspaceState.serviceMode === "restaurant");
   const container = $("#functionOperations");
-  container.innerHTML = functionTargets.filter(id => !$("#" + id).classList.contains("hidden")).map(id => {
-    const [label, hint] = terminalActionCopy[id];
-    return `<button type="button" data-function-target="${id}"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></button>`;
-  }).join("");
-  if (canViewTransferHistory()) container.insertAdjacentHTML('beforeend', '<button type="button" data-function-transfer-history>История передач</button>');
+  const icons = {workShiftButton:'user',historyButton:'receipt',shiftButton:'orders',receivingButton:'download',servingWriteoffButton:'close',servingSurplusButton:'plus',productionButton:'tray',supplyButton:'supply',cashMenuButton:'wallet',posAdminLink:'settings'};
+  const actionContent = (icon, label, hint) => `<span class="function-icon" aria-hidden="true">${posIcon(icon)}</span><span class="function-copy"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></span><span class="function-arrow" aria-hidden="true">${posIcon('arrow')}</span>`;
+  const groups = [
+    ['Смена и деньги',['shiftButton','cashMenuButton','workShiftButton']],
+    ['Кухня и склад',['receivingButton','productionButton','supplyButton','servingWriteoffButton','servingSurplusButton']],
+    ['История и управление',['historyButton','posAdminLink']],
+  ];
+  container.innerHTML = groups.map(([title, ids], index) => {
+    const buttons = ids.filter(id=>functionTargets.includes(id)&&!$('#'+id).classList.contains('hidden')).map(id=>`<button type="button" data-function-target="${id}">${actionContent(icons[id],...terminalActionCopy[id])}</button>`);
+    if(index===2&&canViewTransferHistory())buttons.push(`<button type="button" data-function-transfer-history>${actionContent('supply','История передач','Отправки кухни и приёмка раздачи')}</button>`);
+    return buttons.length?`<section class="function-section" aria-labelledby="functionGroup${index}"><h3 id="functionGroup${index}">${title}</h3><div class="function-grid">${buttons.join('')}</div></section>`:'';
+  }).join('');
+  for(const [id,icon,label,hint] of [
+    ['salesReportButton','receipt','Отчёт по продажам','Выручка, способы оплаты и проданные позиции'],
+    ['salesImportButton','upload','Импорт продаж','Загрузить реестр из Excel'],
+    ['functionSettings','printer','Настройки и печать','Принтер, бумага и параметры терминала'],
+    ['functionSync','download','Обновить данные','Получить актуальное меню и остатки'],
+  ]) $('#'+id).innerHTML=actionContent(icon,label,hint);
+  $('#functionSalesSection').classList.toggle('hidden',['salesReportButton','salesImportButton'].every(id=>$('#'+id).classList.contains('hidden')));
   $("#terminalFunctions").classList.remove("hidden");
+  $('#closeFunctions').focus();
 }
 $("#terminalFunctionsButton").onclick = openTerminalFunctions;
-$("#closeFunctions").onclick = () => $("#terminalFunctions").classList.add("hidden");
+$("#closeFunctions").onclick = () => { $("#terminalFunctions").classList.add("hidden"); $('#terminalFunctionsButton').focus(); };
 $("#terminalFunctions").addEventListener("click", event => {
-  if (event.target === $("#terminalFunctions")) $("#terminalFunctions").classList.add("hidden");
+  if (event.target === $("#terminalFunctions")) $('#closeFunctions').click();
   const button = event.target.closest("[data-function-target]");
   if (button) { $("#terminalFunctions").classList.add("hidden"); $("#" + button.dataset.functionTarget).click(); }
   if (event.target.closest('[data-function-transfer-history]')) { $("#terminalFunctions").classList.add("hidden"); openTransferHistory(); }
+});
+$('#terminalFunctions').addEventListener('keydown',event=>{
+  if(event.key==='Escape'){event.stopPropagation();$('#terminalFunctions').classList.add('hidden');$('#terminalFunctionsButton').focus();}
+  if(event.key!=='Tab')return;
+  const controls=[...$('#terminalFunctions').querySelectorAll('button,a[href]')].filter(el=>!el.disabled&&el.getClientRects().length);
+  const first=controls[0],last=controls.at(-1);
+  if(event.shiftKey&&document.activeElement===first){event.preventDefault();last.focus();}
+  else if(!event.shiftKey&&document.activeElement===last){event.preventDefault();first.focus();}
 });
 $("#functionSettings").onclick = () => { $("#terminalFunctions").classList.add("hidden"); openTerminalSettings(); };
 $("#functionSync").onclick = () => { $("#terminalFunctions").classList.add("hidden"); syncTerminalWorkspace(); };
@@ -3032,6 +3055,19 @@ $('#salesImportCommit').onclick = async () => {
   } catch(error) { $('#salesImportError').textContent = error.message; }
   finally { salesImportBusy = false; $('#salesImportFile').disabled = false; $('#salesImportRows').onchange(); }
 };
+
+// Follow the visible viewport when a phone keyboard covers part of the screen.
+(() => {
+  const viewport = window.visualViewport;
+  if (!viewport) return;
+  const update = () => {
+    if (Math.abs(viewport.scale - 1) > 0.01) return;
+    document.documentElement.style.setProperty('--pos-viewport-height', `${Math.round(Math.min(window.innerHeight, viewport.height))}px`);
+  };
+  viewport.addEventListener('resize', update);
+  window.addEventListener('resize', update);
+  update();
+})();
 
 // Keep the receipt workspace for items; secondary controls live in one dialog.
 (() => {
