@@ -512,8 +512,8 @@
             win.startNewOrder(); win.renderProducts();
             check('restaurant-no-production',doc.querySelector('#productionButton').classList.contains('hidden')&&doc.querySelector('#servingWriteoffButton').classList.contains('hidden'));
             check('restaurant-no-surplus',doc.querySelector('#servingSurplusButton').classList.contains('hidden'));
-            check('restaurant-title', doc.querySelector('.catalog-toolbar h1').textContent === 'Новый заказ' && doc.querySelector('.brand span').textContent === 'Касса ресторана');
-            check('restaurant-empty-order', doc.querySelector('#orderItems').textContent.includes('Заказ пока пуст'));
+            check('restaurant-title', doc.querySelector('.catalog-toolbar h1').textContent === 'Меню' && doc.querySelector('.brand span').textContent === 'Касса ресторана');
+            check('restaurant-empty-order', doc.querySelector('#orderItems').textContent.includes('Добавьте позиции'));
             win.addProduct('r1');
             check('restaurant-without-production-batch', win.cartTotal() === 230);
             doc.querySelector('[data-category="Горячее"]').click();

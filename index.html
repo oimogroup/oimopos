@@ -10,6 +10,7 @@
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=8" />
   <link rel="stylesheet" href="/brand.css?v=1">
+  <link rel="stylesheet" href="pos-compact.css?v=1">
 <link rel="icon" href="/favicon.svg?v=4">
 <link id="posManifest" rel="manifest" crossorigin="use-credentials">
 <meta name="theme-color" content="#202123">
@@ -132,12 +133,11 @@
         <section class="catalog-panel">
           <div class="catalog-toolbar">
             <div>
-              <p class="eyebrow">Новый заказ</p>
-              <h1>Что на подносе?</h1>
+              <h1>Меню</h1>
             </div>
             <label class="search-box">
               <svg class="ui-icon"><use href="#pos-search"/></svg>
-              <input id="searchInput" type="search" placeholder="Найти блюдо или ввести код" autocomplete="off" />
+              <input id="searchInput" type="search" placeholder="Поиск" aria-label="Поиск по меню" autocomplete="off" />
             </label>
           </div>
 
@@ -146,7 +146,6 @@
 
           <div class="catalog-meta">
             <span id="catalogCount">0 позиций</span>
-            <span class="hint">Нажмите на блюдо, чтобы добавить</span>
           </div>
 
           <div class="product-grid" id="productGrid"></div>
@@ -155,8 +154,7 @@
         <aside class="order-panel">
           <div class="order-header">
             <div>
-              <p class="eyebrow">Текущий чек</p>
-              <h2 id="orderTitle">Заказ №1</h2>
+              <h2 id="orderTitle">Чек</h2>
             </div>
             <button class="icon-button danger" id="clearOrderButton" type="button" title="Очистить заказ" aria-label="Очистить заказ"><svg class="ui-icon"><use href="#pos-close"/></svg></button>
           </div>
@@ -169,7 +167,7 @@
             </button>
             <button class="order-context-button" id="saveOrderButton" type="button">
               <svg class="ui-icon"><use href="#pos-pause"/></svg>
-              <span><small>Отложить</small><strong>Сохранить заказ</strong></span>
+              <span><strong>Отложить</strong></span>
             </button>
           </div>
 
@@ -183,8 +181,7 @@
           <div class="order-items" id="orderItems">
             <div class="empty-order">
               <div class="tray-icon"><svg class="ui-icon"><use href="#pos-tray"/></svg></div>
-              <strong>Поднос пока пуст</strong>
-              <span>Выберите блюда в каталоге справа</span>
+              <strong>Добавьте позиции</strong>
             </div>
           </div>
 
@@ -272,7 +269,7 @@
 
     <div class="drawer-backdrop hidden" id="customerDrawer">
       <aside class="poster-drawer">
-        <div class="modal-header"><div><p class="eyebrow">Текущий чек</p><h2>Гость и скидка</h2></div><button class="icon-button" id="closeCustomerButton" type="button" aria-label="Закрыть"><svg class="ui-icon"><use href="#pos-close"/></svg></button></div>
+        <div class="modal-header"><div><h2>Гость и скидка</h2></div><button class="icon-button" id="closeCustomerButton" type="button" aria-label="Закрыть"><svg class="ui-icon"><use href="#pos-close"/></svg></button></div>
         <label class="drawer-search"><svg class="ui-icon"><use href="#pos-search"/></svg><input id="customerSearch" type="search" placeholder="Имя или телефон" /></label>
         <button class="secondary-button drawer-neutral-action" id="clearCustomerButton" type="button">Продолжить без гостя</button>
         <div class="customer-list" id="customerList"></div>
@@ -546,7 +543,7 @@
     <script src="composition-core.js?v=catalog-reliability-20261121"></script>
     <script src="offline-pos-core.js?v=catalog-reliability-20261121"></script>
     <script src="offline-pos.js?v=1"></script>
-    <script src="app.js?v=transfer-grams-20261121"></script>
+    <script src="app.js?v=compact-pos-20261121"></script>
     <script src="pos-supply-photo.js?v=1"></script>
     <script src="work-time.js?v=1"></script>
   </body>

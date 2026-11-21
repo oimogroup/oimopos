@@ -65,7 +65,7 @@ function hydrateWorkspace(response) {
   updateProductionAccess();
 
   const title = document.querySelector(".catalog-toolbar h1");
-  if (title) title.textContent = restaurant ? "Новый заказ" : "Что на подносе?";
+  if (title) title.textContent = "Меню";
   document.querySelector(".brand span").textContent = restaurant ? "Касса ресторана" : "Касса столовой";
   const branchId = currentSession.branchId;
   window.OimoPwa?.configure(currentSession, (workspaceState.branches || []).find(row => String(row.id) === String(branchId)));
@@ -255,7 +255,6 @@ function renderProducts() {
       <button class="product-card" style="--product-accent:${escapeHtml(product.color || "#3987df")}" data-product-id="${escapeHtml(product.id)}" type="button" ${unavailable ? "disabled" : ""}>
         ${product.image ? `<img class="product-photo" src="${escapeHtml(product.image)}" alt="" />` : ""}
         ${inCart > 0 ? `<span class="mobile-product-count">${inCart}</span>` : ""}
-        <span class="product-code">Код ${escapeHtml(product.id)}</span>
         <strong>${escapeHtml(product.name)}</strong>
         <span class="product-bottom">
           <span class="product-price">${product.variantCount ? "от " : ""}${money(product.price)}</span>
@@ -351,7 +350,7 @@ function renderCart() {
   $("#posExtraTotal").classList.toggle("hidden", !(extras.service + extras.delivery));
   $("#posExtraAmount").textContent = money(extras.service + extras.delivery);
   const openOrder = posState.openOrders.find((order) => order.id === currentOpenOrderId);
-  $("#orderTitle").textContent = openOrder?.number ? `${openOrder.number} · открыт` : `Заказ №${nextReceiptNumber()}`;
+  $("#orderTitle").textContent = openOrder ? "Отложенный чек" : "Чек";
   $("#itemCount").textContent = cartQuantity();
   $("#totalAmount").textContent = money(total);
   $("#payButtonAmount").textContent = money(total);
@@ -366,7 +365,7 @@ function renderCart() {
   renderProducts();
 
   if (!items.length) {
-    $("#orderItems").innerHTML = `<div class="empty-order"><div class="tray-icon">${posIcon("tray")}</div><strong>${workspaceState?.serviceMode === "restaurant" ? "Заказ пока пуст" : "Поднос пока пуст"}</strong><span>Добавьте блюда из меню</span></div>`;
+    $("#orderItems").innerHTML = `<div class="empty-order"><strong>Добавьте позиции</strong></div>`;
     return;
   }
 
