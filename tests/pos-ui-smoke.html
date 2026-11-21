@@ -241,6 +241,17 @@
             const paymentRect = doc.querySelector('#payButton').getBoundingClientRect();
             check('long-receipt-keeps-payment-visible', paymentRect.bottom <= 800 && doc.querySelector('#orderItems').scrollHeight > doc.querySelector('#orderItems').clientHeight);
             check('receipt-left-catalog-right',doc.querySelector('.order-panel').getBoundingClientRect().left < doc.querySelector('.catalog-panel').getBoundingClientRect().left);
+            check('receipt-prioritizes-items', doc.querySelector('#orderItems').clientHeight > doc.querySelector('.order-panel').clientHeight * .65);
+            doc.querySelector('#orderOptionsButton').click();
+            const optionsDialog = doc.querySelector('#orderOptionsDialog');
+            check('receipt-options-open', optionsDialog.open && optionsDialog.contains(doc.querySelector('#posOrderType')) && optionsDialog.contains(doc.querySelector('#orderComment')));
+            doc.querySelector('#orderComment').value = 'Без лука';
+            optionsDialog.querySelector('footer button').click();
+            doc.querySelector('#orderOptionsButton').click();
+            check('receipt-options-preserve-draft', optionsDialog.open && doc.querySelector('#orderComment').value === 'Без лука' && win.eval('cart.size') === 60);
+            doc.querySelector('#customerButton').click();
+            check('receipt-options-open-customer-without-overlay', !optionsDialog.open && !doc.querySelector('#customerDrawer').classList.contains('hidden'));
+            win.closeDrawer('#customerDrawer');
             win.startNewOrder(); frame.style.left = '-10000px';
             await win.openPosSupply();
             doc.querySelector('#posSupplyInvoice').value = 'draft-check';

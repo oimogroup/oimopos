@@ -3031,3 +3031,37 @@ $('#salesImportCommit').onclick = async () => {
   } catch(error) { $('#salesImportError').textContent = error.message; }
   finally { salesImportBusy = false; $('#salesImportFile').disabled = false; $('#salesImportRows').onchange(); }
 };
+
+// Keep the receipt workspace for items; secondary controls live in one dialog.
+(() => {
+  const dialog = document.createElement('dialog');
+  dialog.id = 'orderOptionsDialog';
+  dialog.className = 'order-options-dialog';
+  dialog.setAttribute('aria-labelledby', 'orderOptionsTitle');
+  dialog.innerHTML = '<header><h2 id="orderOptionsTitle">Действия с чеком</h2><button type="button" class="icon-button" aria-label="Закрыть">×</button></header><div class="order-options-content"></div><footer><button type="button" class="secondary-button">Готово</button></footer>';
+  const content = dialog.querySelector('.order-options-content');
+  for (const selector of ['.order-context', '#posOrderSettings', '.order-comment', '#sendKitchenOrderButton']) {
+    content.append(document.querySelector(selector));
+  }
+  document.body.append(dialog);
+  const open = () => { if (!dialog.open) dialog.showModal(); };
+  document.querySelector('#orderOptionsButton').onclick = open;
+  const mobile = document.querySelector('#mobileOrderOptions');
+  mobile.setAttribute('aria-controls', dialog.id);
+  mobile.setAttribute('aria-haspopup', 'dialog');
+  mobile.onclick = open;
+  dialog.querySelector('header button').onclick = () => dialog.close();
+  dialog.querySelector('footer button').onclick = () => dialog.close();
+  dialog.addEventListener('click', event => {
+    if (event.target === dialog) {
+      const rect = dialog.getBoundingClientRect();
+      if (event.clientX < rect.left || event.clientX > rect.right || event.clientY < rect.top || event.clientY > rect.bottom) dialog.close();
+    }
+  });
+  // Close before opening another modal, preserving all existing handlers/values.
+  content.addEventListener('click', event => {
+    if (event.target.closest('#customerButton,#saveOrderButton,#sendKitchenOrderButton,#mobileClearOrder')) dialog.close();
+  }, true);
+  dialog.addEventListener('close', () => mobile.setAttribute('aria-expanded', 'false'));
+  dialog.addEventListener('toggle', () => mobile.setAttribute('aria-expanded', String(dialog.open)));
+})();
