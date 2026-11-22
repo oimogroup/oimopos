@@ -1246,9 +1246,11 @@ def pos_supply_context(
         {
             "id": str(item["id"]), "name": item["name"], "category": item.get("category", ""),
             "unit": item.get("unit", "шт"),
+            "itemType": kind, "barcode": str(item.get("barcode") or ""),
             "averageCost": branch_costs.get(str(item["id"]), item.get("averageCost", 0)),
         }
-        for item in [*state.get("ingredients", []), *state.get("products", [])]
+        for kind, entries in (("ingredient", state.get("ingredients", [])), ("product", state.get("products", [])))
+        for item in entries
     ]
     can_pay_drawer = operator.get("staff_role") != "production" and bool(_current_pos_shift(connection, user))
     accounts = [

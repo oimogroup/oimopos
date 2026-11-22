@@ -60,6 +60,23 @@
           frame.contentDocument.querySelector("#supplyButton").click();
           await new Promise((resolve) => setTimeout(resolve, 300));
           check("runtime-supply-drawer", !frame.contentDocument.querySelector("#supplyDrawer").classList.contains("hidden") && frame.contentDocument.querySelectorAll("#posSupplySupplier option").length === 1 && frame.contentDocument.querySelectorAll("#posSupplyLines [data-supply-item] option").length === 4 && frame.contentWindow.__runtimeErrors.length === 0);
+          if(!preview){
+            const w=frame.contentWindow,d=frame.contentDocument;
+            w.eval('posSupplyContext.items.forEach(item=>item.itemType=item.id==="p1"?"product":"ingredient");posSupplyContext.items[0].barcode="123456"');
+            const search=d.querySelector('#posSupplyQuickSearch');search.value='рис лаз';search.dispatchEvent(new w.Event('input'));
+            check('quick-supply-searches-ingredient-words',d.querySelectorAll('[data-quick-supply-item]').length===1&&d.querySelector('[data-quick-supply-item]').textContent.includes('Рис'));
+            search.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+            const row=d.querySelector('#posSupplyLines .supply-line');
+            check('quick-supply-selects-and-focuses-quantity',row.querySelector('[data-supply-item]').value==='i1'&&d.activeElement===row.querySelector('[data-supply-quantity]'));
+            row.querySelector('[data-supply-quantity]').value=2;row.querySelector('[data-supply-price]').value=100;
+            search.value='123456';search.dispatchEvent(new w.Event('input'));search.dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+            check('quick-supply-barcode-preserves-existing-row',d.querySelectorAll('#posSupplyLines .supply-line').length===1&&row.querySelector('[data-supply-quantity]').value==='2'&&row.querySelector('[data-supply-price]').value==='100');
+            row.querySelector('[data-supply-quantity]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));check('quick-supply-quantity-to-price',d.activeElement===row.querySelector('[data-supply-price]'));
+            row.querySelector('[data-supply-price]').dispatchEvent(new w.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));check('quick-supply-price-to-next-search',d.activeElement===search);
+            d.querySelector('#posSupplyQuickKind').value='product';search.value='рис';search.dispatchEvent(new w.Event('input'));check('quick-supply-type-filter',d.querySelectorAll('[data-quick-supply-item]').length===0);
+            d.querySelector('#posSupplyQuickKind').value='';w.resetPosSupplyForm();
+            check('photo-ai-help-available-before-upload',Boolean(d.querySelector('.supply-quick-help'))&&d.querySelector('#posSupplyAiAvailability').textContent.includes('не подключено'));
+          }
           if (!preview || new URLSearchParams(location.search).get('preview') === 'import') {
             const win = frame.contentWindow, doc = frame.contentDocument;
             const fixture = {
@@ -409,7 +426,11 @@
             doc.querySelector('#addProductionLine').click();
             let secondRow=doc.querySelectorAll('#productionLines .production-line')[1];
             check('production-add-row',Boolean(secondRow));
-            check('production-dish-dropdown',!secondRow.querySelector('[data-production-search]')&&secondRow.querySelector('[data-production-item]').options.length===3);
+            check('production-dish-dropdown',Boolean(secondRow.querySelector('[data-production-search]'))&&secondRow.querySelector('[data-production-item]').options.length===3);
+            const dishSearch=secondRow.querySelector('[data-production-search]');dishSearch.value='плов';dishSearch.dispatchEvent(new win.Event('input',{bubbles:true}));
+            dishSearch.dispatchEvent(new win.KeyboardEvent('keydown',{key:'Enter',bubbles:true,cancelable:true}));
+            check('production-search-selects-dish-and-focuses-weight',secondRow.querySelector('[data-production-item]').value==='r1'&&doc.activeElement===secondRow.querySelector('[data-production-quantity]'));
+            dishSearch.value='суп';dishSearch.dispatchEvent(new win.Event('input',{bubbles:true}));
             secondRow.querySelector('[data-production-item]').value='r2';secondRow.querySelector('[data-production-unit]').value='portions';win.updateProductionQuantity();
             secondRow.querySelector('[data-production-quantity]').value='2';
             let many;
@@ -553,6 +574,15 @@
             check('canteen-shows-after-acceptance',Boolean(doc.querySelector('#productGrid [data-product-id="r1"]'))&&Boolean(doc.querySelector('[data-category="Горячее"]')));
             acceptedResponse.state.recipes[0].availableLots=[];win.hydrateWorkspace(acceptedResponse);win.renderProducts();
             check('canteen-hides-exhausted-dish',!doc.querySelector('#productGrid [data-product-id="r1"]'));
+            acceptedResponse.state.recipes[1].price=0;win.hydrateWorkspace(acceptedResponse);
+            doc.querySelector('#catalogAvailability').value='all';doc.querySelector('#catalogAvailability').dispatchEvent(new win.Event('change'));
+            doc.querySelector('[data-category="Горячее"]').click();
+            const unavailableDish=doc.querySelector('#productGrid [data-product-id="r1"]'),noPriceDish=doc.querySelector('#productGrid [data-product-id="r2"]');
+            check('all-menu-shows-unaccepted-dish-with-reason',unavailableDish.disabled&&unavailableDish.textContent.includes('Нет принятой партии'));
+            check('all-menu-shows-zero-price-with-reason',noPriceDish.disabled&&noPriceDish.textContent.includes('Не задана цена'));
+            const beforeUnavailableCart=win.eval('cart.size');win.addProduct('r2');check('zero-price-cannot-be-added-directly',win.eval('cart.size')===beforeUnavailableCart);
+            doc.querySelector('#catalogAvailability').value='available';doc.querySelector('#catalogAvailability').dispatchEvent(new win.Event('change'));
+            check('sale-mode-hides-unready-dishes',!doc.querySelector('#productGrid [data-product-id="r1"]')&&!doc.querySelector('#productGrid [data-product-id="r2"]'));
             win.startNewOrder();win.activateOperator(authenticated.operator,authenticated.shift);
             const originalAction = win.AshkanaApi.action;
             const printedSales = [];

@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=8" />
   <link rel="stylesheet" href="/brand.css?v=1">
-  <link rel="stylesheet" href="pos-compact.css?v=4">
+  <link rel="stylesheet" href="pos-compact.css?v=6">
 <link rel="icon" href="/favicon.svg?v=4">
 <link id="posManifest" rel="manifest" crossorigin="use-credentials">
 <meta name="theme-color" content="#202123">
@@ -146,6 +146,7 @@
 
           <div class="catalog-meta">
             <span id="catalogCount">0 позиций</span>
+            <select id="catalogAvailability" aria-label="Показ позиций меню"><option value="available">Для продажи</option><option value="all">Всё меню</option></select>
           </div>
 
           <div class="product-grid" id="productGrid"></div>
@@ -407,17 +408,18 @@
             <label><span>Накладная №</span><input id="posSupplyInvoice" maxlength="80" placeholder="—" /></label>
           </div>
           <div class="pos-supply-import-toolbar">
-            <button class="secondary-button" id="posSupplyPhotoButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-camera"/></svg>Фото накладной</button>
+            <button class="secondary-button" id="posSupplyPhotoButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-camera"/></svg>Фото накладной · ИИ</button>
             <input id="posSupplyPhotoFile" class="hidden" type="file" accept="image/jpeg,image/png,image/webp,.jpg,.jpeg,.png,.webp" aria-label="Фото накладной" />
             <button class="secondary-button" id="posSupplyImportButton" type="button"><svg class="ui-icon" aria-hidden="true"><use href="#pos-upload"/></svg>Загрузить из файла</button>
             <input id="posSupplyImportFile" class="hidden" type="file" accept=".xlsx,.csv,text/csv,application/vnd.openxmlformats-officedocument.spreadsheetml.sheet" aria-label="Файл поставки Excel или CSV" />
             <span>Excel / CSV</span>
             <button id="posSupplyImportTemplate" class="secondary-button pos-supply-template" type="button">Скачать шаблон</button>
           </div>
+          <details class="supply-quick-help"><summary>Как быстро заполнить поставку по фото</summary><ol><li>Нажмите «Фото накладной · ИИ» и загрузите чёткое фото целиком (JPG, PNG или WebP, до 6 МБ).</li><li>Нажмите «Распознать с ИИ». Выберите документ, если на фото несколько накладных.</li><li>Проверьте поставщика, сопоставление ингредиентов и товаров, единицы, количество, цены и итог. Добавьте строки в поставку.</li><li>Проверьте оплату и нажмите «Принять поставку». Только после этого обновятся остатки.</li></ol><p id="posSupplyAiAvailability" role="status"></p></details>
           <p id="posSupplyPhotoMessage" class="pos-supply-import-status" role="status"></p>
           <section id="posSupplyPhotoPanel" class="supply-photo-panel hidden" aria-labelledby="posSupplyPhotoTitle">
             <header><div><h3 id="posSupplyPhotoTitle">Фото накладной</h3><small id="posSupplyPhotoName"></small></div><button id="posSupplyPhotoRemove" class="icon-button" type="button" aria-label="Убрать фото из поставки">×</button></header>
-            <div class="supply-photo-source"><a id="posSupplyPhotoOpen" target="_blank" rel="noopener" aria-label="Открыть фото накладной"><img id="posSupplyPhotoImage" alt="Фото накладной" /></a><div><a id="posSupplyPhotoDownload" class="secondary-button" download><svg class="ui-icon" aria-hidden="true"><use href="#pos-download"/></svg>Скачать фото</a><button id="posSupplyPhotoRecognize" class="terminal-primary" type="button">Распознать</button><p id="posSupplyPhotoSetup"></p></div></div>
+            <div class="supply-photo-source"><a id="posSupplyPhotoOpen" target="_blank" rel="noopener" aria-label="Открыть фото накладной"><img id="posSupplyPhotoImage" alt="Фото накладной" /></a><div><a id="posSupplyPhotoDownload" class="secondary-button" download><svg class="ui-icon" aria-hidden="true"><use href="#pos-download"/></svg>Скачать фото</a><button id="posSupplyPhotoRecognize" class="terminal-primary" type="button">Распознать с ИИ</button><p id="posSupplyPhotoSetup"></p></div></div>
             <div id="posSupplyPhotoReview" class="hidden">
               <label>Накладная на фото<select id="posSupplyPhotoDocument"></select></label>
               <p id="posSupplyPhotoWarnings" class="supply-photo-warnings" role="status"></p>
@@ -434,6 +436,7 @@
             <div id="posSupplyImportRows" tabindex="0" role="region" aria-label="Сопоставление позиций поставки"></div>
             <footer><p id="posSupplyImportSummary" role="status"></p><button id="posSupplyImportApply" class="terminal-primary" type="button" disabled>Добавить в поставку</button></footer>
           </section>
+          <div class="supply-quick-add"><label for="posSupplyQuickSearch">Добавить ингредиент или товар</label><div class="supply-quick-search"><input id="posSupplyQuickSearch" type="search" placeholder="Название, категория или штрихкод" autocomplete="off" aria-controls="posSupplyQuickResults"><select id="posSupplyQuickKind" aria-label="Тип позиции поставки"><option value="">Все позиции</option><option value="ingredient">Ингредиенты</option><option value="product">Товары</option></select></div><div id="posSupplyQuickResults" class="supply-quick-results" aria-label="Результаты поиска продуктов"></div><small id="posSupplyQuickStatus" role="status">Найдите продукт → введите количество → цену.</small></div>
           <div class="supply-lines-head"><span>Наименование</span><span>Количество</span><span>Цена</span><span>Сумма</span><span></span></div>
           <div class="supply-lines" id="posSupplyLines"></div>
           <button class="secondary-button add-supply-line" id="addPosSupplyLine" type="button"><svg class="ui-icon"><use href="#pos-plus"/></svg>Добавить позицию</button>
@@ -545,7 +548,7 @@
     <script src="composition-core.js?v=catalog-reliability-20261121"></script>
     <script src="offline-pos-core.js?v=catalog-reliability-20261121"></script>
     <script src="offline-pos.js?v=1"></script>
-    <script src="app.js?v=functions-layout-20261121"></script>
+    <script src="app.js?v=quick-supply-20261122"></script>
     <script src="pos-supply-photo.js?v=1"></script>
     <script src="work-time.js?v=1"></script>
   </body>

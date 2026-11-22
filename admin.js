@@ -3252,7 +3252,7 @@ function filteredRecipes() {
   const query = $("#recipeSearch").value.trim().toLowerCase();
   const category = $("#recipeCategory").value;
   const station = $("#recipeStationFilter").value;
-  return recipes.filter(recipe => !recipe.parentId && (category === "Все категории" || recipe.category === category) && (station === "Все цеха" || recipeStation(recipe) === station) && [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].some(item=>(!query || item.name.toLowerCase().includes(query)) && listMatches("recipe-list",{...item,_groupActive:recipe.is_active!==false})));
+  return recipes.filter(recipe => !recipe.parentId && (category === "Все категории" || recipe.category === category) && (station === "Все цеха" || recipeStation(recipe) === station) && [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].some(item=>(!query || item.name.toLowerCase().includes(query)) && listMatches("recipe-list",{...item,_groupActive:recipe.is_active!==false&&item.is_active!==false})));
 }
 
 function renderRecipes() {
@@ -3263,7 +3263,7 @@ function renderRecipes() {
   $("#ingredientCount").textContent = ingredients.length;
   $("#recipesTable").innerHTML = visible.map((recipe) => {
     const cost = recipeCost(recipe);
-    const variants=recipe.variantName ? [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].filter(item=>listMatches('recipe-list',{...item,_groupActive:recipe.is_active!==false})) : [];
+    const variants=recipe.variantName ? [recipe,...recipes.filter(item=>String(item.parentId)===String(recipe.id))].filter(item=>listMatches('recipe-list',{...item,_groupActive:recipe.is_active!==false&&item.is_active!==false})) : [];
     return `<tr data-recipe-id="${recipe.id}" class="${recipe.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell">${CatalogCover.thumb(recipe)}<div><strong>${escapeHtml(recipe.groupName || recipe.name)}</strong>${stoppedBadge(recipe.is_active)}${variants.length ? `<small>${variants.length} модификаций · ${variants.map(item=>escapeHtml(item.variantName)).join(', ')}</small>` : ''}</div></div></td><td>${escapeHtml(recipe.category)}</td><td class="catalog-number">${variants.length ? 'По модификациям' : `${decimal(recipe.yield,3)} <span class="catalog-unit">г</span>`}</td><td class="catalog-number"><strong>${variants.length ? 'По модификациям' : money(cost)}</strong></td><td class="catalog-number"><strong>${variants.length ? `от ${money(Math.min(...variants.map(item=>item.price)))}` : inlineCatalogPrice("recipe", recipe)}</strong></td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" ${variants.length ? 'data-recipe-edit' : 'data-recipe-compose'}="${recipe.id}" type="button">${variants.length ? 'Составы' : 'Состав'}</button><button class="poster-action secondary-action" data-recipe-edit="${recipe.id}" type="button">Изменить</button>${catalogRowMenu('recipe', recipe.id, recipe.groupName || recipe.name, 'Удалить техкарту', recipe.is_active)}</div></td></tr>`;
   }).join("") || '<tr class="table-empty"><td colspan="6">Техкарты не найдены. Измените поиск или категорию.</td></tr>';
   listResult("recipe-list", visible.length, recipes.filter(row=>!row.parentId).length);
@@ -3272,17 +3272,21 @@ function renderRecipes() {
 function renderProducts() {
   const query = $("#productSearch").value.trim().toLowerCase();
   const category = $("#productCategoryFilter").value;
-  const visible = products.filter((product) => !product.parentId && (category === "Все категории" || product.category === category) && [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].some(item => (!query || item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query)) && listMatches("product-list", {...item,_groupActive:product.is_active!==false})));
+  const visible = products.filter((product) => !product.parentId && (category === "Все категории" || product.category === category) && [product, ...products.filter(item => String(item.parentId) === String(product.id))].some(item => (!query || item.name.toLowerCase().includes(query) || (item.barcode || "").includes(query)) && listMatches("product-list", {...item,_groupActive:product.is_active!==false&&item.is_active!==false})));
   $("#productsCount").textContent = products.filter(product => !product.parentId).length;
   $("#productsTable").innerHTML = visible.map((product) => {
     const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || "";
     const unitCost = branchUnitCost(branchId, product.id);
     const productMarkup = unitCost ? (product.price - unitCost) / unitCost * 100 : 0;
-    const variants = product.variantName ? [product, ...products.filter(item => String(item.parentId) === String(product.id) && item.is_active !== false)].filter(item=>listMatches("product-list",{...item,_groupActive:product.is_active!==false})) : [];
-    const priceLabel = variants.length ? `от ${money(Math.min(...variants.map(item => item.price)))}` : inlineCatalogPrice("product", product);
-    const stockTotal = variants.length ? variants.reduce((sum,item) => sum + branchStock(branchId, item.id), 0) : branchStock(branchId, product.id);
+    const variants = product.variantName ? [product, ...products.filter(item => String(item.parentId) === String(product.id))].filter(item=>listMatches("product-list",{...item,_groupActive:product.is_active!==false&&item.is_active!==false})) : [];
+    const saleVariants = variants.filter(item=>product.is_active!==false&&item.is_active!==false);
+    const priceVariants = saleVariants.length ? saleVariants : variants;
+    const stoppedVariants = products.filter(item=>String(item.parentId)===String(product.id)&&item.is_active===false);
+    const stoppedDetails = stoppedVariants.length ? `<details class="catalog-stopped-variants"><summary>Остановлены: ${stoppedVariants.length}</summary><ul>${stoppedVariants.map(item=>`<li>${escapeHtml(item.variantName || item.name)} · стоп-продажа</li>`).join('')}</ul></details>` : '';
+    const priceLabel = variants.length ? `от ${money(Math.min(...priceVariants.map(item => item.price)))}` : inlineCatalogPrice("product", product);
+    const stockTotal = variants.length ? saleVariants.reduce((sum,item) => sum + branchStock(branchId, item.id), 0) : branchStock(branchId, product.id);
     const variantCount = variants.length;
-    return `<tr class="${product.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong>${stoppedBadge(product.is_active)}<small>${product.variantName ? `${variantCount} модификаций` : "Готовый товар · без рецепта"}</small></div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogRowMenu('product', product.id, product.groupName || product.name, 'Удалить товар', product.is_active)}</div></td></tr>`;
+    return `<tr class="${product.is_active === false ? 'catalog-stopped' : ''}"><td><div class="dish-cell"><span class="dish-color" style="background:${escapeHtml(product.color || "#5b8fbd")}">${product.image ? `<img src="${escapeHtml(product.image)}" alt="" />` : escapeHtml(product.name.slice(0, 1))}</span><div><strong>${escapeHtml(product.groupName || product.name)}</strong>${stoppedBadge(product.is_active)}<small>${product.variantName ? `${variantCount} модификаций` : "Готовый товар · без рецепта"}</small>${stoppedDetails}</div></div></td><td>${product.category}</td><td>${variants.length ? "По модификациям" : escapeHtml(product.barcode || "—")}</td><td>${variants.length ? "По модификациям" : money(unitCost)}</td><td><strong>${priceLabel}</strong></td><td><span class="margin-value">${variants.length ? "—" : `${decimal(productMarkup)}%`}</span></td><td>${decimal(stockTotal, 3)} ${product.unit}</td><td class="catalog-actions-cell"><div class="catalog-row-actions"><button class="poster-action secondary-action" data-product-edit="${product.id}" type="button">Изменить</button>${catalogRowMenu('product', product.id, product.groupName || product.name, 'Удалить товар', product.is_active)}</div></td></tr>`;
   }).join("");
   listResult("product-list", visible.length, products.filter(row=>!row.parentId).length);
 }
@@ -4695,7 +4699,7 @@ async function exportTechnicalCards(event) {
   const query = $("#recipeSearch").value.trim().toLowerCase();
   const ids = kind === 'recipes' ? recipes.filter(row=>{
     const root = selected.get(String(row.id)) || selected.get(String(row.parentId));
-    return root && (!query || row.name.toLowerCase().includes(query)) && listMatches('recipe-list',{...row,_groupActive:root.is_active!==false});
+    return root && (!query || row.name.toLowerCase().includes(query)) && listMatches('recipe-list',{...row,_groupActive:root.is_active!==false&&row.is_active!==false});
   }).map(row=>row.id) : roots.map(row=>row.id);
   if (!ids.length) { showToast('По выбранным фильтрам нет позиций для экспорта'); return; }
   if (!serverMode) { showToast("Экспорт техкарт доступен на сервере"); return; }

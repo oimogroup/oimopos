@@ -101,7 +101,7 @@ function hydrateWorkspace(response) {
     kind: "product",
     noDiscount: Boolean(product.noDiscount)
   }));
-  products = [...recipes, ...readyProducts].filter((product) => product.price > 0 || modifierGroups(product).some(group => group.options.some(option => Number(option.price) > 0)));
+  products = [...recipes, ...readyProducts];
   configureOrderSettings(!cart.size);
   sales = Array.isArray(workspaceState.sales) ? workspaceState.sales : [];
   posState = {
@@ -197,8 +197,19 @@ function nextReceiptNumber() {
   return Math.max(0,...sales.map(sale=>Number(sale.number)).filter(value=>Number.isSafeInteger(value)&&value>0))+1;
 }
 
+function hasSalePrice(product) {
+  return product.price > 0 || modifierGroups(product).some(group => group.options.some(option => Number(option.price) > 0));
+}
+
 function visibleInCatalog(product) {
-  return product.is_active !== false && (workspaceState?.serviceMode === "restaurant" || product.kind !== "recipe" || product.available > 0);
+  if (product.is_active === false) return false;
+  if ($('#catalogAvailability').value === 'all') return true;
+  return hasSalePrice(product) && (workspaceState?.serviceMode === "restaurant" || product.kind !== "recipe" || product.available > 0);
+}
+
+function catalogUnavailableReason(product) {
+  if (!hasSalePrice(product)) return 'Не задана цена';
+  return product.kind !== 'recipe' ? 'Нет на складе' : workspaceState?.serviceMode === 'restaurant' ? 'Нет ингредиентов / п/ф' : 'Нет принятой партии';
 }
 
 function categories() {
@@ -246,12 +257,13 @@ function renderProducts() {
     if (!product.variantName) return product;
     const groupId = product.parentId || product.id;
     const variants = products.filter(item => item.id === groupId || item.parentId === groupId);
-    return {...product, id:groupId, name:product.groupName, price:Math.min(...variants.map(item=>item.price)), available:variants.reduce((sum,item)=>sum + Math.max(0,item.available - cartQuantityFor(item.id)),0), variantCount:variants.length};
+    const priced = variants.filter(hasSalePrice);
+    return {...product, id:groupId, name:product.groupName, price:Math.min(...(priced.length ? priced : variants).map(item=>item.price)), available:priced.reduce((sum,item)=>sum + Math.max(0,item.available - cartQuantityFor(item.id)),0), variantCount:variants.length};
   });
   $("#catalogCount").textContent = `${visibleProducts.length} ${visibleProducts.length === 1 ? "позиция" : "позиций"}`;
   $("#productGrid").innerHTML = visibleProducts.length ? visibleProducts.map((product) => {
     const inCart = product.variantCount ? 0 : cartQuantityFor(product.id);
-    const unavailable = product.available - inCart < (product.kind === "recipe" && posCompanySettings().general.fractional ? 0.01 : 1);
+    const unavailable = !hasSalePrice(product) || product.available - inCart < (product.kind === "recipe" && posCompanySettings().general.fractional ? 0.01 : 1);
     return `
       <button class="product-card" style="--product-accent:${escapeHtml(product.color || "#3987df")}" data-product-id="${escapeHtml(product.id)}" type="button" ${unavailable ? "disabled" : ""}>
         ${product.image ? `<img class="product-photo" src="${escapeHtml(product.image)}" alt="" />` : ""}
@@ -259,7 +271,7 @@ function renderProducts() {
         <strong>${escapeHtml(product.name)}</strong>
         <span class="product-bottom">
           <span class="product-price">${product.variantCount ? "от " : ""}${money(product.price)}</span>
-          <span class="product-unit">${product.variantCount ? `${product.variantCount} вида` : unavailable ? (workspaceState?.serviceMode === "restaurant" ? "нет ингредиентов/остатка" : "нет на раздаче/складе") : `доступно ${product.available} ${escapeHtml(product.unit)}`}</span>
+          <span class="product-unit">${unavailable ? catalogUnavailableReason(product) : product.variantCount ? `${product.variantCount} вида` : `доступно ${product.available} ${escapeHtml(product.unit)}`}</span>
         </span>
       </button>`;
   }).join("") : `<div class="no-products">Нет доступных позиций или ничего не найдено.</div>`;
@@ -392,7 +404,7 @@ function chooseProduct(id) {
   $("#variantDialogTitle").textContent = product.groupName;
   $("#variantDialogOptions").innerHTML = products.filter(item => item.id === groupId || item.parentId === groupId).map(item => {
     const remaining = item.available - cartQuantityFor(item.id);
-    return `<button type="button" data-select-variant="${escapeHtml(item.id)}" ${remaining <= 0 ? "disabled" : ""}><span class="variant-cover" style="background:${escapeHtml(item.color || "#633d60")}">${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : escapeHtml(item.variantName.slice(0,1))}</span><span>${escapeHtml(item.variantName)}<small>${remaining > 0 ? `Остаток: ${remaining} ${escapeHtml(item.unit)}` : "Нет на складе"}</small></span><strong>${money(item.price)}</strong></button>`;
+    return `<button type="button" data-select-variant="${escapeHtml(item.id)}" ${remaining <= 0 || !hasSalePrice(item) ? "disabled" : ""}><span class="variant-cover" style="background:${escapeHtml(item.color || "#633d60")}">${item.image ? `<img src="${escapeHtml(item.image)}" alt="">` : escapeHtml(item.variantName.slice(0,1))}</span><span>${escapeHtml(item.variantName)}<small>${remaining > 0 && hasSalePrice(item) ? `Остаток: ${remaining} ${escapeHtml(item.unit)}` : catalogUnavailableReason(item)}</small></span><strong>${money(item.price)}</strong></button>`;
   }).join("");
   $("#productVariantDialog").showModal();
 }
@@ -443,6 +455,7 @@ function addProduct(id, lotId = null, modifierSelection = null) {
   if (activeOperator?.staffRole === "production") return;
   let product = products.find((entry) => entry.id === String(id));
   if (!product) return;
+  if (!hasSalePrice(product)) { showToast('Для позиции не задана цена продажи'); return; }
   let selectedLot = null;
   if (Array.isArray(product.availableLots)) {
     selectedLot = product.availableLots.find(lot=>lot.id === lotId) || (product.availableLots.length === 1 ? product.availableLots[0] : null);
@@ -950,6 +963,32 @@ function supplyItemOptions(selected = "") {
   return `<option value="">Выберите продукт…</option>${[...groups.entries()].map(([category, items]) => `<optgroup label="${escapeHtml(category)}">${items.map((item) => `<option value="${escapeHtml(item.id)}" ${String(item.id) === String(selected) ? "selected" : ""}>${escapeHtml(item.name)} · ${escapeHtml(item.unit)}</option>`).join("")}</optgroup>`).join("")}`;
 }
 
+function quickEntryText(value) {
+  return String(value || '').toLocaleLowerCase('ru').replace(/ё/g,'е').replace(/\s+/g,' ').trim();
+}
+function renderSupplyQuickResults() {
+  const query=quickEntryText($('#posSupplyQuickSearch').value),kind=$('#posSupplyQuickKind').value;
+  const locked=posSupplySaving||posSupplyImportBusy||Boolean(posSupplyImportData)||Boolean(window.SupplyPhotos?.blocksSave());
+  const matches=query?posSupplyContext.items.filter(item=>(!kind||item.itemType===kind)&&query.split(' ').every(word=>quickEntryText(`${item.name} ${item.category || ''} ${item.barcode || ''}`).includes(word))):[];
+  $('#posSupplyQuickResults').innerHTML=matches.slice(0,20).map(item=>`<button type="button" data-quick-supply-item="${escapeHtml(item.id)}" ${locked?'disabled':''}><span><strong>${escapeHtml(item.name)}</strong><small>${escapeHtml(item.category || 'Без категории')} · ${escapeHtml(item.unit)}${item.itemType==='ingredient'?' · Ингредиент':item.itemType==='product'?' · Товар':''}</small></span><b aria-hidden="true">+</b></button>`).join('');
+  $('#posSupplyQuickStatus').textContent=locked?'Сначала завершите проверку импорта или сохранение.':!query?'Найдите продукт → введите количество → цену.':!matches.length?'Не найдено. Проверьте название или выберите «Все позиции».':matches.length>20?`Найдено ${matches.length}. Показаны первые 20 — уточните поиск.`:`Найдено: ${matches.length}. Выберите позицию или нажмите Enter.`;
+}
+function quickAddSupplyItem(id) {
+  if(posSupplySaving||posSupplyImportBusy||posSupplyImportData||window.SupplyPhotos?.blocksSave())return;
+  if(!posSupplyContext.items.some(item=>String(item.id)===String(id)))return;
+  const rows=[...$('#posSupplyLines').querySelectorAll('.supply-line')];
+  let row=rows.find(row=>row.querySelector('[data-supply-item]').value===String(id));
+  if(!row){
+    row=rows.find(row=>!row.querySelector('[data-supply-item]').value&&!row.querySelector('[data-supply-quantity]').value&&!row.querySelector('[data-supply-price]').value);
+    if(!row){addPosSupplyLine({itemId:id});row=$('#posSupplyLines').lastElementChild;}
+    else{const select=row.querySelector('[data-supply-item]');select.innerHTML=supplyItemOptions(id);select.value=String(id);select.dataset.optionsLoaded='true';updatePosSupplyRow(row,true);}
+  }
+  $('#posSupplyQuickSearch').value='';renderSupplyQuickResults();
+  persistSupplyDraft();
+  row.querySelector('[data-supply-quantity]').focus();row.querySelector('[data-supply-quantity]').select();
+  row.scrollIntoView({block:'nearest'});
+}
+
 function addPosSupplyLine(values = {}) {
   const rowId = `pos-supply-line-${++posSupplyLineSequence}`;
   const step = values.imported ? "any" : "0.001", priceStep = values.imported ? "any" : "0.01";
@@ -1019,6 +1058,7 @@ function renderPosRecentSupplies() {
 function resetPosSupplyForm() {
   window.SupplyPhotos?.reset();
   resetPosSupplyImport();
+  $('#posSupplyQuickSearch').value='';renderSupplyQuickResults();
   $("#posSupplyDate").value = localDateTimeValue();
   $("#posSupplyInvoice").value = "";
   $("#posSupplyComment").value = "";
@@ -1030,6 +1070,7 @@ function resetPosSupplyForm() {
 }
 
 function renderPosSupplyContext() {
+  $('#posSupplyAiAvailability').textContent=posSupplyContext.photoImport?.enabled?'Распознавание подключено. Оно заполнит черновик — проверьте его перед приёмкой.':'Распознавание не подключено. Администратору нужно настроить ИИ на сервере. Пока можно прикрепить фото и ввести позиции вручную или загрузить Excel / CSV.';
   $("#posSupplySupplier").innerHTML = posSupplyContext.suppliers.length ? posSupplyContext.suppliers.map((supplier) => `<option value="${escapeHtml(supplier.id)}">${escapeHtml(supplier.name)}</option>`).join("") : `<option value="">Нет поставщиков для точки</option>`;
   $("#posSupplyAccount").innerHTML = posSupplyContext.accounts.length ? posSupplyContext.accounts.map((account) => `<option value="${escapeHtml(account.id)}">${escapeHtml(account.name)}</option>`).join("") : `<option value="">Нет доступных счетов</option>`;
   resetPosSupplyForm();
@@ -1120,6 +1161,7 @@ function updatePosSupplyImportControls() {
   $("#posSupplyImportFile").disabled = posSupplyImportBusy || posSupplySaving || photoBusy;
   $("#savePosSupplyButton").disabled = posSupplySaving || posSupplyImportBusy || Boolean(posSupplyImportData) || photoBusy || !posSupplyContext.suppliers.length || !posSupplyContext.items.length;
   window.SupplyPhotos?.updateControls();
+  renderSupplyQuickResults();
 }
 
 function resetPosSupplyImport() {
@@ -1846,6 +1888,16 @@ $("#orderItems").addEventListener("click", (event) => {
 });
 
 $("#searchInput").addEventListener("input", renderProducts);
+$('#catalogAvailability').addEventListener('change', renderProducts);
+$('#posSupplyQuickSearch').addEventListener('input',renderSupplyQuickResults);
+$('#posSupplyQuickKind').addEventListener('change',renderSupplyQuickResults);
+$('#posSupplyQuickResults').addEventListener('click',event=>{const button=event.target.closest('[data-quick-supply-item]');if(button&&!button.disabled)quickAddSupplyItem(button.dataset.quickSupplyItem);});
+$('#posSupplyQuickSearch').addEventListener('keydown',event=>{if(event.key==='Enter'){event.preventDefault();const button=$('#posSupplyQuickResults button:not(:disabled)');if(button)quickAddSupplyItem(button.dataset.quickSupplyItem);}});
+$('#posSupplyLines').addEventListener('keydown',event=>{
+  if(event.key!=='Enter')return;
+  if(event.target.matches('[data-supply-quantity]')){event.preventDefault();const price=event.target.closest('.supply-line').querySelector('[data-supply-price]');price.focus();price.select();}
+  if(event.target.matches('[data-supply-price]')){event.preventDefault();$('#posSupplyQuickSearch').focus();}
+});
 $("#payButton").addEventListener("click", () => openPayment("cash"));
 $("#cashReceived").addEventListener("input", updatePaymentState);
 $("#confirmPaymentButton").addEventListener("click", completePayment);
@@ -2219,13 +2271,14 @@ function numberProductionRows() {
 function addProductionLine() {
   if(document.querySelectorAll('#productionLines .production-line').length>=100)return;
   const row=document.createElement('div');row.className='production-line';
-  row.innerHTML=`<div class="production-line-heading"><strong data-row-title></strong><button class="icon-button danger-button" type="button" data-remove-production aria-label="Удалить блюдо">×</button></div><label>Блюдо<select data-production-item required></select></label><div class="production-quantity"><label>Количество<input data-production-quantity type="number" min="0.001" step="0.001" required inputmode="decimal"></label><label>Единица<select data-production-unit><option value="g">г</option><option value="kg">кг</option><option value="portions">порции / шт.</option></select></label></div>`;
-  $('#productionLines').append(row);numberProductionRows();renderProductionOptions(row);row.querySelector('[data-production-item]').focus();
+  row.innerHTML=`<div class="production-line-heading"><strong data-row-title></strong><button class="icon-button danger-button" type="button" data-remove-production aria-label="Удалить блюдо">×</button></div><label>Найти блюдо<input data-production-search type="search" placeholder="Введите название" autocomplete="off" aria-label="Поиск блюда для передачи"></label><label>Блюдо<select data-production-item required></select></label><div class="production-quantity"><label>Количество<input data-production-quantity type="number" min="0.001" step="0.001" required inputmode="decimal"></label><label>Единица<select data-production-unit><option value="g">г</option><option value="kg">кг</option><option value="portions">порции / шт.</option></select></label></div>`;
+  $('#productionLines').append(row);numberProductionRows();renderProductionOptions(row);row.querySelector('[data-production-search]').focus();
 }
 function renderProductionOptions(row) {
   if(!row?.matches?.('.production-line')) { document.querySelectorAll('#productionLines .production-line').forEach(renderProductionOptions); return; }
   const select=row.querySelector('[data-production-item]');const selected=select.value;
-  const entries=productionData.recipes;
+  const query=quickEntryText(row.querySelector('[data-production-search]').value);
+  const entries=productionData.recipes.filter(item=>String(item.id)===selected||query.split(' ').every(word=>quickEntryText(item.name).includes(word)));
   select.innerHTML='<option value="">Выберите блюдо</option>'+entries.map(item=>`<option value="${escapeHtml(item.id)}">${escapeHtml(item.name)}</option>`).join('');select.value=selected;
   updateProductionQuantity();
 }
@@ -2260,7 +2313,7 @@ async function openPosProduction() {
     $("#productionLines").innerHTML="";addProductionLine();
     $("#productionHelp").textContent="Добавьте блюда. После отправки кассир подтвердит фактическую приёмку каждой партии.";
     $("#productionDrawer").classList.remove("hidden");
-    $("#productionItem").focus();
+    $('#productionLines [data-production-search]').focus();
   } catch(error) { showToast(error.message || "Не удалось загрузить производство"); }
   finally { $("#productionButton").disabled = false; }
 }
@@ -2306,6 +2359,13 @@ $('#addProductionLine').addEventListener('click',addProductionLine);
 $('#productionLines').addEventListener('click',event=>{if(!event.target.closest('[data-remove-production]'))return;event.target.closest('.production-line').remove();numberProductionRows();updateProductionQuantity();});
 $('#productionLines').addEventListener('input',updateProductionQuantity);
 $('#productionLines').addEventListener('change',event=>{if(event.target.matches('[data-production-unit]'))event.target.closest('.production-line').querySelector('[data-production-quantity]').value='';updateProductionQuantity();});
+$('#productionLines').addEventListener('input',event=>{if(event.target.matches('[data-production-search]'))renderProductionOptions(event.target.closest('.production-line'));});
+$('#productionLines').addEventListener('keydown',event=>{
+  if(event.key!=='Enter'||!event.target.matches('[data-production-search]'))return;
+  event.preventDefault();const row=event.target.closest('.production-line'),select=row.querySelector('[data-production-item]'),query=quickEntryText(event.target.value);
+  const item=productionData.recipes.find(item=>query.split(' ').every(word=>quickEntryText(item.name).includes(word)));
+  if(item){select.value=String(item.id);updateProductionQuantity();row.querySelector('[data-production-quantity]').focus();}
+});
 $("#posProductionForm").addEventListener("submit", savePosProduction);
 
 $("#variantDialogOptions").addEventListener("click",event=>{const button=event.target.closest('[data-select-lot]');if(!button)return;addProduct(button.dataset.lotProduct,button.dataset.selectLot);$("#productVariantDialog").close();});

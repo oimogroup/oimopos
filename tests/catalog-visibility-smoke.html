@@ -1,0 +1,9 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre><iframe id="app" src="../admin.html?test=1#menu/products" style="width:1280px;height:900px"></iframe><script>
+app.onload=()=>{const w=app.contentWindow,d=w.document,c=[];const check=(n,v)=>c.push(`${v?'PASS':'FAIL'}:${n}`);try{
+w.eval(`products.push({id:'ava-live',name:'Ава — 500 мл',groupName:'Ава',variantName:'500 мл',category:'Напитки',price:50,unit:'шт'},{id:'ava-stop',name:'Ава — 1000 мл',groupName:'Ава',variantName:'1000 мл',parentId:'ava-live',category:'Напитки',price:30,unit:'шт',is_active:false});renderMenuCategories();renderProducts();`);
+d.querySelector('#productSearch').value='Ава';w.renderProducts();const details=d.querySelector('.catalog-stopped-variants');check('stopped-variant-discoverable-in-group',details&&details.textContent.includes('1000 мл')&&details.textContent.includes('стоп-продажа'));
+check('active-price-excludes-stopped-variant',d.querySelector('#productsTable tr td:nth-child(5)').textContent.includes('50'));
+d.querySelector('#productSearch').value='1000 мл';w.renderProducts();check('stopped-variant-search-finds-parent',d.querySelector('#productsTable').textContent.includes('Ава'));
+const status=d.querySelector('[data-filter-scope="product-list"] [data-filter-key="status"]');check('status-filter-present',Boolean(status));if(status){status.value='stopped';status.dispatchEvent(new w.Event('change',{bubbles:true}));check('stopped-filter-finds-child-of-active-group',d.querySelector('#productsTable').textContent.includes('Ава'));}
+w.openProductForm('ava-live');check('archived-variant-not-restored-by-edit',d.querySelectorAll('.product-variant-row').length===1);
+}catch(e){c.push('FAIL:'+e.stack)}results.textContent=c.join('|')};</script>

@@ -30,10 +30,9 @@
         const width = Math.min(1920, Math.max(320, Number(params.get('width')) || 1280));
         const height = Math.min(1200, Math.max(320, Number(params.get('height')) || 900));
         const sourceResponse = await fetch('../pos');
-        const source = await (sourceResponse.ok ? sourceResponse : fetch('../index.html')).then(response => {
-          if (!response.ok) throw new Error(`POS shell: ${response.status}`);
-          return response.text();
-        });
+        const htmlResponse = sourceResponse.ok ? sourceResponse : await fetch('../index.html');
+        if (!htmlResponse.ok) throw new Error(`POS shell: ${htmlResponse.status}`);
+        const source = await htmlResponse.text();
         const actor = {id: 21, name: 'Айбек Повар', staffRole: 'production', roleLabel: 'Производство', initials: 'АП', permissions: {production: true, posSupply: true}};
         const items = [
           {id: 'rice', name: 'Рис длиннозёрный шлифованный высшего сорта', unit: 'кг', category: 'Крупы', averageCost: 100},

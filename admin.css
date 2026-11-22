@@ -1776,3 +1776,9 @@ body[data-ui=admin] .recipe-variant-toolbar :is(button,select) { min-height:40px
 .preparation-production-dialog label{display:grid;gap:6px}
 .preparation-production-dialog input,.preparation-production-dialog select{width:100%;padding:10px}
 .preparation-production-actions{display:flex;justify-content:flex-end;gap:12px}
+
+body[data-ui=admin] #productModal .variant-artwork-title{display:flex;align-items:center;gap:8px;font-size:12px;color:var(--ink)}
+body[data-ui=admin] #productModal .variant-artwork-title small{font-size:11px;color:var(--muted);font-weight:400}
+body[data-ui=admin] #productModal .variant-artwork-controls .catalog-thumb{width:64px;height:64px;flex-basis:64px}
+
+.catalog-stopped-variants{margin-top:6px;font-size:11px;color:var(--muted)}.catalog-stopped-variants summary{cursor:pointer;padding:4px 0}.catalog-stopped-variants ul{margin:4px 0;padding-left:16px;line-height:1.6}
