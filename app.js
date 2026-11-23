@@ -2375,14 +2375,33 @@ let receivingBusy = false;
 let receivingLoading = false;
 let receivingVersion = null;
 const receivingRequests = new Map();
+const receivingDrafts = new Map();
+let receivingDraftActor = null;
 function canReceive() {
   return activeShift && ['cashier','branch_manager','hall_admin'].includes(activeOperator?.staffRole) && workspaceState?.serviceMode !== 'restaurant';
 }
 function renderReceiving() {
-  $('#receivingList').innerHTML = receivingDocuments.length ? receivingDocuments.map(doc => `<form class="receiving-card" data-receiving-id="${escapeHtml(doc.id)}"><h3>${escapeHtml(doc.name)}</h3><p>${escapeHtml(doc.sender)} · ${escapeHtml(doc.batchNumber)} · ${transferGrams(doc.weight)}</p>${doc.legacy?'<p class="receiving-legacy">Пересчёт остатка</p>':''}<label>Принято, г<input name="actualWeight" type="number" min="0" step="0.001" required value="${Number((Number(doc.weight)*1000).toFixed(3))}"></label><label>Причина расхождения / отказа<input name="reason" maxlength="500" placeholder="—"></label><div class="receiving-actions"><button class="primary-button" type="submit" name="decision" value="accept">Принять</button>${doc.legacy||doc.kind==='handover'?'':'<button class="danger-button" type="submit" name="decision" value="reject" formnovalidate>Отказать</button>'}</div></form>`).join('') : '<p class="production-hint">Нет ожидающих передач.</p>';
+  if(receivingDraftActor!==activeOperator?.id){receivingDrafts.clear();receivingDraftActor=activeOperator?.id;}
+  else for(const form of $('#receivingList').querySelectorAll('[data-receiving-id]'))receivingDrafts.set(form.dataset.receivingId,{weight:form.elements.actualWeight.value,reason:form.elements.reason.value,open:form.querySelector('details')?.open});
+  for(const id of receivingDrafts.keys())if(!receivingDocuments.some(doc=>doc.id===id))receivingDrafts.delete(id);
+  const query=quickEntryText($('#receivingSearch').value);
+  const shown=receivingDocuments.filter(doc=>query.split(' ').every(word=>quickEntryText(`${doc.name} ${doc.sender} ${doc.batchNumber}`).includes(word)));
+  $('#receivingSummary').textContent=`Ожидают: ${receivingDocuments.length} · ${transferGrams(receivingDocuments.reduce((sum,doc)=>sum+Number(doc.weight),0))}`;
+  $('#receivingList').innerHTML=shown.length?shown.map(doc=>{
+    const draft=receivingDrafts.get(doc.id),weight=draft?.weight??Number((Number(doc.weight)*1000).toFixed(3));
+    return `<form class="receiving-card" data-receiving-id="${escapeHtml(doc.id)}"><div class="receiving-dish"><h3>${escapeHtml(doc.name)}</h3><p>${escapeHtml(doc.batchNumber)} · ${escapeHtml(doc.sender)}</p><small>Отправлено: ${transferGrams(doc.weight)}${doc.legacy?' · Пересчёт остатка':''}</small></div><label class="receiving-weight">Принято, г<input name="actualWeight" type="number" min="0" step="0.001" inputmode="decimal" required value="${escapeHtml(String(weight))}"></label><div class="receiving-actions"><button class="primary-button" type="submit" name="decision" value="accept">Принять</button>${doc.legacy||doc.kind==='handover'?'':'<button class="danger-button" type="submit" name="decision" value="reject" formnovalidate>Отказать</button>'}</div><details class="receiving-reason" ${draft?.open?'open':''}><summary>Причина расхождения / отказа</summary><label>Причина<input name="reason" maxlength="500" placeholder="Обязательно при расхождении или отказе" value="${escapeHtml(draft?.reason||'')}"></label></details></form>`;
+  }).join(''):`<p class="production-hint">${receivingDocuments.length?'Ничего не найдено. Измените поиск.':'Нет ожидающих передач.'}</p>`;
 }
+$('#receivingSearch').addEventListener('input',renderReceiving);
+$('#receivingList').addEventListener('input',event=>{
+  if(!event.target.matches('[name="actualWeight"]'))return;
+  const form=event.target.closest('[data-receiving-id]'),doc=receivingDocuments.find(doc=>doc.id===form.dataset.receivingId);
+  if(doc&&Math.abs(Number(event.target.value)/1000-Number(doc.weight))>0.000001)form.querySelector('details').open=true;
+});
+
 async function refreshReceiving() {
   const allowed = canReceive();
+  document.body.classList.toggle('pos-receiving-access',Boolean(allowed));
   $('#receivingButton').classList.toggle('hidden', !allowed);
   $('#servingWriteoffButton').classList.toggle('hidden', !allowed);
   $('#servingSurplusButton').classList.toggle('hidden', !allowed);
@@ -2398,6 +2417,7 @@ async function refreshReceiving() {
     const changed=JSON.stringify(data.documents)!==JSON.stringify(receivingDocuments);
     receivingDocuments=data.documents;
     $('#receivingCount').textContent=receivingDocuments.length;
+    $('#receivingNoticeText').textContent=`С кухни ожидают приёмки: ${receivingDocuments.length}. Подтвердите фактический вес для продажи.`;
     $('#receivingNotice').classList.toggle('hidden',!receivingDocuments.length);
     if (changed && !$('#receivingList').contains(document.activeElement)) renderReceiving();
     if (receivingVersion!==null && receivingVersion!==data.version) {
@@ -2422,9 +2442,9 @@ $('#receivingList').addEventListener('submit',async event=>{
   const decision=event.submitter?.value || 'accept';
   const doc=receivingDocuments.find(entry=>entry.id===form.dataset.receivingId);if(!doc)return;
   const weightInput=form.elements.actualWeight;
-  const actualWeight=Number(weightInput.value)===Number(weightInput.defaultValue) ? Number(doc.weight) : Number(weightInput.value)/1000;
+  const actualWeight=Number(weightInput.value)===Number((Number(doc.weight)*1000).toFixed(3)) ? Number(doc.weight) : Number(weightInput.value)/1000;
   const reason=form.elements.reason.value.trim();
-  if((decision==='reject'||Math.abs(actualWeight-doc.weight)>0.000001)&&reason.length<3) { $('#receivingError').textContent='Укажите причину отказа или расхождения (не менее 3 символов)';return; }
+  if((decision==='reject'||Math.abs(actualWeight-doc.weight)>0.000001)&&reason.length<3) { form.querySelector('details').open=true;form.elements.reason.focus();$('#receivingError').textContent='Укажите причину отказа или расхождения (не менее 3 символов)';return; }
   const payload={documentId:doc.id,actualWeight,reason};
   const signature=JSON.stringify({decision,...payload});
   if(!receivingRequests.has(signature)) receivingRequests.set(signature,crypto.randomUUID());
@@ -2672,8 +2692,9 @@ $('#servingWriteoffForm').addEventListener('submit',async event=>{
 
 
 // A terminal function always uses the existing action and its role checks.
-const functionTargets = ["workShiftButton", "historyButton", "shiftButton", "receivingButton", "servingWriteoffButton", "servingSurplusButton", "productionButton", "supplyButton", "cashMenuButton", "posAdminLink"];
+const functionTargets = ["openOrdersButton", "workShiftButton", "historyButton", "shiftButton", "receivingButton", "servingWriteoffButton", "servingSurplusButton", "productionButton", "supplyButton", "cashMenuButton", "posAdminLink"];
 const terminalActionCopy = {
+  openOrdersButton: ['Отложенные заказы','Продолжить ранее сохранённый заказ'],
   workShiftButton: ["Рабочее время", "Начать или закончить рабочий день для расчёта зарплаты"],
   historyButton: ["Чеки и возвраты", "Найти чек, посмотреть состав или оформить возврат"],
   shiftButton: ["Кассовая смена", "Открыть смену, проверить итоги или закрыть смену"],
@@ -2689,12 +2710,12 @@ function openTerminalFunctions() {
   $("#salesReportButton").classList.toggle("hidden", activeOperator?.role === "production" || activeOperator?.staffRole === "production");
   $("#salesImportButton").classList.toggle("hidden", activeOperator?.role === "production" || activeOperator?.staffRole === "production" || workspaceState.serviceMode === "restaurant");
   const container = $("#functionOperations");
-  const icons = {workShiftButton:'user',historyButton:'receipt',shiftButton:'orders',receivingButton:'download',servingWriteoffButton:'close',servingSurplusButton:'plus',productionButton:'tray',supplyButton:'supply',cashMenuButton:'wallet',posAdminLink:'settings'};
+  const icons = {openOrdersButton:'orders',workShiftButton:'user',historyButton:'receipt',shiftButton:'orders',receivingButton:'download',servingWriteoffButton:'close',servingSurplusButton:'plus',productionButton:'tray',supplyButton:'supply',cashMenuButton:'wallet',posAdminLink:'settings'};
   const actionContent = (icon, label, hint) => `<span class="function-icon" aria-hidden="true">${posIcon(icon)}</span><span class="function-copy"><strong>${escapeHtml(label)}</strong><small>${escapeHtml(hint)}</small></span><span class="function-arrow" aria-hidden="true">${posIcon('arrow')}</span>`;
   const groups = [
     ['Смена и деньги',['shiftButton','cashMenuButton','workShiftButton']],
     ['Кухня и склад',['receivingButton','productionButton','supplyButton','servingWriteoffButton','servingSurplusButton']],
-    ['История и управление',['historyButton','posAdminLink']],
+    ['История и управление',['openOrdersButton','historyButton','posAdminLink']],
   ];
   container.innerHTML = groups.map(([title, ids], index) => {
     const buttons = ids.filter(id=>functionTargets.includes(id)&&!$('#'+id).classList.contains('hidden')).map(id=>`<button type="button" data-function-target="${id}">${actionContent(icons[id],...terminalActionCopy[id])}</button>`);
@@ -3162,3 +3183,6 @@ $('#salesImportCommit').onclick = async () => {
   dialog.addEventListener('close', () => mobile.setAttribute('aria-expanded', 'false'));
   dialog.addEventListener('toggle', () => mobile.setAttribute('aria-expanded', String(dialog.open)));
 })();
+
+// Pending receipts stay in the workspace flow instead of covering payment.
+document.querySelector('.workspace').before(document.querySelector('#receivingNotice'));

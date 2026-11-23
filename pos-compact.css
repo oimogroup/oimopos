@@ -153,3 +153,49 @@ body[data-ui=pos] .supply-quick-add>label{display:block;margin-bottom:8px;font-s
 body[data-ui=pos] .supply-quick-results{max-height:240px;overflow:auto;overscroll-behavior:contain}body[data-ui=pos] .supply-quick-results button{display:flex;align-items:center;justify-content:space-between;gap:12px;width:100%;min-height:52px;padding:10px 6px;border:0;border-bottom:1px solid var(--line);background:white;text-align:left;cursor:pointer}body[data-ui=pos] .supply-quick-results button:hover{background:#faf7fb}body[data-ui=pos] .supply-quick-results strong{display:block;font-size:13px}body[data-ui=pos] .supply-quick-results small{display:block;color:var(--muted);font-size:11px;margin-top:4px}body[data-ui=pos] #posSupplyQuickStatus{display:block;margin-top:8px;color:var(--muted);font-size:11px;line-height:1.5}
 body[data-ui=pos] [data-production-search]{min-height:44px;width:100%;padding:9px 12px;border:1px solid var(--line);border-radius:8px;background:#fff;color:inherit;font:inherit}
 @media(max-width:600px){body[data-ui=pos] .supply-quick-search{flex-wrap:wrap}body[data-ui=pos] .supply-quick-search input{flex:1 1 100%;font-size:16px}body[data-ui=pos] .supply-quick-search select{width:100%;font-size:16px}body[data-ui=pos] .supply-quick-add{padding:12px}}
+
+body[data-ui=pos] #receivingNotice{position:static;flex-shrink:0;max-width:none;margin:8px 12px;padding:8px 12px;gap:12px;border:1px solid #cddbd0;border-radius:9px;box-shadow:none;font-size:12px;line-height:1.5}body[data-ui=pos] #receivingNotice>span{flex:1;min-width:0}body[data-ui=pos] #receivingNotice button{min-height:44px;flex-shrink:0;padding:8px 12px;font-size:12px}
+@media(max-width:700px){body[data-ui=pos].pos-receiving-access .app-shell .topbar #receivingButton:not(.hidden){display:flex;min-width:44px;width:44px;min-height:44px;align-items:center;justify-content:center;position:relative;font-size:0;border:1px solid var(--line);background:#f4f0f5}body[data-ui=pos].pos-receiving-access .app-shell .topbar #openOrdersButton{display:none}body[data-ui=pos] #receivingNotice{margin:6px 8px;padding:6px 10px;gap:8px;font-size:11px}body[data-ui=pos] #receivingNotice button{max-width:120px;white-space:normal}}
+
+/* Compact receiving rows, with a fixed header and an independently scrolling list. */
+body[data-ui=pos] #receivingDrawer{padding:16px}
+body[data-ui=pos] #receivingDrawer>.poster-drawer{width:min(820px,100%);max-height:calc(min(100dvh,var(--pos-viewport-height,100dvh)) - 32px);border-radius:12px}
+body[data-ui=pos] #receivingDrawer .modal-header{padding:14px 18px;gap:12px}
+body[data-ui=pos] #receivingDrawer .modal-header h2{font-size:18px}
+body[data-ui=pos] #receivingSummary{display:block;margin-top:4px;color:var(--muted);font-size:11px}
+body[data-ui=pos] #receivingDrawer .receiving-toolbar{display:flex;align-items:center;gap:10px;padding:12px 18px;border-bottom:1px solid var(--line);flex-shrink:0}
+body[data-ui=pos] #receivingSearch{flex:1;min-width:0;height:40px;padding:8px 10px;font-size:13px}
+body[data-ui=pos] #receivingDrawer .receiving-toolbar button{height:40px;min-height:40px;padding:0 12px;font-size:12px}
+body[data-ui=pos] #receivingList{padding:0 18px 10px;overscroll-behavior:contain}
+body[data-ui=pos] #receivingDrawer .receiving-card{display:grid;grid-template-columns:minmax(0,1fr) 125px auto;align-items:center;gap:10px 16px;padding:14px 0}
+body[data-ui=pos] #receivingDrawer .receiving-dish{min-width:0}
+body[data-ui=pos] #receivingDrawer .receiving-dish h3{margin:0;font-size:14px;line-height:1.4;overflow-wrap:anywhere}
+body[data-ui=pos] #receivingDrawer .receiving-dish p{margin:4px 0;color:var(--muted);font-size:11px;line-height:1.4;overflow-wrap:anywhere}
+body[data-ui=pos] #receivingDrawer .receiving-dish small{font-size:11px;color:var(--muted)}
+body[data-ui=pos] #receivingDrawer .receiving-weight{font-size:11px;gap:4px}
+body[data-ui=pos] #receivingDrawer input{height:40px;padding:8px 10px;font-size:14px}
+body[data-ui=pos] #receivingDrawer .receiving-actions{grid-column:auto;gap:6px;padding:0;align-items:center}
+body[data-ui=pos] #receivingDrawer .receiving-actions button{min-width:76px;min-height:44px;padding:8px 10px;font-size:12px;border-radius:7px}
+body[data-ui=pos] #receivingDrawer .receiving-reason{grid-column:1/-1;font-size:11px;color:var(--muted)}
+body[data-ui=pos] #receivingDrawer .receiving-reason summary{cursor:pointer;width:fit-content;min-height:26px;align-content:center}
+body[data-ui=pos] #receivingDrawer .receiving-reason label{margin:6px 0 0;gap:5px;font-size:11px}
+body[data-ui=pos] #receivingDrawer #receivingError:not(:empty){font-size:12px;padding:10px 18px;line-height:1.5}
+@media(max-width:600px){
+ body[data-ui=pos] #receivingDrawer{padding:8px}
+ body[data-ui=pos] #receivingDrawer>.poster-drawer{max-height:calc(min(100dvh,var(--pos-viewport-height,100dvh)) - 16px)}
+ body[data-ui=pos] #receivingDrawer .modal-header{padding:12px}
+ body[data-ui=pos] #receivingDrawer .modal-header h2{font-size:16px}
+ body[data-ui=pos] #receivingDrawer .receiving-toolbar{padding:10px 12px;gap:8px}
+ body[data-ui=pos] #receivingList{padding:0 12px 8px}
+ body[data-ui=pos] #receivingDrawer .receiving-card{grid-template-columns:minmax(0,1fr);gap:8px;padding:12px 0}
+ body[data-ui=pos] #receivingDrawer .receiving-weight{display:flex;align-items:center;justify-content:space-between;gap:10px}
+ body[data-ui=pos] #receivingDrawer .receiving-weight input{width:130px;font-size:16px}
+ body[data-ui=pos] #receivingDrawer .receiving-actions{display:flex;grid-column:1/-1;order:3}
+ body[data-ui=pos] #receivingDrawer .receiving-actions button{flex:1;min-width:0}
+ body[data-ui=pos] #receivingDrawer .receiving-reason{order:2}
+ body[data-ui=pos] #receivingSearch,body[data-ui=pos] #receivingDrawer .receiving-reason input{font-size:16px}
+}
+
+body[data-ui=pos] #receivingDrawer{display:flex;align-items:center;justify-content:center}
+body[data-ui=pos] #receivingDrawer>.poster-drawer{width:min(760px,100%)}
+body[data-ui=pos] #receivingNotice{z-index:auto}

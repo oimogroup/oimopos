@@ -10,7 +10,7 @@
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=8" />
   <link rel="stylesheet" href="/brand.css?v=1">
-  <link rel="stylesheet" href="pos-compact.css?v=6">
+  <link rel="stylesheet" href="pos-compact.css?v=8">
 <link rel="icon" href="/favicon.svg?v=4">
 <link id="posManifest" rel="manifest" crossorigin="use-credentials">
 <meta name="theme-color" content="#202123">
@@ -356,8 +356,8 @@
       </aside>
     </div>
     <div class="drawer-backdrop hidden" id="servingWriteoffDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="servingWriteoffTitle"><header class="modal-header"><div><p class="eyebrow">Раздача</p><h2 id="servingWriteoffTitle">Списание блюд</h2></div><button class="icon-button" type="button" onclick="closeDrawer('#servingWriteoffDrawer')" aria-label="Закрыть">×</button></header><p class="production-hint">Количество сразу исключается из продажи. Окончательное списание подтверждает руководитель.</p><form id="servingWriteoffForm" class="receiving-card"><fieldset id="servingWriteoffFields"><label>Блюдо и партия<select id="servingWriteoffLot" required></select></label><p id="servingWriteoffAvailable" class="production-hint"></p><div class="production-quantity"><label>Количество<input id="servingWriteoffQuantity" type="number" required min="0.001" step="0.001" inputmode="decimal"></label><label>Единица<select id="servingWriteoffUnit"><option value="portions">порции / шт.</option><option value="kg">кг</option></select></label></div><label>Причина<select id="servingWriteoffReason" required><option value="">Выберите причину</option><option>Истёк срок хранения</option><option>Порча блюда</option><option>Брак приготовления</option><option>Остаток в конце дня</option><option>Другая причина</option></select></label><label>Комментарий<textarea id="servingWriteoffComment" maxlength="300" placeholder="Уточните обстоятельства списания"></textarea></label></fieldset><p id="servingWriteoffError" role="alert"></p><button class="terminal-primary" id="servingWriteoffSubmit" type="submit">Отправить на подтверждение</button></form><h3>Заявки на списание</h3><div id="servingWriteoffHistory"></div></aside></div>
-    <div id="receivingNotice" class="receiving-notice hidden" role="status"><span>С кухни поступили блюда. Подтвердите приёмку, чтобы начать продажу.</span><button class="primary-button" type="button" onclick="openReceiving()">Посмотреть</button></div>
-    <div class="drawer-backdrop hidden" id="receivingDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="receivingTitle"><header class="modal-header"><h2 id="receivingTitle">Приёмка</h2><button class="icon-button" type="button" onclick="closeDrawer('#receivingDrawer')" aria-label="Закрыть">×</button></header><div class="receiving-history-link"><button class="secondary-button" type="button" onclick="openTransferHistory()">История передач</button></div><p id="receivingError" role="alert"></p><div id="receivingList"></div></aside></div>
+    <div id="receivingNotice" class="receiving-notice hidden" role="status"><span id="receivingNoticeText">С кухни поступили блюда. Подтвердите приёмку, чтобы начать продажу.</span><button class="primary-button" type="button" onclick="openReceiving()">Принять с кухни</button></div>
+    <div class="drawer-backdrop hidden" id="receivingDrawer"><aside class="poster-drawer" role="dialog" aria-modal="true" aria-labelledby="receivingTitle"><header class="modal-header"><div><h2 id="receivingTitle">Приёмка с кухни</h2><small id="receivingSummary"></small></div><button class="icon-button" type="button" onclick="closeDrawer('#receivingDrawer')" aria-label="Закрыть">×</button></header><div class="receiving-toolbar"><input id="receivingSearch" type="search" placeholder="Блюдо, партия или отправитель" aria-label="Поиск ожидающих передач"><button class="secondary-button" type="button" onclick="openTransferHistory()">История</button></div><p id="receivingError" role="alert"></p><div id="receivingList"></div></aside></div>
     <div class="drawer-backdrop hidden" id="transferHistoryDrawer">
       <aside class="poster-drawer transfer-history-drawer" role="dialog" aria-modal="true" aria-labelledby="transferHistoryTitle">
         <header class="modal-header"><h2 id="transferHistoryTitle">История передач</h2><button class="icon-button" type="button" onclick="closeDrawer('#transferHistoryDrawer')" aria-label="Закрыть">×</button></header>
@@ -548,7 +548,7 @@
     <script src="composition-core.js?v=catalog-reliability-20261121"></script>
     <script src="offline-pos-core.js?v=catalog-reliability-20261121"></script>
     <script src="offline-pos.js?v=1"></script>
-    <script src="app.js?v=quick-supply-20261122"></script>
+    <script src="app.js?v=compact-receiving-20261123"></script>
     <script src="pos-supply-photo.js?v=1"></script>
     <script src="work-time.js?v=1"></script>
   </body>
