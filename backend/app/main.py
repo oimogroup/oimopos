@@ -2789,7 +2789,9 @@ def export_technical_cards(
         selected = set(item_id) if item_id is not None else None
         recipes = [row for row in recipes if selected is None or str(row["id"]) in selected] if kind == "recipes" else []
         preparations = [row for row in preparations if selected is None or str(row["id"]) in selected] if kind == "preparations" else []
-    ingredients_by_id = {str(item["id"]): item for item in state.get("ingredients", [])}
+    from .catalog_costs import unit_cost as catalog_unit_cost
+    cost_branch = user.get('branch_id') if user.get('role') == 'branch' else None
+    ingredients_by_id = {str(item["id"]): {**item, 'averageCost': catalog_unit_cost(state,item['id'],cost_branch)} for item in state.get("ingredients", [])}
     from .composition import CompositionError, catalog_sources, flatten
     referenced_preparations = {str(component["preparationId"]) for row in [*recipes, *preparations]
                                for component in row.get("components", []) if component.get("preparationId") is not None}
@@ -2800,8 +2802,8 @@ def export_technical_cards(
                 output = float(raw.get("yield") or 0)
                 if output <= 0:
                     raise CompositionError(f'Проверьте выход полуфабриката «{raw.get("name", "")}»')
-                cost = sum(float(ingredients_by_id[leaf["ingredientId"]].get("averageCost") or 0) * leaf["gross"] / 1000 for leaf in flatten(state, raw))
-                ingredients_by_id[source["id"]] = {**source, "averageCost": cost * 1000 / output}
+                cost = sum(catalog_unit_cost(state,leaf['ingredientId'],cost_branch) * leaf["gross"] / 1000 for leaf in flatten(state, raw, stock=True))
+                ingredients_by_id[source["id"]] = {**source, "averageCost": catalog_unit_cost(state,source['id'],cost_branch) if raw.get('stockMode') == 'produced' else cost * 1000 / output}
     except CompositionError as error:
         raise HTTPException(status_code=422, detail=str(error)) from error
     return {"xlsx": workbook(recipes, preparations, ingredients_by_id), "filename": filename(len(recipes) + len(preparations))}

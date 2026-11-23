@@ -808,23 +808,25 @@ function stockRecipeComponents(recipe) { return CatalogComposition.flatten(recip
 function componentSource(component) {
   if (component.preparationId != null) {
     const preparation = preparationById(component.preparationId);
-    return preparation ? {...preparation, id:'preparation:'+preparation.id, unit:'кг', preparationId:preparation.id, averageCost:Number(preparation.yield)>0 ? CatalogComposition.cost(preparation,compositionState(),id=>ingredientById(id)?.averageCost)*1000/Number(preparation.yield) : 0} : null;
+    return preparation ? {...preparation, id:'preparation:'+preparation.id, unit:'кг', preparationId:preparation.id, averageCost:preparation.stockMode==='produced'?catalogStockUnitCost('preparation:'+preparation.id):Number(preparation.yield)>0 ? preparationCost(preparation)*1000/Number(preparation.yield) : 0} : null;
   }
-  return ingredientById(component.ingredientId);
+  const ingredient=ingredientById(component.ingredientId);
+  return ingredient?{...ingredient,averageCost:catalogStockUnitCost(ingredient.id)}:null;
 }
 function componentSourceByValue(value) {
-  return String(value).startsWith('preparation:') ? componentSource({preparationId:String(value).slice(12)}) : ingredientById(value);
+  return String(value).startsWith('preparation:') ? componentSource({preparationId:String(value).slice(12)}) : componentSource({ingredientId:value});
 }
 function componentSelectionValue(component) { return component.preparationId != null ? 'preparation:'+component.preparationId : component.ingredientId; }
 function catalogStockUnitCost(identity) {
-  if(!String(identity).startsWith('preparation:'))return Number(ingredientById(identity)?.averageCost||0);
+  if(currentSession.branchId)return branchUnitCost(currentSession.branchId,identity);
   let quantity=0,value=0;
   const known=[];
   for(const branch of branches){
-    const amount=branchStock(branch.id,identity),cost=branchUnitCost(branch.id,identity);
+    if(branch.status && branch.status!=='active')continue;
+    const amount=Math.max(0,branchStock(branch.id,identity)),cost=branchUnitCost(branch.id,identity);
     quantity+=amount;value+=amount*cost;if(cost>0)known.push(cost);
   }
-  return quantity>0?value/quantity:known.length?known.reduce((sum,value)=>sum+value,0)/known.length:0;
+  return quantity>0?value/quantity:known.length?known.reduce((sum,value)=>sum+value,0)/known.length:Number(ingredientById(identity)?.averageCost||0);
 }
 function componentCost(component) { return stockRecipeComponents({components:[component]}).reduce((sum,row)=>sum+row.gross/1000*catalogStockUnitCost(row.ingredientId),0); }
 function recipeCost(recipe) { return stockRecipeComponents(recipe).reduce((sum,row)=>sum+row.gross/1000*catalogStockUnitCost(row.ingredientId),0); }
@@ -3297,8 +3299,7 @@ function preparationById(id) {
 
 function preparationCost(preparation) {
   if (!preparation?.components?.length) return Number(preparation?.cost || 0);
-  const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || '';
-  return stockRecipeComponents(preparation).reduce((sum,row)=>sum+row.gross/1000*(branchUnitCost(branchId,row.ingredientId)||ingredientById(row.ingredientId)?.averageCost||0),0);
+  return stockRecipeComponents(preparation).reduce((sum,row)=>sum+row.gross/1000*catalogStockUnitCost(row.ingredientId),0);
 }
 
 function filteredPreparations() {
@@ -5255,8 +5256,7 @@ function closePreparationComposition() {
 }
 
 function preparationIngredientCost(component) {
-  const branchId = currentSession.branchId || pendingOwnerObjectScope || branches[0]?.id || '';
-  return CatalogComposition.cost({components:[component]},compositionState(),id=>branchUnitCost(branchId,id)||ingredientById(id)?.averageCost);
+  return stockRecipeComponents({components:[component]}).reduce((sum,row)=>sum+row.gross/1000*catalogStockUnitCost(row.ingredientId),0);
 }
 
 function renderPreparationComponentsEditor() {

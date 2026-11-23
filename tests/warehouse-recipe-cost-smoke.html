@@ -1,0 +1,13 @@
+<!doctype html><meta charset="utf-8"><pre id="results">RUNNING</pre><iframe id="app" src="../admin.html?test=1#menu/recipes" style="width:1280px;height:900px"></iframe><script>
+app.onload=()=>{const w=app.contentWindow,d=w.document,c=[];const check=(n,v)=>c.push(`${v?'PASS':'FAIL'}:${n}`);try{
+w.eval(`ingredients.push({id:'horse-test',name:'Конина на косточках',unit:'кг',averageCost:0});branches=[{id:'b1',name:'Buffet',status:'active'}];logisticsState.branchStocks={b1:{'horse-test':11}};logisticsState.branchCosts={b1:{'horse-test':650}};recipes.push({id:99001,name:'Беш Бармак — проверка',category:'Горячее',station:'Кухня',yield:180,price:295,components:[{ingredientId:'horse-test',gross:180,net:180}]});`);
+const recipe=w.eval('recipes.find(r=>r.id===99001)');check('recipe-uses-received-price',w.recipeCost(recipe)===117);check('component-unit-price-uses-warehouse',w.componentSource(recipe.components[0]).averageCost===650);
+w.openRecipe(99001);check('drawer-uses-warehouse-cost',d.querySelector('#drawerCost').textContent.includes('117')&&d.querySelector('#compositionTable').textContent.includes('650'));
+w.openRecipeForm(99001);check('editor-uses-warehouse-cost',d.querySelector('#recipeLiveCost').textContent.includes('117'));
+w.eval(`logisticsState.branchCosts.b1['horse-test']=700;`);check('new-receipt-updates-current-card',w.recipeCost(recipe)===126&&w.componentCost(recipe.components[0])===126);
+const pf={id:'pf-horse',name:'П/Ф',yield:1000,components:[{ingredientId:'horse-test',gross:1000,net:1000}]};w.eval('preparations.push('+JSON.stringify(pf)+')');check('virtual-preparation-uses-current-price',w.preparationCost(pf)===700&&w.componentSource({preparationId:pf.id}).averageCost===700);
+w.eval(`preparations.find(p=>p.id==='pf-horse').stockMode='produced';logisticsState.branchStocks.b1['preparation:pf-horse']=2;logisticsState.branchCosts.b1['preparation:pf-horse']=500;`);
+const preparedRecipe={components:[{preparationId:pf.id,gross:100,net:100}]};check('produced-preparation-keeps-actual-stock-cost',w.recipeCost(preparedRecipe)===50&&w.componentSource({preparationId:pf.id}).averageCost===500);
+w.eval(`branches.push({id:'b2',status:'active'});logisticsState.branchStocks.b2={'horse-test':1};logisticsState.branchCosts.b2={'horse-test':900};`);check('network-cost-is-stock-weighted',Math.abs(w.catalogStockUnitCost('horse-test')-(11*700+900)/12)<.00001);
+check('legacy-catalog-price-not-rewritten',w.eval("ingredientById('horse-test').averageCost")===0);
+}catch(e){c.push('FAIL:'+e.stack)}results.textContent=c.join('|')};</script>
