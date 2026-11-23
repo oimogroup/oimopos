@@ -5,6 +5,7 @@ COPY index.html admin.html login.html platform.html numeric-inputs.js app.js adm
 COPY tests /usr/share/nginx/html/tests
 COPY work-time.js /usr/share/nginx/html/
 COPY marketing.js marketing.css pos-compact.css /usr/share/nginx/html/
+COPY telegram-integration.js telegram-integration.css /usr/share/nginx/html/
 COPY offline-pos.js offline-pos-core.js pos-worker.js pos-pwa.js pos.webmanifest /usr/share/nginx/html/
 COPY payroll.js /usr/share/nginx/html/
 COPY offline-review.js /usr/share/nginx/html/

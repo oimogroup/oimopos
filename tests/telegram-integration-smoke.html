@@ -1,0 +1,25 @@
+<!doctype html><meta charset="utf-8"><title>Telegram integration checks</title><pre id="results">RUNNING</pre><iframe id="app" src="../admin.html?test=1#dashboard" style="width:1280px;height:900px"></iframe><script>
+app.onload=async()=>{const w=app.contentWindow,d=w.document,c=[];const check=(n,v)=>c.push(`${v?'PASS':'FAIL'}:${n}`),pause=()=>new Promise(r=>setTimeout(r,30));try{
+ let config={enabled:false,configured:false,bot_username:'',revision:0,routes:[{branchId:'b1',branchName:'Buffet North',chatId:'',threadId:'',enabled:false},{branchId:'b2',branchName:'Buffet South',chatId:'',threadId:'',enabled:false}]},saved=[],tested=[],fail=false;
+ w.AshkanaApi.telegramIntegration=async()=>structuredClone(config);
+ w.AshkanaApi.saveTelegramIntegration=async payload=>{saved.push(payload);if(fail)throw new Error('Не удалось сохранить');config={enabled:payload.enabled,configured:true,bot_username:'oimo_test_bot',revision:config.revision+1,routes:payload.routes};return structuredClone(config)};
+ w.AshkanaApi.telegramGroups=async()=>({chats:[{id:'-1001',title:'North'},{id:'-1002',title:'<img src=x onerror=alert(1)>'}]});
+ w.AshkanaApi.testTelegramGroup=async branch=>{tested.push(branch);return {sent:true}};
+ d.querySelector('#settingsNavSubmenu [data-view="integrations"]').click();await pause();
+ check('dedicated-integration-route',d.querySelector('#view-integrations').classList.contains('active')&&w.location.hash==='#integrations');
+ check('one-route-per-branch',d.querySelectorAll('[data-telegram-branch]').length===2);
+ d.querySelector('#telegramToken').value='123456:abcdefghijklmnopqrstuv_test';d.querySelector('#telegramEnabled').checked=true;
+ const routes=d.querySelectorAll('[data-telegram-branch]');routes.forEach((r,i)=>{r.querySelector('[data-route-chat]').value=i?'-1002':'-1001';r.querySelector('[data-route-enabled]').checked=true});
+ d.querySelector('#telegramForm').requestSubmit();await pause();
+ check('shared-bot-independent-groups',saved[0].token.includes('123456:')&&saved[0].routes[0].chatId==='-1001'&&saved[0].routes[1].chatId==='-1002');
+ check('secret-cleared-after-save',d.querySelector('#telegramToken').value===''&&d.querySelector('#telegramBotStatus').textContent.includes('@oimo_test_bot'));
+ check('discovery-command-has-bot-name',d.querySelector('#telegramChatCommand').textContent==='/oimo_chat@oimo_test_bot');
+ d.querySelector('[data-telegram-test="b2"]').click();await pause();check('test-targets-chosen-branch',tested.join(',')==='b2');
+ const north=d.querySelector('[data-telegram-branch="b1"] [data-route-chat]');north.value='-9999';north.dispatchEvent(new w.Event('input',{bubbles:true}));check('unsaved-target-cannot-send-test',d.querySelector('[data-telegram-test="b1"]').disabled);
+ d.querySelector('#telegramDiscover').click();await pause();check('discovery-keeps-draft-target',d.querySelector('[data-telegram-branch="b1"] [data-route-chat]').value==='-9999');
+ check('group-title-escaped',!d.querySelector('#telegramRoutes img')&&d.querySelector('#telegramRoutes').textContent.includes('<img'));
+ const choice=d.querySelector('[data-telegram-branch="b1"] [data-route-found]');choice.value='-1001';choice.dispatchEvent(new w.Event('change',{bubbles:true}));check('found-group-applies-to-one-branch',d.querySelector('[data-telegram-branch="b1"] [data-route-chat]').value==='-1001'&&d.querySelector('[data-telegram-branch="b2"] [data-route-chat]').value==='-1002');
+ fail=true;d.querySelector('#telegramToken').value='123456:replacement_abcdefghijklmnopqrstuv';d.querySelector('#telegramForm').requestSubmit();await pause();check('failure-keeps-draft-and-shows-error',d.querySelector('#telegramToken').value.includes('replacement')&&d.querySelector('#telegramStatus').textContent.includes('Не удалось сохранить'));
+ app.style.width='390px';app.style.height='844px';await pause();check('mobile-no-page-overflow',d.documentElement.scrollWidth<=w.innerWidth+1);
+ check('mobile-navigation-includes-integrations',[...d.querySelector('#mobileWorkspaceSelect').options].some(o=>o.textContent.includes('Интеграции')));
+}catch(e){c.push('FAIL:'+e.stack)}results.textContent=c.join('|')};</script>

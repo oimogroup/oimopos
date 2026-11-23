@@ -4,13 +4,14 @@
     <meta charset="UTF-8" />
     <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
     <title>Oimo — управление заведением</title>
-    <link rel="stylesheet" href="admin.css?v=variant-photos-20261121" />
+    <link rel="stylesheet" href="admin.css?v=telegram-integration-20261123" />
     <link rel="stylesheet" href="minimal.css?v=modifiers-1" />
       <link rel="stylesheet" href="oimo.css?v=photo-upload-1" />
     <link rel="stylesheet" href="mobile-ux.css?v=1" />
     <link rel="stylesheet" href="/ui-theme.css?v=motion-9" />
   <link rel="stylesheet" href="/brand.css?v=1">
   <link rel="stylesheet" href="marketing.css?v=1">
+  <link rel="stylesheet" href="telegram-integration.css?v=1">
 <link rel="icon" href="/favicon.svg?v=4">
 </head>
   <body data-ui="admin">
@@ -107,7 +108,7 @@
             <button data-owner-access-view="employees" type="button">Сотрудники</button>
           </div>
           <button class="nav-item" data-nav-section="settings" data-view="settings" type="button" aria-controls="settingsNavSubmenu" aria-expanded="false"><svg class="ui-icon"><use href="#ui-settings"/></svg>Настройки <svg class="ui-icon nav-chevron"><use href="#ui-chevron"/></svg></button>
-          <div class="nav-submenu" id="settingsNavSubmenu"><button type="button" data-settings-tab="general">Общие</button><button type="button" data-settings-tab="billing">Оплата подписки</button><button type="button" data-settings-tab="orders">Заказы</button><button type="button" data-settings-tab="delivery">Доставка</button><button type="button" data-settings-tab="security">Безопасность</button><button type="button" data-settings-tab="receipt">Чек</button></div>
+          <div class="nav-submenu" id="settingsNavSubmenu"><button type="button" data-settings-tab="general">Общие</button><button type="button" data-settings-tab="billing">Оплата подписки</button><button type="button" data-settings-tab="orders">Заказы</button><button type="button" data-settings-tab="delivery">Доставка</button><button type="button" data-settings-tab="security">Безопасность</button><button type="button" data-settings-tab="receipt">Чек</button><button type="button" data-view="integrations">Интеграции</button></div>
           </div>
 
           <div class="role-navigation hidden" data-role-navigation="branch">
@@ -471,6 +472,11 @@
               <div class="table-scroll"><table class="data-table employee-table"><thead><tr><th>Сотрудник</th><th id="employeeScopeHeading">Должность</th><th>Логин</th><th>Последняя активность</th><th>Доступ</th><th></th></tr></thead><tbody id="employeesTable"></tbody></table></div>
               <div class="documents-empty hidden" id="employeesEmpty"><svg class="ui-icon"><use href="#ui-users"/></svg><strong>Сотрудников не найдено</strong><p>Измените фильтры или добавьте сотрудника в аккаунт.</p></div>
             </article>
+          </section>
+          <section class="admin-view" id="view-integrations"><header class="integrations-heading"><div><h1>Интеграции</h1><p>Telegram · Уведомления о низких остатках</p></div><button type="button" class="secondary-action" id="telegramReload">Обновить</button></header>
+            <p id="telegramStatus" role="status"></p><form id="telegramForm" class="telegram-form"><section class="telegram-card"><h2>Бот компании</h2><p>Один бот отправляет уведомления в группы ваших точек. Токен хранится на сервере в зашифрованном виде.</p><label class="telegram-enabled"><input id="telegramEnabled" type="checkbox"> Включить уведомления</label><label>Токен от @BotFather<input id="telegramToken" type="password" autocomplete="new-password" placeholder="Токен бота" maxlength="140"></label><small id="telegramBotStatus"></small></section>
+            <section class="telegram-card"><h2>Группы заведений</h2><p>Добавьте бота в нужную группу и разрешите ему отправлять сообщения. Для каждой точки укажите ID её группы.</p><details class="telegram-help"><summary>Как узнать ID группы</summary><ol><li>Сохраните токен бота.</li><li>Добавьте бота в группу и отправьте команду <code id="telegramChatCommand">/oimo_chat@имя_бота</code>.</li><li>Нажмите «Найти группы», затем выберите нужную группу в строке точки. Бот не обязан отвечать на команду: она нужна для обнаружения группы.</li></ol><p>Если у бота уже настроен webhook, ID группы можно указать вручную. У супергруппы он начинается с -100.</p></details><button class="secondary-action" id="telegramDiscover" type="button">Найти группы</button><div id="telegramRoutes"></div></section>
+            <section class="telegram-card telegram-help"><h2>Когда приходят уведомления</h2><p>Проверка примерно раз в минуту. Если остаток ингредиента или товара равен минимальному лимиту или ниже, бот сообщает название точки, позицию, остаток и минимум.</p><p>Лимиты задаются в карточках ингредиентов и товаров. Лимит 0 отключает предупреждение для позиции. Готовые блюда на раздаче и виртуальные полуфабрикаты сюда не входят.</p><p>Одна нехватка не дублируется при каждой продаже. После пополнения выше минимума новое снижение снова вызовет уведомление. При включении интеграции придут текущие нехватки, до 20 позиций в одном сообщении.</p><p>Если Telegram недоступен, система повторит доставку позже. Ошибка группы отображается рядом с точкой.</p></section><footer><button id="telegramSave" type="submit" class="primary-button">Сохранить интеграцию</button><span id="telegramSaveStatus" role="status"></span></footer></form>
           </section>
           <section class="admin-view company-settings-view" id="view-settings">
             <nav class="settings-mobile-tabs" aria-label="Разделы настроек"><button type="button" data-settings-tab="general">Общие</button><button type="button" data-settings-tab="billing">Оплата подписки</button><button type="button" data-settings-tab="orders">Заказы</button><button type="button" data-settings-tab="delivery">Доставка</button><button type="button" data-settings-tab="security">Безопасность</button><button type="button" data-settings-tab="receipt">Чек</button></nav>
@@ -1149,7 +1155,7 @@
     <dialog id="payrollDialog" class="payroll-dialog"><form id="payrollForm"><header><div><p id="payrollDialogEyebrow">Зарплата</p><h2 id="payrollDialogTitle"></h2></div><button type="button" id="payrollDialogClose" class="icon-button" aria-label="Закрыть">×</button></header><div id="payrollFormFields"></div><p id="payrollFormError" role="alert"></p><footer><button type="button" class="secondary-action" id="payrollDialogCancel">Отмена</button><button type="submit" class="primary-button" id="payrollDialogSubmit">Сохранить</button></footer></form></dialog>
     <div class="admin-toast hidden" id="adminToast"></div>
     <script src="numeric-inputs.js?v=1"></script>
-    <script src="api-client.js?v=catalog-integrity-20261121"></script>
+    <script src="api-client.js?v=telegram-integration-20261123"></script>
     <script src="catalog-cover.js?v=photo-upload-2"></script>
     <script src="company-settings.js?v=modifiers-1"></script>
     <script src="catalog-units.js?v=preparation-components-1"></script>
@@ -1162,10 +1168,11 @@
     <script src="custody.js?v=actions-15"></script>
     <script src="admin-filters.js?v=1"></script>
     <script src="admin-list-filters.js?v=catalog-reliability-20261121"></script>
-    <script src="admin.js?v=catalog-visibility-20261121"></script>
+    <script src="admin.js?v=telegram-integration-20261123"></script>
     <script src="payroll.js?v=1"></script>
     <script src="pnl.js?v=1"></script>
     <script src="offline-review.js?v=1"></script>
     <script src="marketing.js?v=1"></script>
+    <script src="telegram-integration.js?v=1"></script>
   </body>
 </html>

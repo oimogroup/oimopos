@@ -6875,7 +6875,8 @@ const ownerNavSectionByView = {
   branches: "access",
   registers: "access",
   employees: "access",
-  settings: "settings"
+  settings: "settings",
+  integrations: "settings"
 };
 
 function mobileWorkspaceChoices() {
@@ -6885,12 +6886,12 @@ function mobileWorkspaceChoices() {
   if (!submenuId) return [];
   const targets = { marketingTab: "marketing", menuPage: "recipes", ownerAnalyticsTab: "reports", ownerStockTab: "inventory", ownerFinanceTab: "finance", settingsTab: "settings" };
   return [...document.querySelectorAll(`#${submenuId} button`)].flatMap((button) => {
-    const key = Object.keys(targets).find((name) => button.dataset[name]) || (button.dataset.ownerAccessView ? "ownerAccessView" : "ownerView");
+    const key = Object.keys(targets).find((name) => button.dataset[name]) || (button.dataset.view ? "view" : button.dataset.ownerAccessView ? "ownerAccessView" : "ownerView");
     const value = button.dataset[key];
     const targetView = targets[key] || value;
     if (!value || button.hidden || button.disabled || button.classList.contains("hidden") || !canAccessView(targetView)) return [];
     if (key === "ownerStockTab" && !canAccessStockTab(value)) return [];
-    const selected = view === targetView && (["ownerView", "ownerAccessView"].includes(key) || button.classList.contains("active"));
+    const selected = view === targetView && (["ownerView", "ownerAccessView", "view"].includes(key) || button.classList.contains("active"));
     return [{ value: `${key}:${value}`, label: button.textContent.trim(), selected, button }];
   });
 }
@@ -6947,7 +6948,8 @@ function switchView(view) {
     branches: "Доступ / Заведения",
     registers: "Доступ / Кассы",
     employees: "Доступ / Сотрудники",
-    settings: "Настройки"
+    settings: "Настройки",
+    integrations: "Настройки / Интеграции"
   }[view];
   $("#breadcrumbTitle").textContent = viewTitle || activeButton?.textContent.trim() || "Главная";
   if (view === "recipes") {
@@ -6957,6 +6959,7 @@ function switchView(view) {
   else if (view === "finance") history.replaceState(null, "", `#finance/${activeFinanceTab}`);
   else history.replaceState(null, "", `#${view}`);
   if (view === "marketing") window.OimoMarketing?.open();
+  if (view === "integrations") window.TelegramIntegration?.open();
   if (view === "settings") window.CompanySettings.open(window.CompanySettings.currentTab);
   document.querySelector(".admin-content")?.scrollTo(0, 0);
 }

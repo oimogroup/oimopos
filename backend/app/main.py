@@ -117,13 +117,17 @@ async def lifespan(_: FastAPI):
     mail_stop, mail_thread = start_worker(pool)
     from .payment_reconciliation import start_worker as start_payment_worker
     payment_stop,payment_thread=start_payment_worker(pool)
+    from .telegram_stock import start_worker as start_telegram_worker
+    telegram_stop,telegram_thread=start_telegram_worker(pool)
     try:
         yield
     finally:
         mail_stop.set()
         payment_stop.set()
+        telegram_stop.set()
         await asyncio.to_thread(mail_thread.join, 20)
         await asyncio.to_thread(payment_thread.join, 20)
+        await asyncio.to_thread(telegram_thread.join, 12)
         close_pool()
 
 
@@ -3150,3 +3154,6 @@ install_account_access(app)
 
 from .operations import install as install_operations
 install_operations(app)
+
+from .telegram_stock import install as install_telegram_stock
+install_telegram_stock(app)

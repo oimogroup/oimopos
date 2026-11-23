@@ -152,6 +152,10 @@
 
   global.AshkanaApi = {
     ApiError,
+    telegramIntegration: () => request('/integrations/telegram'),
+    saveTelegramIntegration: payload => request('/integrations/telegram', {method:'PUT',body:JSON.stringify(payload)}),
+    telegramGroups: () => request('/integrations/telegram/groups', {method:'POST',body:'{}'}),
+    testTelegramGroup: branchId => request('/integrations/telegram/test/'+encodeURIComponent(branchId), {method:'POST',body:'{}'}),
     setClientMode: (mode) => { clientMode = mode === "pos" ? "pos" : "admin"; },
     setOperationActor: (id) => { operationActorId = id == null ? null : String(id); },
     login: (login, password, registerId = null) => request("/auth/login", {

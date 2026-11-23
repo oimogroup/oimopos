@@ -119,3 +119,8 @@ SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '025_catalog_
 \if :run_025
   \ir 025_catalog_save_operations.sql
 \endif
+
+SELECT NOT EXISTS (SELECT 1 FROM schema_migrations WHERE version = '026_telegram_stock_alerts') AS run_026 \gset
+\if :run_026
+  \ir 026_telegram_stock_alerts.sql
+\endif
